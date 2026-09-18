@@ -180,6 +180,23 @@ def summarize(tools: list[dict]) -> dict:
     return {"n_edit": n_edit, "n_read": n_read, "n_ops": n_ops, "n_files": len(files)}
 
 
+def trace(tools: list[dict], limit: int = 12) -> list[str]:
+    """Readable tool sequence, so a human can label what the turn really was."""
+    out = []
+    for t in tools[:limit]:
+        name, inp = t["name"], t["input"]
+        if name == "Bash":
+            out.append("$ " + " ".join((inp.get("command") or "").split())[:80])
+        elif name in EDIT_TOOLS or name in READ_TOOLS:
+            arg = inp.get("file_path") or inp.get("pattern") or ""
+            out.append(f"{name} {os.path.basename(str(arg))[:40]}")
+        else:
+            out.append(name)
+    if len(tools) > limit:
+        out.append(f"... +{len(tools)-limit} more")
+    return out
+
+
 def derive_label(tools: list[dict], s: dict) -> str:
     """Map observed behavior onto the router's intent vocabulary.
 
@@ -239,6 +256,7 @@ def cmd_extract(args) -> int:
                     "prev_assistant": prev_assistant[-600:],
                     "n_tools": len(cur["tools"]),
                     "tools": list(collections.Counter(t["name"] for t in cur["tools"]).items()),
+                    "trace": trace(cur["tools"]),
                     "label": derive_label(cur["tools"], s),
                     "scope_actual": scope_band(len(cur["tools"])),
                     "needs_repo_actual": bool(s["n_edit"] or s["n_read"]),
