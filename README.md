@@ -1,7 +1,7 @@
 # claude-jev
 
-A Claude Code plugin that routes the token-burning decision-making —
-classifying intent, choosing tools, routing — through
+A Claude Code plugin that hands three questions about every prompt — what kind
+of request is this, how big is it, does it need tools — to
 [TypeSafe's Jev](https://docs.typesafe.ai/introduction), a System One model that
 returns typed judgments instead of generating text.
 
@@ -20,8 +20,9 @@ judgments cheaper.
 - **`jev` skill** — teaches the agent to offload snap decisions to the bundled
   CLI: choose between options (`choose`), yes/no gates (`noul`), rubric scores
   (`score`), or batched raw questions (`ask`).
-- **`/jev:route <request>`** — classify a request on demand and get a handling
-  plan.
+- **`/jev:stats`** — scores the hints it already gave. The hook logs every
+  decision, including the ones it suppressed; this finds each prompt in its
+  session transcript and compares the hint to what the session then did.
 
 ## Setup
 
@@ -47,6 +48,7 @@ Requires `python3` (stdlib only, no pip installs).
 | `JEV_TIMEOUT` | `8` | HTTP timeout (s) |
 | `JEV_MIN_CONFIDENCE` | `0.75` | intent confidence floor for injecting hints |
 | `JEV_MAX_QUIET` | `0.10` | a "no tools needed" hint requires needs_tools at or below this |
+| `JEV_LOG` | `~/.claude/jev-router-log.jsonl` | decision log path; `0` disables logging |
 | `JEV_OFF` | unset | `1` disables the hook |
 
 ## Does it work?
@@ -65,9 +67,14 @@ prediction against what the agent actually did next. On 1,613 real prompts:
 | **v7 — shipped** | 42% | 34.6% | 29.3% | **+6.0** | **8** |
 
 A harmful hint tells the agent to skip work it then needed: a "no tools"
-routing hint followed by five or more tool calls. Accuracy is measured against
-behavior derived from transcripts, not human labels, so treat the absolute
-numbers as noisy and the deltas as the signal.
+routing hint followed by five or more tool calls.
+
+Those labels are derived from transcripts, not written by hand, and they are
+noisy. On a blind sample of 120 prompts labeled by hand, the derived labels
+agreed 52.5% of the time; the shipped router scored 48.8% against the hand
+labels and 22.0% against the derived ones. Read 34.6% as a floor rather than an
+estimate. The hand labels are in `eval/audit_labels.json`, keyed by record id,
+so you can override any of them and re-score.
 
 Reproduce it on your own history:
 
@@ -81,6 +88,9 @@ python3 eval/replay.py compare
 The run sends your past prompts to `api.typesafe.ai`. Start with `--sample 250`
 if that matters for your repos.
 
+Replay measures what the router *would* have said. `/jev:stats` measures what it
+did say, against sessions you actually ran.
+
 ## Design notes
 
 - The hook **fails open**: any error, missing key, or timeout produces no
@@ -93,6 +103,9 @@ if that matters for your repos.
 - A smaller taxonomy scores higher and helps less. Collapsing to talk/read/act
   reaches 58.8%, but always guessing "act" reaches 64.7% — the model is
   reliable exactly where the default assumption already is.
+- `scripts/observed.py` decides what a past turn actually did — read, edit,
+  ops, nothing. Both the eval harness and `/jev:stats` score against it, so
+  changing it moves every number in this README.
 - All routing logic lives in `scripts/prompt_router.py`; question definitions
   in `scripts/jev.py::intent_bundle`. If you edit either, re-run `eval/` —
   the shipped bundle is meant to stay identical to the measured one.
