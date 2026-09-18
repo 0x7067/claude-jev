@@ -17,6 +17,7 @@ Env:
   JEV_OFF=1                            disable the hook
   JEV_MIN_CONFIDENCE                   intent confidence floor (default 0.75)
   JEV_MAX_QUIET                        no-tools gate (default 0.10)
+  JEV_LOG                              decision log path, or 0 to disable
   JEV_MODEL, JEV_TIMEOUT               forwarded to jev.py
 """
 
@@ -28,6 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import jev  # noqa: E402
 
 MIN_CONFIDENCE = float(os.environ.get("JEV_MIN_CONFIDENCE", "0.75"))
+DEFAULT_LOG = os.path.expanduser("~/.claude/jev-router-log.jsonl")
 MAX_QUIET = float(os.environ.get("JEV_MAX_QUIET", "0.10"))
 CONTEXT_LINES = 400
 
@@ -97,8 +99,7 @@ def build_state(prompt: str, transcript_path: str | None) -> str:
     return "\n\n".join(parts)
 
 
-def routing_context(state: str) -> str | None:
-    answers = jev.ask(state, jev.intent_bundle())
+def decide(answers: dict) -> tuple[str | None, dict]:
     intent = answers.get("intent") or {}
     choice = intent.get("choice")
     conf = intent.get("confidence", 0.0)
@@ -109,7 +110,7 @@ def routing_context(state: str) -> str | None:
     if needs_tools is not None and needs_tools <= MAX_QUIET:
         choice, conf = "chat", 1.0 - needs_tools
     elif choice == "chat" or choice not in GUIDANCE or conf < MIN_CONFIDENCE:
-        return None
+        return None, answers
 
     scope = (answers.get("scope") or {}).get("score")
     parts = [f"[jev router] intent={choice} conf={conf:.2f}"]
@@ -123,7 +124,29 @@ def routing_context(state: str) -> str | None:
             tip += " Keep it minimal."
         elif scope >= 1.5:
             tip += " Sketch the plan in a few bullets first."
-    return f"{line}\n{tip}"
+    return f"{line}\n{tip}", answers
+
+
+def log_decision(event: dict, answers: dict, hint: str | None) -> None:
+    """Record what was predicted so a later eval can score it against what the
+    session actually did. Joins to the transcript by session id and timestamp.
+    """
+    path = os.environ.get("JEV_LOG", DEFAULT_LOG)
+    if path == "0":
+        return
+    try:
+        import datetime
+        with open(path, "a") as f:
+            f.write(json.dumps({
+                "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "session_id": event.get("session_id"),
+                "cwd": event.get("cwd"),
+                "prompt": (event.get("prompt") or "")[:200],
+                "answers": answers,
+                "hint": hint,
+            }) + "\n")
+    except OSError:
+        pass
 
 
 def main() -> None:
@@ -135,7 +158,10 @@ def main() -> None:
         # Skip slash commands, #-memorize lines, and near-empty prompts.
         if len(prompt) < 3 or prompt[0] in "/#":
             return
-        ctx = routing_context(build_state(prompt, event.get("transcript_path")))
+        answers = jev.ask(build_state(prompt, event.get("transcript_path")),
+                          jev.intent_bundle())
+        ctx, _ = decide(answers)
+        log_decision(event, answers, ctx)
         if ctx:
             json.dump({
                 "hookSpecificOutput": {
