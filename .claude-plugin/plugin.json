@@ -1,10 +1,17 @@
 {
   "name": "claude-jev",
-  "version": "0.1.0",
-  "description": "Offload Claude Code's small decisions — intent classification, tool choice, routing — to TypeSafe's Jev System One model instead of burning tokens on generated reasoning.",
+  "version": "0.2.0",
+  "description": "Classifies each prompt with TypeSafe's Jev and injects a one-line routing hint, shaped by an eval over 1,613 real prompts.",
   "author": {
     "name": "0x7067"
   },
-  "keywords": ["typesafe", "jev", "system-one", "routing", "intent", "token-savings"],
+  "keywords": [
+    "typesafe",
+    "jev",
+    "system-one",
+    "routing",
+    "intent",
+    "token-savings"
+  ],
   "license": "MIT"
 }
