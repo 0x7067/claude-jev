@@ -6,10 +6,17 @@ work is.
 Always exits 0 and prints nothing on any failure — a routing hint must
 never block or corrupt a session.
 
+The shape of this hook is set by eval/replay.py, which scores it against
+1,613 real prompts. Two results drive the design: three quarters of prompts
+are follow-ups, so the previous turn goes into the classified state; and a
+wrong "answer directly" hint is the only mistake that costs real work, so it
+requires a near-certain yes/no answer rather than the intent choice alone.
+
 Env:
   TYPESAFE_API_KEY / TYPESAFE_AI_KEY   required (else silently disabled)
   JEV_OFF=1                            disable the hook
-  JEV_MIN_CONFIDENCE                   intent confidence floor (default 0.55)
+  JEV_MIN_CONFIDENCE                   intent confidence floor (default 0.75)
+  JEV_MAX_QUIET                        no-tools gate (default 0.10)
   JEV_MODEL, JEV_TIMEOUT               forwarded to jev.py
 """
 
@@ -20,42 +27,102 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import jev  # noqa: E402
 
-MIN_CONFIDENCE = float(os.environ.get("JEV_MIN_CONFIDENCE", "0.55"))
+MIN_CONFIDENCE = float(os.environ.get("JEV_MIN_CONFIDENCE", "0.75"))
+MAX_QUIET = float(os.environ.get("JEV_MAX_QUIET", "0.10"))
+CONTEXT_LINES = 400
 
 GUIDANCE = {
-    "chat": "Conversational request — answer directly. No tools or codebase exploration.",
+    "chat": "Answer directly from the conversation. No file reads, no commands.",
     "lookup": "Fact-finding — one targeted search, concise answer, then stop.",
-    "fix": "Small change — locate the code, make a focused edit, run the narrowest verification. No broad exploration.",
+    "fix": "Small change — locate the code, make a focused edit, run the narrowest verification.",
     "feature": "Multi-step implementation — outline a brief plan before editing; verify with build/tests.",
-    "refactor": "Restructuring — preserve behavior; rely on existing tests to verify.",
-    "ops": "Command/build/git task — run it and report output. No code changes unless asked.",
-    "unclear": "Ambiguous — ask one short clarifying question before starting work.",
+    "ops": "Likely a command/build/git task — run it and report the output.",
 }
 
 
-def routing_context(prompt: str) -> str | None:
-    answers = jev.ask(prompt, jev.intent_bundle())
-    intent = answers.get("intent", {})
+def conversation_tail(transcript_path: str, prompt: str) -> tuple[str, str]:
+    """Last user message and last assistant reply, for follow-up prompts.
+
+    Returns empty strings for anything unreadable — context is an improvement,
+    not a requirement.
+    """
+    prev_user = prev_assistant = ""
+    try:
+        with open(transcript_path, errors="replace") as f:
+            lines = f.readlines()[-CONTEXT_LINES:]
+    except OSError:
+        return "", ""
+    for line in reversed(lines):
+        if prev_user and prev_assistant:
+            break
+        if len(line) > 500_000:
+            continue
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if d.get("isSidechain"):
+            continue
+        msg = d.get("message") or {}
+        content = msg.get("content")
+        if d.get("type") == "user" and not prev_user:
+            text = content if isinstance(content, str) else ""
+            if isinstance(content, list):
+                text = "\n".join(b.get("text", "") for b in content
+                                 if isinstance(b, dict) and b.get("type") == "text")
+            text = (text or "").strip()
+            # The current prompt may already be appended; it is not context.
+            if text and text != prompt and not text.startswith("<"):
+                prev_user = text
+        elif d.get("type") == "assistant" and not prev_assistant and isinstance(content, list):
+            text = "\n".join(b.get("text", "") for b in content
+                             if isinstance(b, dict) and b.get("type") == "text").strip()
+            if text:
+                prev_assistant = text
+    return prev_user, prev_assistant
+
+
+def build_state(prompt: str, transcript_path: str | None) -> str:
+    if not transcript_path:
+        return prompt
+    prev_user, prev_assistant = conversation_tail(transcript_path, prompt)
+    if not prev_user and not prev_assistant:
+        return prompt
+    parts = []
+    if prev_user:
+        parts.append(f"Earlier user message: {prev_user[:300]}")
+    if prev_assistant:
+        parts.append(f"Assistant's last reply (truncated): {prev_assistant[-600:]}")
+    parts.append(f"Current user message: {prompt}")
+    return "\n\n".join(parts)
+
+
+def routing_context(state: str) -> str | None:
+    answers = jev.ask(state, jev.intent_bundle())
+    intent = answers.get("intent") or {}
     choice = intent.get("choice")
     conf = intent.get("confidence", 0.0)
-    if choice not in GUIDANCE or conf < MIN_CONFIDENCE:
+    needs_tools = (answers.get("needs_tools") or {}).get("noul")
+
+    # The intent choice is never allowed to say "no tools" on its own: at that
+    # job it scored 0.65 precision at best, against 0.96 for the gate below.
+    if needs_tools is not None and needs_tools <= MAX_QUIET:
+        choice, conf = "chat", 1.0 - needs_tools
+    elif choice == "chat" or choice not in GUIDANCE or conf < MIN_CONFIDENCE:
         return None
 
-    scope = answers.get("scope", {}).get("score")
-    needs_repo = answers.get("needs_repo", {}).get("noul")
-
+    scope = (answers.get("scope") or {}).get("score")
     parts = [f"[jev router] intent={choice} conf={conf:.2f}"]
     if scope is not None:
         parts.append(f"scope={'trivial' if scope < 0.5 else 'small' if scope < 1.5 else 'substantial'}")
-    if needs_repo is not None:
-        parts.append(f"needs_repo={'yes' if needs_repo >= 0.5 else 'no'}")
     line = " ".join(parts)
 
     tip = GUIDANCE[choice]
-    if scope is not None and scope < 0.5:
-        tip += " Keep it minimal — do not enter plan mode."
-    elif scope is not None and scope >= 1.5:
-        tip += " Sketch the plan in a few bullets first."
+    if choice != "chat" and scope is not None:
+        if scope < 0.5:
+            tip += " Keep it minimal."
+        elif scope >= 1.5:
+            tip += " Sketch the plan in a few bullets first."
     return f"{line}\n{tip}"
 
 
@@ -68,7 +135,7 @@ def main() -> None:
         # Skip slash commands, #-memorize lines, and near-empty prompts.
         if len(prompt) < 3 or prompt[0] in "/#":
             return
-        ctx = routing_context(prompt)
+        ctx = routing_context(build_state(prompt, event.get("transcript_path")))
         if ctx:
             json.dump({
                 "hookSpecificOutput": {

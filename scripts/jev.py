@@ -80,6 +80,14 @@ def parse_opt(opt: str) -> tuple[str, str]:
 
 
 def intent_bundle() -> dict:
+    """Questions the router asks about each prompt.
+
+    Measured against 1,613 past prompts (see eval/): `refactor` and `unclear`
+    were removed because neither ever reached usable precision, and
+    `needs_repo` because a hardcoded "yes" beat it by 18 points. `needs_tools`
+    is separate from `intent` on purpose — telling the agent to skip work it
+    needs is the costliest mistake, so it gets its own near-certain gate.
+    """
     return {
         "intent": {
             "type": "choice",
@@ -89,9 +97,7 @@ def intent_bundle() -> dict:
                 "lookup": "Needs a specific fact from the codebase — a targeted search suffices",
                 "fix": "Small bug fix or tweak — locate the code, make a focused edit, verify narrowly",
                 "feature": "New capability or multi-file change — plan briefly before editing",
-                "refactor": "Restructure existing code without changing behavior — verify with tests",
                 "ops": "Run commands: builds, tests, git, CI, deployment — no code changes unless asked",
-                "unclear": "Genuinely ambiguous — a clarifying question is needed before work",
             },
         },
         "scope": {
@@ -103,9 +109,11 @@ def intent_bundle() -> dict:
                 "Substantial: multi-file or multi-phase work",
             ],
         },
-        "needs_repo": {
+        "needs_tools": {
             "type": "noul",
-            "instructions": "Does fulfilling this request require reading files in the current repository?",
+            "instructions": "To handle this message, must the assistant use tools "
+                            "(read files, search, run commands, edit code) rather than "
+                            "just replying from the conversation?",
         },
     }
 
