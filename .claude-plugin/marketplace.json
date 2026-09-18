@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "claude-jev",
+  "description": "Routing and snap decisions for Claude Code, answered by TypeSafe's Jev System One model",
+  "owner": {
+    "name": "0x7067"
+  },
+  "plugins": [
+    {
+      "name": "claude-jev",
+      "source": "./",
+      "description": "Classifies each prompt in one API call and injects a one-line routing hint, plus a CLI and skill for offloading snap decisions. Shaped by an eval over 1,613 real prompts; see eval/.",
+      "category": "productivity",
+      "tags": ["typesafe", "jev", "system-one", "routing", "intent", "token-savings"]
+    }
+  ]
+}
