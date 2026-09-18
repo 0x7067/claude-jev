@@ -1,0 +1,19 @@
+.claude-plugin/plugin.json
+  s_bd2197e5a0c163::t_957cdc951c0abe 3-4,8-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "76d453aef43452b30ca95bf96bae73222f1928ee",
+  "prompts": {},
+  "sessions": {
+    "s_bd2197e5a0c163": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3b4cc5dc-7cca-4f27-a8fe-15651cf94d9c",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
