@@ -27,8 +27,8 @@ judgments cheaper.
   writes the survivors verbatim to a digest, and tells you to run `/clear`.
   A `SessionStart` (`clear`) hook then rebuilds the session from only that
   selection — no generated summary in the loop. The digest is hard-capped
-  (`JEV_COMPACT_TARGET_CHARS`), so the kept set can't grow without bound
-  over a long session.
+  at 40k chars, so the kept set can't grow without bound over a long
+  session.
 - **`SessionStart` (`compact`) hook** — the automatic path. Claude Code's
   own compaction can't be replaced from a plugin, so when it runs — auto or
   manual `/compact` — the same judgment re-injects the kept blocks verbatim
@@ -37,8 +37,8 @@ judgments cheaper.
 - **Cache discipline** — compaction replaces the prompt prefix, so every
   later request re-reads the kept context uncached. The plugin never
   compacts proactively, and applies nothing when the selection shrinks the
-  transcript by less than `JEV_COMPACT_MIN_REDUCTION` (default 25%): a weak
-  selection would pay a fresh uncached prompt for no win.
+  transcript by less than 25%: a weak selection would pay a fresh uncached
+  prompt for no win.
 - **`/jev:stats`** — scores the hints it already gave. The hook logs every
   decision, including the ones it suppressed, then finds each prompt in its
   session transcript and compares the hint to what the session did.
@@ -60,26 +60,9 @@ Requires `python3`, stdlib only.
 
 ## Env vars
 
-| Var | Default | Effect |
-|---|---|---|
-| `TYPESAFE_API_KEY` / `TYPESAFE_AI_KEY` | — | required; hook silently disables without it |
-| `JEV_MODEL` | `jev-latest` | model id |
-| `JEV_TIMEOUT` | `8` | HTTP timeout (s) |
-| `JEV_MIN_CONFIDENCE` | `0.75` | intent confidence floor for injecting hints |
-| `JEV_MAX_QUIET` | `0.10` | a "no tools needed" hint requires needs_tools at or below this |
-| `JEV_LOG` | `~/.claude/jev-router-log.jsonl` | decision log path; `0` disables logging |
-| `JEV_OFF` | unset | `1` disables all hooks |
-| `JEV_COMPACT_KEEP` | `0.5` | keep-probability floor for a transcript block |
-| `JEV_COMPACT_MAX_BLOCKS` | `45` | max blocks judged per compaction; older ones drop unjudged |
-| `JEV_COMPACT_PIN_TAIL` | `4` | newest blocks always kept verbatim, never judged |
-| `JEV_COMPACT_CHUNK` | `20` | questions per API call; chunks run in parallel |
-| `JEV_COMPACT_BLOCK_CHARS` | `1200` | chars of each block shown to Jev |
-| `JEV_COMPACT_KEEP_CHARS` | `1500` | chars of each kept block in the digest |
-| `JEV_COMPACT_HEAD_CHARS` | `400` | head retained on a truncated block |
-| `JEV_COMPACT_TARGET_CHARS` | `40000` | hard cap on digest size; weakest keeps downgrade then drop |
-| `JEV_COMPACT_MIN_REDUCTION` | `0.25` | below this reduction nothing is applied |
-| `JEV_COMPACT_DIR` | `~/.claude/jev-compact` | where `/jev:compact` digests wait for `/clear` |
-| `JEV_COMPACT_LOG` | `~/.claude/jev-compact-log.jsonl` | per-compaction stats incl. est. uncached tokens; `0` disables |
+`TYPESAFE_API_KEY` (or `TYPESAFE_AI_KEY`) is the only one — required;
+without it the hooks silently disable. Every parameter the plugin uses is
+a constant in the source, tuned against the eval below.
 
 ## Does it work?
 
@@ -120,6 +103,53 @@ The run sends your past prompts to `api.typesafe.ai` — start with
 
 Replay measures what the router *would* have said. `/jev:stats` measures
 what it did say, on sessions you actually ran.
+
+## Default vs claude-jev, on real sessions
+
+`eval/compare.py` pairs the plugin against default Claude Code on your own
+transcripts.
+
+**Compaction.** Every `compact_boundary` in `~/.claude/projects` is a
+paired sample: the transcript records what the built-in summarizer
+injected, and replaying the same pre-boundary blocks through the plugin
+shows what Jev's selection would have injected. `--synth N` grows the
+corpus past the handful of real boundaries: any session whose
+judge-visible content passes ~100k chars with at least 30 blocks of
+structure (the range the real boundaries fired at) gets a synthetic cut,
+and `claude -p` generates the default-side summary from the same
+conversation — a labeled replica, not the real routine.
+
+Across 77 compaction points — 6 real boundaries + 71 synthetic cuts:
+
+| | default: summary + tail | jev: selection digest |
+|---|---|---|
+| context injected per event | ~4.2k tok | ~0.8–1.8k tok |
+| time to compact | ~2 min | ~1 s |
+| re-fetch coverage | ~59–91% mentioned | ~60–82% verbatim |
+
+After each point the agent re-fetched 818 files/searches/urls it had
+already fetched. Under the six real compactions the default summary still
+mentioned 91% of those paths — and the re-reads happened anyway, because
+a mention is not the content. On the larger synthetic set both sides land
+near 60% coverage, but of different kinds: the summary holds a pointer,
+Jev's digest holds the bytes — the reads an agent wouldn't need to
+repeat — at roughly 40% of the injected tokens and ~1% of the wall time.
+The honest gap: ~40% of re-fetched artifacts fall outside Jev's 45-block
+judgment window or its keep floor; a summary compresses everything, a
+selection drops what didn't earn a place. Rows and per-event detail land
+in `eval/data/compare_compact.jsonl`; summaries and judgments cache in
+`eval/data/compact_cache.jsonl`, so re-runs and bigger `--synth` are
+incremental.
+
+**Router.** Joining the shipped hints to what the unhinted agent did next
+(1,613 real prompts): hints fired on 42%. The one with a measurable
+counterfactual is the no-tools gate — on the 70 prompts Jev would have
+steered to "answer directly", default Claude made 151 tool calls across
+17 prompts that used tools anyway. But the split matters: 13 of those
+calls were light pokes the hint saves, and 138 sat in 8 sessions that
+genuinely needed the tools — the harmful-hint failure the eval already
+tracks. The gate pays for itself in prevented pokes and occasionally
+costs a session real work, which is why it stays near-certain-only.
 
 ## Design notes
 

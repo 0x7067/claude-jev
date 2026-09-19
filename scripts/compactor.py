@@ -23,30 +23,6 @@ never block or corrupt a session. `prepare` prints errors for the user.
 
 Env:
   TYPESAFE_API_KEY / TYPESAFE_AI_KEY   required (hook disables silently without it)
-  JEV_OFF=1                            disable the hook
-  JEV_COMPACT_KEEP                     noul threshold to keep a block (default 0.5)
-  JEV_COMPACT_MAX_BLOCKS               max blocks judged per compaction (default 45;
-                                       oldest beyond the cap are dropped unjudged)
-  JEV_COMPACT_PIN_TAIL                 newest blocks always kept verbatim, unjudged
-                                       (default 4 — the live working context)
-  JEV_COMPACT_CHUNK                    questions per API call (default 20; chunks
-                                       run in parallel)
-  JEV_COMPACT_BLOCK_CHARS              chars of each block shown to Jev (default 1200)
-  JEV_COMPACT_KEEP_CHARS               chars of each kept block (default 1500)
-  JEV_COMPACT_HEAD_CHARS               head retained on a truncated block
-                                       (default 400)
-  JEV_COMPACT_TARGET_CHARS             hard cap on digest size (default 40000);
-                                       over it, kept blocks downgrade to truncated
-                                       then drop, lowest confidence first — the
-                                       kept set can never grow without bound
-  JEV_COMPACT_MIN_REDUCTION            required size reduction or nothing is
-                                       applied (default 0.25 — compaction busts
-                                       the prompt cache, so a weak selection
-                                       must not ship)
-  JEV_COMPACT_DIR                      digest dir (default ~/.claude/jev-compact)
-  JEV_COMPACT_LOG                      stats log path, or 0 to disable
-                                       (default ~/.claude/jev-compact-log.jsonl)
-  JEV_MODEL, JEV_TIMEOUT               forwarded to jev.py
 """
 
 from __future__ import annotations
@@ -64,17 +40,18 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import jev  # noqa: E402
 
-KEEP_THRESHOLD = float(os.environ.get("JEV_COMPACT_KEEP", "0.5"))
-MAX_BLOCKS = int(os.environ.get("JEV_COMPACT_MAX_BLOCKS", "45"))
-PIN_TAIL = int(os.environ.get("JEV_COMPACT_PIN_TAIL", "4"))
-CHUNK = int(os.environ.get("JEV_COMPACT_CHUNK", "20"))
-BLOCK_CHARS = int(os.environ.get("JEV_COMPACT_BLOCK_CHARS", "1200"))
-KEEP_CHARS = int(os.environ.get("JEV_COMPACT_KEEP_CHARS", "1500"))
-HEAD_CHARS = int(os.environ.get("JEV_COMPACT_HEAD_CHARS", "400"))
-TARGET_CHARS = int(os.environ.get("JEV_COMPACT_TARGET_CHARS", "40000"))
-MIN_REDUCTION = float(os.environ.get("JEV_COMPACT_MIN_REDUCTION", "0.25"))
-DIGEST_DIR = os.path.expanduser(os.environ.get("JEV_COMPACT_DIR", "~/.claude/jev-compact"))
-STATS_LOG = os.environ.get("JEV_COMPACT_LOG", os.path.expanduser("~/.claude/jev-compact-log.jsonl"))
+KEEP_THRESHOLD = 0.5    # noul floor to keep a block
+MAX_BLOCKS = 45         # oldest blocks beyond the cap are dropped unjudged
+PIN_TAIL = 4            # newest blocks always kept verbatim — the live working context
+CHUNK = 20              # questions per API call; chunks run in parallel
+BLOCK_CHARS = 1200      # chars of each block shown to Jev
+KEEP_CHARS = 1500       # chars of each kept block in the digest
+HEAD_CHARS = 400        # head retained on a truncated block
+TARGET_CHARS = 40000    # hard cap on digest size — the kept set can never grow without bound
+MIN_REDUCTION = 0.25    # required size reduction; compaction busts the prompt cache,
+                        # so a weak selection must not ship
+DIGEST_DIR = os.path.expanduser("~/.claude/jev-compact")
+STATS_LOG = os.path.expanduser("~/.claude/jev-compact-log.jsonl")
 PROJECTS = os.path.expanduser("~/.claude/projects")
 TAIL_LINES = 5000  # transcript read window; a bound, not a target
 DIGEST_TTL = 600   # a pending digest is applied only to the /clear it was made for
@@ -103,6 +80,21 @@ def block_text(content) -> str:
     return "\n".join(parts)
 
 
+def visible_text(d: dict) -> str | None:
+    """The judge-visible text of one transcript line, or None. Sidechains,
+    non-message lines, meta wrappers, and trivial acks are invisible."""
+    if d.get("isSidechain") or d.get("type") not in ("user", "assistant"):
+        return None
+    msg = d.get("message") or {}
+    role = msg.get("role") or d["type"]
+    text = block_text(msg.get("content")).strip()
+    if not text or text.startswith(META_PREFIXES):
+        return None
+    if role == "user" and re.fullmatch(r"(ok|yes|no|thanks|continue)\.?", text, re.I):
+        return None
+    return text
+
+
 def transcript_blocks(transcript_path: str) -> list[dict]:
     """User/assistant turns as labeled blocks, oldest first. Sidechains,
     compact boundaries, summaries, meta lines, and trivial acks are filtered
@@ -120,16 +112,11 @@ def transcript_blocks(transcript_path: str) -> list[dict]:
             d = json.loads(line)
         except ValueError:
             continue
-        if d.get("isSidechain") or d.get("type") not in ("user", "assistant"):
+        text = visible_text(d)
+        if text is None:
             continue
         msg = d.get("message") or {}
-        role = msg.get("role") or d["type"]
-        text = block_text(msg.get("content")).strip()
-        if not text or text.startswith(META_PREFIXES):
-            continue
-        if role == "user" and re.fullmatch(r"(ok|yes|no|thanks|continue)\.?", text, re.I):
-            continue
-        blocks.append({"role": role, "text": text})
+        blocks.append({"role": msg.get("role") or d["type"], "text": text})
     return blocks
 
 
@@ -297,8 +284,6 @@ def judge(transcript_path: str, cwd: str | None) -> tuple[list[str], dict]:
 
 
 def log_stats(event: dict, stats: dict) -> None:
-    if STATS_LOG == "0":
-        return
     try:
         os.makedirs(os.path.dirname(STATS_LOG), exist_ok=True)
         with open(STATS_LOG, "a") as f:
@@ -416,8 +401,6 @@ def main() -> int:
         if len(sys.argv) > 1 and sys.argv[1] == "prepare":
             tp = sys.argv[2] if len(sys.argv) > 2 else None
             return prepare(os.getcwd(), tp)
-        if os.environ.get("JEV_OFF"):
-            return 0
         event = json.load(sys.stdin)
         if event.get("hook_event_name") == "SessionStart":
             hook(event)

@@ -150,7 +150,7 @@ def cmd_run(args) -> int:
     if args.sample:
         random.Random(args.seed).shuffle(recs)
         recs = recs[: args.sample]
-    model = os.environ.get("JEV_MODEL", jev.DEFAULT_MODEL)
+    model = args.model
     cache = load_cache()
     os.makedirs(DATA, exist_ok=True)
     out = args.out or pred_path(variant.name)
@@ -327,6 +327,7 @@ def main() -> int:
 
     r = sub.add_parser("run", help="classify each prompt with jev (cached)")
     r.add_argument("--variant", default="v0_shipped", choices=list(variants.VARIANTS))
+    r.add_argument("--model", default=jev.DEFAULT_MODEL)
     r.add_argument("--sample", type=int)
     r.add_argument("--seed", type=int, default=0)
     r.add_argument("--workers", type=int, default=10)
