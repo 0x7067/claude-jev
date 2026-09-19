@@ -23,15 +23,22 @@ judgments cheaper.
   CLI: choose between options (`choose`), yes/no gates (`noul`), rubric scores
   (`score`), or batched raw questions (`ask`).
 - **`/jev:compact`** — the post-style path: Jev judges every transcript block
-  keep-or-drop in one batched request (~150 ms), writes the survivors verbatim
-  to a digest, and tells you to run `/clear`. A `SessionStart` (`clear`) hook
-  then rebuilds the session from *only* Jev's selection — no generated
-  summary anywhere in the loop.
+  keep / truncate / drop in one batched request (~150 ms), writes the survivors
+  verbatim to a digest, and tells you to run `/clear`. A `SessionStart`
+  (`clear`) hook then rebuilds the session from *only* Jev's selection — no
+  generated summary anywhere in the loop. The digest has a hard size cap
+  (`JEV_COMPACT_TARGET_CHARS`), so the kept set can't grow without bound over
+  a long session.
 - **`SessionStart` (`compact`) hook** — the automatic path: when Claude Code's
   own compaction runs (auto or manual `/compact`, which can't be replaced from
   a hook), the same judgment re-injects the kept blocks verbatim on top of the
   generated summary. Dropped-by-mistake is the costly failure, so a block Jev
   couldn't score is kept.
+- **Cache discipline** — compaction replaces the prompt prefix, so every later
+  request re-reads the kept context uncached. The plugin therefore never
+  compacts proactively, and applies nothing when Jev's selection doesn't
+  shrink the transcript by at least `JEV_COMPACT_MIN_REDUCTION` (default
+  25%): a weak selection would pay a massive uncached prompt for no win.
 - **`/jev:stats`** — scores the hints it already gave. The hook logs every
   decision, including the ones it suppressed; this finds each prompt in its
   session transcript and compares the hint to what the session then did.
@@ -64,11 +71,15 @@ Requires `python3` (stdlib only, no pip installs).
 | `JEV_OFF` | unset | `1` disables all hooks |
 | `JEV_COMPACT_KEEP` | `0.5` | keep-probability floor for a transcript block |
 | `JEV_COMPACT_MAX_BLOCKS` | `45` | max blocks judged per compaction; older ones drop unjudged |
+| `JEV_COMPACT_PIN_TAIL` | `4` | newest blocks always kept verbatim, never judged |
 | `JEV_COMPACT_CHUNK` | `20` | questions per API call; chunks run in parallel |
 | `JEV_COMPACT_BLOCK_CHARS` | `1200` | chars of each block shown to Jev |
 | `JEV_COMPACT_KEEP_CHARS` | `1500` | chars of each kept block in the digest |
+| `JEV_COMPACT_HEAD_CHARS` | `400` | head retained on a truncated block |
+| `JEV_COMPACT_TARGET_CHARS` | `40000` | hard cap on digest size; weakest keeps downgrade then drop |
+| `JEV_COMPACT_MIN_REDUCTION` | `0.25` | below this reduction nothing is applied |
 | `JEV_COMPACT_DIR` | `~/.claude/jev-compact` | where `/jev:compact` digests wait for `/clear` |
-| `JEV_COMPACT_LOG` | `~/.claude/jev-compact-log.jsonl` | per-compaction stats; `0` disables |
+| `JEV_COMPACT_LOG` | `~/.claude/jev-compact-log.jsonl` | per-compaction stats incl. est. uncached tokens; `0` disables |
 
 ## Does it work?
 
@@ -137,3 +148,16 @@ did say, against sessions you actually ran.
   they only ever land in the session they were made for.
 - Sidechains, slash-command echoes, and one-word acks are filtered locally
   before Jev sees anything.
+- Each block gets two `noul` judgments: *still needed at all* and *needed
+  verbatim*. A `no` on the second keeps a truncated head plus a re-read
+  pointer instead of the full text — most of the bulk lives in tool output
+  that can be re-fetched, while exact errors and constraints stay whole.
+- Kept blocks are always verbatim bytes, never reworded. The digest is
+  hard-capped (`TARGET_CHARS`) by deterministically downgrading the
+  lowest-confidence keeps — selection can shrink history but can never let
+  the compacted context grow without bound, which is the failure mode of
+  keeping user/assistant text forever.
+- Nothing runs per turn: there is no proactive compaction trigger, because
+  compaction's cost is a freshly-uncached prompt — it is only worth paying
+  when Claude Code already compacted or the user asked for it, and only
+  applied when the selection shrinks enough (`MIN_REDUCTION`) to cover it.
