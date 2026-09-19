@@ -23,13 +23,13 @@ judgments cheaper.
 - **`jev` skill** — teaches the agent to offload snap decisions to the bundled
   CLI: choose between options (`choose`), yes/no gates (`noul`), rubric scores
   (`score`), or batched raw questions (`ask`).
-- **`PreCompact` + `SessionStart` hooks** — when Claude Code is about to
-  compact, every transcript block gets a keep-or-drop judgment from Jev in a
-  single batched request (~150 ms). After compaction, `SessionStart`
-  (`source=compact`) injects the kept blocks as context — as they were written,
-  not paraphrased. The built-in summary still runs; this adds back what it
-  would have lost. Dropped-by-mistake is the costly failure, so a block Jev
-  couldn't score is kept.
+- **`SessionStart` compaction hook** — after Claude Code compacts, the
+  transcript still holds the pre-compaction history (it's append-only), so a
+  single `compact`-matched hook gives every block a keep-or-drop judgment from
+  Jev in one batched request (~150 ms) and injects the kept blocks as context —
+  as they were written, not paraphrased. The built-in summary still runs; this
+  adds back what it would have lost. Dropped-by-mistake is the costly failure,
+  so a block Jev couldn't score is kept.
 - **`/jev:stats`** — scores the hints it already gave. The hook logs every
   decision, including the ones it suppressed; this finds each prompt in its
   session transcript and compares the hint to what the session then did.
@@ -65,7 +65,6 @@ Requires `python3` (stdlib only, no pip installs).
 | `JEV_COMPACT_CHUNK` | `20` | questions per API call; chunks run in parallel |
 | `JEV_COMPACT_BLOCK_CHARS` | `1200` | chars of each block shown to Jev |
 | `JEV_COMPACT_KEEP_CHARS` | `1500` | chars of each kept block in the digest |
-| `JEV_COMPACT_DIR` | `~/.claude/jev-compact` | where digests wait for `SessionStart` |
 | `JEV_COMPACT_LOG` | `~/.claude/jev-compact-log.jsonl` | per-compaction stats; `0` disables |
 
 ## Does it work?
@@ -126,12 +125,12 @@ did say, against sessions you actually ran.
 - All routing logic lives in `scripts/prompt_router.py`; question definitions
   in `scripts/jev.py::intent_bundle`. If you edit either, re-run `eval/` —
   the shipped bundle is meant to stay identical to the measured one.
-- `scripts/compactor.py` serves both compaction hooks because `PreCompact`
-  output is discarded — selection happens there, and `SessionStart`
-  (`source=compact`) is the only post-compaction event that can inject context.
-  Digests are per-session files with a 15-minute TTL, so a stale one can't leak
-  into the wrong session.
-- The compactor never replaces Claude Code's summary — it can't. What it
-  removes is reliance on the summary alone: anything Jev kept survives verbatim
-  on top of it. Sidechains, slash-command echoes, and one-word acks are
-  filtered locally before Jev sees anything.
+- The compactor is one `SessionStart` hook, not a `/compact` replacement:
+  built-in commands can't be invoked programmatically (the Skill tool excludes
+  `/compact`), a command can't cover auto-compaction, and `SessionStart` with
+  the `compact` matcher is the only post-compaction event that can inject
+  context — `PreCompact`/`PostCompact` output is discarded. The generated
+  summary still runs; Jev's keep-list lands on top of it, verbatim.
+- Sidechains, slash-command echoes, and one-word acks are filtered locally
+  before Jev sees anything; blocks after the last compact boundary are
+  excluded, so the new summary can't talk itself into being kept.
