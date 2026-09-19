@@ -16,8 +16,8 @@ Show the output, then answer three things in a few sentences:
    either way.
 2. Are there harmful hints — cases where it said "no tools" and the session
    then used five or more? Any at all is worth naming.
-3. If suppressed hints would have been correct, say so: `JEV_MIN_CONFIDENCE`
-   may be set too high.
+3. If suppressed hints would have been correct, say so: the confidence
+   floor in `scripts/prompt_router.py` may be set too high.
 
 Do not re-run the classifier or edit anything. This reports on decisions
 already made.

@@ -89,7 +89,7 @@ def match(entries: list[dict]) -> list[dict]:
 
 def main() -> int:
     p = argparse.ArgumentParser(prog="jev-stats", description=__doc__.splitlines()[0])
-    p.add_argument("--log", default=os.environ.get("JEV_LOG") or DEFAULT_LOG)
+    p.add_argument("--log", default=DEFAULT_LOG)
     p.add_argument("--days", type=int, help="only decisions from the last N days")
     p.add_argument("--examples", type=int, default=0, help="show N mismatches")
     args = p.parse_args()

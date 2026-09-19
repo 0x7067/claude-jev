@@ -14,11 +14,6 @@ requires a near-certain yes/no answer rather than the intent choice alone.
 
 Env:
   TYPESAFE_API_KEY / TYPESAFE_AI_KEY   required (else silently disabled)
-  JEV_OFF=1                            disable the hook
-  JEV_MIN_CONFIDENCE                   intent confidence floor (default 0.75)
-  JEV_MAX_QUIET                        no-tools gate (default 0.10)
-  JEV_LOG                              decision log path, or 0 to disable
-  JEV_MODEL, JEV_TIMEOUT               forwarded to jev.py
 """
 
 import json
@@ -28,9 +23,9 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import jev  # noqa: E402
 
-MIN_CONFIDENCE = float(os.environ.get("JEV_MIN_CONFIDENCE", "0.75"))
+MIN_CONFIDENCE = 0.75
 DEFAULT_LOG = os.path.expanduser("~/.claude/jev-router-log.jsonl")
-MAX_QUIET = float(os.environ.get("JEV_MAX_QUIET", "0.10"))
+MAX_QUIET = 0.10
 CONTEXT_LINES = 400
 
 GUIDANCE = {
@@ -131,12 +126,9 @@ def log_decision(event: dict, answers: dict, hint: str | None) -> None:
     """Record what was predicted so a later eval can score it against what the
     session actually did. Joins to the transcript by session id and timestamp.
     """
-    path = os.environ.get("JEV_LOG", DEFAULT_LOG)
-    if path == "0":
-        return
     try:
         import datetime
-        with open(path, "a") as f:
+        with open(DEFAULT_LOG, "a") as f:
             f.write(json.dumps({
                 "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "session_id": event.get("session_id"),
@@ -151,8 +143,6 @@ def log_decision(event: dict, answers: dict, hint: str | None) -> None:
 
 def main() -> None:
     try:
-        if os.environ.get("JEV_OFF"):
-            return
         event = json.load(sys.stdin)
         prompt = (event.get("prompt") or "").strip()
         # Skip slash commands, #-memorize lines, and near-empty prompts.

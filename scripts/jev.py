@@ -7,8 +7,6 @@ instead of reasoning through them with generated text.
 
 Env:
   TYPESAFE_API_KEY or TYPESAFE_AI_KEY   API key (required)
-  JEV_MODEL                           model id (default: jev-latest)
-  JEV_TIMEOUT                         HTTP timeout seconds (default: 8)
 """
 
 from __future__ import annotations
@@ -40,7 +38,7 @@ def ask(state, questions: dict, model: str | None = None, timeout: float | None 
     """Evaluate `questions` against `state`. Returns the `answers` map."""
     body = {
         "state": state,
-        "model": model or os.environ.get("JEV_MODEL", DEFAULT_MODEL),
+        "model": model or DEFAULT_MODEL,
         "questions": questions,
     }
     req = urllib.request.Request(
@@ -52,7 +50,7 @@ def ask(state, questions: dict, model: str | None = None, timeout: float | None 
         },
         method="POST",
     )
-    t = timeout if timeout is not None else float(os.environ.get("JEV_TIMEOUT", DEFAULT_TIMEOUT))
+    t = timeout if timeout is not None else DEFAULT_TIMEOUT
     try:
         with urllib.request.urlopen(req, timeout=t) as resp:
             payload = json.loads(resp.read().decode())
