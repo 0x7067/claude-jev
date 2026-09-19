@@ -1,0 +1,72 @@
+scripts/compactor.py
+  s_fe7f83b04adc78::t_cac4267df55bfe 83-97,115-116,119
+  s_fe7f83b04adc78::t_608342eeedc4ea 43-54
+scripts/jev.py
+  s_fe7f83b04adc78::t_e47221860ace1d 41
+  s_fe7f83b04adc78::t_c45b917f199718 53
+scripts/prompt_router.py
+  s_fe7f83b04adc78::t_ebbf9d6cb3f519 26,28
+  s_fe7f83b04adc78::t_da900858c48f7e 131
+eval/compare.py
+  s_fe7f83b04adc78::t_4ee87df4a297dd 326-328
+  s_fe7f83b04adc78::t_24d9f6584ee5df 276,291-292
+  s_fe7f83b04adc78::t_34232ec59c82dc 135-139
+  s_fe7f83b04adc78::t_f8df4c8330731f 18,24,27-28
+  s_fe7f83b04adc78::t_57e817e7d0a184 1-17,25-26,29-38,40,42-58,78-104,112,115-125,128,140-211,216-218,220-226,228,230-232,311-320,323,350,356,358-361,366-367,374-375,377-381,396,404-405,409,432-433,457-459,485,487-490,492-562,569-577
+  s_fe7f83b04adc78::t_ec4afd774d9c3c 60-61
+  s_fe7f83b04adc78::t_51f40d52a4fcd8 335-338
+  s_fe7f83b04adc78::t_8e467d2b111060 382-395
+  s_fe7f83b04adc78::t_549a028a47fc6d 462-463
+  s_fe7f83b04adc78::t_fb7a3f45ae122d 67-70
+  s_fe7f83b04adc78::t_92c3666c123349 212-215,219,227,229,233
+  s_fe7f83b04adc78::t_35e144e2d018cf 348-349,365,368
+  s_fe7f83b04adc78::t_5c6615e1b18da3 401
+  s_fe7f83b04adc78::t_82c45f9299918a 105-109
+  s_fe7f83b04adc78::t_84848d845db66e 563-568
+  s_fe7f83b04adc78::t_3b667aaff1e96f 62-65
+  s_fe7f83b04adc78::t_d5a579a2d4e1e5 321,324-325,329,331-334,339-347,357,362-364,369-373,376,397-400,402-403,406-408,410-415,417-431,434-456,460,464-466,468-470,472-484,486
+  s_fe7f83b04adc78::t_dd9e671381c998 234-271,277-278,281-284,289,294-296,298-310
+  s_fe7f83b04adc78::t_6d67bdbd0ea332 330
+  s_fe7f83b04adc78::t_7f512a15f39d4c 19-23
+  s_fe7f83b04adc78::t_e54d06953d4de1 351-355
+  s_fe7f83b04adc78::t_0f53e701a0e451 322
+  s_fe7f83b04adc78::t_26fe22ac1be4aa 471
+  s_fe7f83b04adc78::t_49591666f58f40 461
+  s_fe7f83b04adc78::t_7e50d67eda8453 272-275,279-280,285-288,290,293,297
+  s_fe7f83b04adc78::t_ab946607ebabff 467
+  s_fe7f83b04adc78::t_05858b97e82dee 59,66,71-77
+  s_fe7f83b04adc78::t_1999bf45c34447 39,41
+  s_fe7f83b04adc78::t_5001904a920e17 110-111,113-114,126-127,129-134
+  s_fe7f83b04adc78::t_d786477d21a487 491
+  s_fe7f83b04adc78::t_84b7962c2ac988 416
+eval/replay.py
+  s_fe7f83b04adc78::t_cc3306d79b8718 153
+  s_fe7f83b04adc78::t_01c80957b7cfb1 330
+README.md
+  s_fe7f83b04adc78::t_2ecacbc3c01748 116-120,122,126,128,130-142
+  s_fe7f83b04adc78::t_fef0c4e1702320 30-31
+  s_fe7f83b04adc78::t_aa4d62686d25ff 63-65
+  s_fe7f83b04adc78::t_88f4be41f09e3b 40-41
+  s_fe7f83b04adc78::t_245a6cce666042 107-114,121,124-125,129,143-153
+  s_fe7f83b04adc78::t_a1d59dc2b85f42 115,123,127
+commands/stats.md
+  s_fe7f83b04adc78::t_7e04e7fb47991b 19-20
+scripts/stats.py
+  s_fe7f83b04adc78::t_69608344b5bac7 92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e1aec179e5136fc751cc38cd87bac67a4d736605",
+  "prompts": {},
+  "sessions": {
+    "s_fe7f83b04adc78": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "skillful-grade",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
