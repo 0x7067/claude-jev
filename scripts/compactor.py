@@ -27,10 +27,22 @@ Env:
   JEV_COMPACT_KEEP                     noul threshold to keep a block (default 0.5)
   JEV_COMPACT_MAX_BLOCKS               max blocks judged per compaction (default 45;
                                        oldest beyond the cap are dropped unjudged)
+  JEV_COMPACT_PIN_TAIL                 newest blocks always kept verbatim, unjudged
+                                       (default 4 — the live working context)
   JEV_COMPACT_CHUNK                    questions per API call (default 20; chunks
                                        run in parallel)
   JEV_COMPACT_BLOCK_CHARS              chars of each block shown to Jev (default 1200)
   JEV_COMPACT_KEEP_CHARS               chars of each kept block (default 1500)
+  JEV_COMPACT_HEAD_CHARS               head retained on a truncated block
+                                       (default 400)
+  JEV_COMPACT_TARGET_CHARS             hard cap on digest size (default 40000);
+                                       over it, kept blocks downgrade to truncated
+                                       then drop, lowest confidence first — the
+                                       kept set can never grow without bound
+  JEV_COMPACT_MIN_REDUCTION            required size reduction or nothing is
+                                       applied (default 0.25 — compaction busts
+                                       the prompt cache, so a weak selection
+                                       must not ship)
   JEV_COMPACT_DIR                      digest dir (default ~/.claude/jev-compact)
   JEV_COMPACT_LOG                      stats log path, or 0 to disable
                                        (default ~/.claude/jev-compact-log.jsonl)
@@ -54,9 +66,13 @@ import jev  # noqa: E402
 
 KEEP_THRESHOLD = float(os.environ.get("JEV_COMPACT_KEEP", "0.5"))
 MAX_BLOCKS = int(os.environ.get("JEV_COMPACT_MAX_BLOCKS", "45"))
+PIN_TAIL = int(os.environ.get("JEV_COMPACT_PIN_TAIL", "4"))
 CHUNK = int(os.environ.get("JEV_COMPACT_CHUNK", "20"))
 BLOCK_CHARS = int(os.environ.get("JEV_COMPACT_BLOCK_CHARS", "1200"))
 KEEP_CHARS = int(os.environ.get("JEV_COMPACT_KEEP_CHARS", "1500"))
+HEAD_CHARS = int(os.environ.get("JEV_COMPACT_HEAD_CHARS", "400"))
+TARGET_CHARS = int(os.environ.get("JEV_COMPACT_TARGET_CHARS", "40000"))
+MIN_REDUCTION = float(os.environ.get("JEV_COMPACT_MIN_REDUCTION", "0.25"))
 DIGEST_DIR = os.path.expanduser(os.environ.get("JEV_COMPACT_DIR", "~/.claude/jev-compact"))
 STATS_LOG = os.environ.get("JEV_COMPACT_LOG", os.path.expanduser("~/.claude/jev-compact-log.jsonl"))
 PROJECTS = os.path.expanduser("~/.claude/projects")
@@ -124,14 +140,21 @@ def compact_state(blocks: list[dict], cwd: str | None) -> str:
     ]
     if cwd:
         header.append(f"Working directory: {cwd}")
+    goal = "\n".join(b["text"][:300] for b in blocks if b["role"] == "user")[-1500:]
+    if goal.strip():
+        header.append(f"Most recent user requests:\n{goal}")
     body = "\n\n".join(f"[{i}] [{b['role']}] {b['text'][:BLOCK_CHARS]}"
                        for i, b in enumerate(blocks))
     return "\n".join(header) + "\n\n" + body
 
 
 def keep_questions(n: int) -> dict:
-    return {
-        f"keep_{i}": {
+    """Two judgments per block: whether it is still needed at all, and
+    whether it is needed verbatim — a `no` on the second means a truncated
+    head plus a pointer suffices, which is where most of the bulk is."""
+    questions = {}
+    for i in range(n):
+        questions[f"keep_{i}"] = {
             "type": "noul",
             "instructions": f"If this session's history were compacted, would block [{i}] "
                             "(marked [{i}] in the state) still be needed to continue the work — "
@@ -139,8 +162,14 @@ def keep_questions(n: int) -> dict:
                             "agent would otherwise lose? Answer yes only for lasting information "
                             "value, not for politeness or because it is recent.",
         }
-        for i in range(n)
-    }
+        questions[f"full_{i}"] = {
+            "type": "noul",
+            "instructions": f"Does the agent need block [{i}] in full, verbatim? Answer no if "
+                            "knowing the block happened plus its opening lines is enough — e.g. "
+                            "a file read or command whose output the agent could re-run, versus "
+                            "an exact error message or constraint it could not reconstruct.",
+        }
+    return questions
 
 
 def ask_chunked(state: str, n: int) -> dict:
@@ -149,7 +178,7 @@ def ask_chunked(state: str, n: int) -> dict:
     questions = keep_questions(n)
     keys = list(questions)
     chunks = [dict((k, questions[k]) for k in keys[i:i + CHUNK])
-              for i in range(0, n, CHUNK)]
+              for i in range(0, len(keys), CHUNK)]
     if len(chunks) == 1:
         return jev.ask(state, chunks[0])
     answers: dict = {}
@@ -159,23 +188,88 @@ def ask_chunked(state: str, n: int) -> dict:
     return answers
 
 
+def truncate_block(text: str) -> str:
+    """Head of a kept block plus a pointer, instead of its full text — the
+    block is visibly still there and the agent can re-read or re-run it."""
+    text = text[:KEEP_CHARS]
+    if len(text) <= HEAD_CHARS + 200:
+        return text
+    return (f"{text[:HEAD_CHARS]}\n[… {len(text) - HEAD_CHARS} chars elided by "
+            "jev-compact — re-read the file or re-run the command if needed]")
+
+
+def fit_kept(kept: list[dict]) -> list[dict]:
+    """Hard cap on the digest so the kept set can't grow without bound over
+    a long session. No extra Jev calls: downgrade the lowest-confidence full
+    keeps to truncated heads first, then drop the weakest truncated blocks
+    oldest-first. Pinned tail blocks are exempt — that is the live context."""
+    total = sum(len(k["text"]) for k in kept)
+    if total <= TARGET_CHARS:
+        return kept
+    downgradable = sorted(
+        (k for k in kept if k["kind"] == "full"),
+        key=lambda k: k["full"],
+    )
+    for k in downgradable:
+        if total <= TARGET_CHARS:
+            break
+        shorter = truncate_block(k["text"])
+        total -= len(k["text"]) - len(shorter)
+        k["text"], k["kind"] = shorter, "truncated"
+        k["escalated"] = True
+    droppable = sorted(
+        (k for k in kept if k["kind"] == "truncated"),
+        key=lambda k: k["keep"],
+    )
+    for k in droppable:
+        if total <= TARGET_CHARS:
+            break
+        total -= len(k["text"])
+        k["kind"] = "dropped"
+        k["escalated"] = True
+    return [k for k in kept if k["kind"] != "dropped"]
+
+
 def judge(transcript_path: str, cwd: str | None) -> tuple[list[str], dict]:
-    """The whole selection pass: transcript -> Jev keep/drop -> kept text."""
+    """The whole selection pass: transcript -> Jev keep/truncate/drop ->
+    digest entries. The newest PIN_TAIL blocks are never judged."""
     blocks = transcript_blocks(transcript_path)[-MAX_BLOCKS:]
     if not blocks:
         return [], {"judged": 0}
+    n_judged = max(0, len(blocks) - PIN_TAIL)
     t0 = time.monotonic()
-    answers = ask_chunked(compact_state(blocks, cwd), len(blocks))
+    answers = ask_chunked(compact_state(blocks, cwd), n_judged) if n_judged else {}
     ms = int((time.monotonic() - t0) * 1000)
-    kept = []
+    kept: list[dict] = []
     for i, b in enumerate(blocks):
-        noul = (answers.get(f"keep_{i}") or {}).get("noul")
-        if noul is None or noul >= KEEP_THRESHOLD:  # unscored: keep, don't lose context
-            kept.append(b["text"][:KEEP_CHARS])
-    stats = {"judged": len(blocks), "kept": len(kept),
+        text = b["text"][:KEEP_CHARS]
+        if i >= n_judged:  # pinned tail — kept verbatim, unjudged
+            kept.append({"text": text, "kind": "full", "keep": 1.0, "full": 1.0})
+            continue
+        keep = (answers.get(f"keep_{i}") or {}).get("noul")
+        full = (answers.get(f"full_{i}") or {}).get("noul")
+        if keep is None or keep >= KEEP_THRESHOLD:
+            # unscored blocks stay whole — dropping by mistake is the costly failure
+            kind = "truncated" if keep is not None and full is not None \
+                and full < KEEP_THRESHOLD else "full"
+            kept.append({
+                "text": text if kind == "full" else truncate_block(text),
+                "kind": kind,
+                "keep": keep if keep is not None else 1.0,
+                "full": full if full is not None else 1.0,
+            })
+    kept = fit_kept(kept)
+    stats = {"judged": n_judged, "pinned": len(blocks) - n_judged,
+             "kept": len(kept),
+             "truncated": sum(1 for k in kept if k["kind"] == "truncated"),
+             "escalated": sum(1 for k in kept if k.get("escalated")),
              "chars_before": sum(len(b["text"]) for b in blocks),
-             "chars_after": sum(len(t) for t in kept), "ms": ms}
-    return kept, stats
+             "chars_after": sum(len(k["text"]) for k in kept), "ms": ms}
+    stats["est_tokens_before"] = stats["chars_before"] // 4
+    stats["est_tokens_after"] = stats["chars_after"] // 4
+    stats["reduction"] = round(
+        1 - stats["chars_after"] / max(stats["chars_before"], 1), 3)
+    return [k["text"] for k in kept], stats
 
 
 def log_stats(event: dict, stats: dict) -> None:
@@ -218,13 +312,23 @@ def prepare(cwd: str, transcript_path: str | None) -> int:
     if not kept:
         print("jev-compact: nothing worth keeping — just /clear")
         return 0
+    if stats.get("reduction", 0) < MIN_REDUCTION:
+        # Compaction replaces the prompt prefix — every later request re-reads
+        # the digest uncached. A weak selection does not pay for that.
+        log_stats({"session_id": os.path.basename(transcript_path)},
+                  {**stats, "gated": True})
+        print(f"jev-compact: only {stats['reduction']:.0%} smaller — not worth "
+              "rebuilding the context uncached. Skipping; let the session "
+              "continue, or use the built-in /compact.")
+        return 0
     os.makedirs(DIGEST_DIR, exist_ok=True)
     with open(digest_path(cwd), "w", encoding="utf-8") as f:
         f.write("\n\n---\n\n".join(kept))
     log_stats({"session_id": os.path.basename(transcript_path)}, stats)
-    pct = 100 - round(100 * stats["chars_after"] / max(stats["chars_before"], 1))
-    print(f"jev-compact: kept {stats['kept']}/{stats['judged']} blocks "
-          f"({pct}% smaller, {stats['ms']}ms). Run /clear to apply — "
+    trunc = f", {stats['truncated']} truncated" if stats.get("truncated") else ""
+    print(f"jev-compact: kept {stats['kept']}/{stats['judged'] + stats.get('pinned', 0)} blocks"
+          f"{trunc} ({stats['reduction']:.0%} smaller, ~{stats['est_tokens_after']} "
+          f"uncached tokens, {stats['ms']}ms). Run /clear to apply — "
           f"the kept context is injected on session start.")
     return 0
 
@@ -272,8 +376,11 @@ def hook(event: dict) -> None:
                          "# Jev-compacted context\n\n" + digest)
     elif source == "compact":
         kept, stats = judge(event.get("transcript_path") or "", event.get("cwd"))
-        log_stats(event, stats)
-        if kept:
+        weak = stats.get("reduction", 0) < MIN_REDUCTION
+        log_stats(event, {**stats, "gated": weak})
+        if kept and not weak:
+            # The built-in summary already busted the cache for this turn;
+            # only append Jev's selection when it earned the extra tokens.
             emit_context("# Context Jev kept from before compaction\n\n"
                          + "\n\n---\n\n".join(kept))
 
