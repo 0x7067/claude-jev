@@ -1,7 +1,7 @@
 {
   "name": "claude-jev",
-  "version": "0.2.0",
-  "description": "Classifies each prompt with TypeSafe's Jev and injects a one-line routing hint, shaped by an eval over 1,613 real prompts.",
+  "version": "0.3.0",
+  "description": "Classifies each prompt with TypeSafe's Jev and injects a one-line routing hint, shaped by an eval over 1,613 real prompts. On compaction, Jev picks which transcript blocks still matter and re-injects them verbatim.",
   "author": {
     "name": "0x7067"
   },
@@ -11,6 +11,7 @@
     "system-one",
     "routing",
     "intent",
+    "compaction",
     "token-savings"
   ],
   "license": "MIT"
