@@ -36,21 +36,24 @@ GUIDANCE = {
     "ops": "Likely a command/build/git task — run it and report the output.",
 }
 
+TIER_ORDER = ["haiku", "sonnet", "opus"]
 
-def conversation_tail(transcript_path: str, prompt: str) -> tuple[str, str]:
-    """Last user message and last assistant reply, for follow-up prompts.
 
-    Returns empty strings for anything unreadable — context is an improvement,
-    not a requirement.
+def conversation_tail(transcript_path: str, prompt: str) -> tuple[str, str, str | None]:
+    """Last user message, last assistant reply, and the model it ran on.
+
+    Returns empty strings / None for anything unreadable — context is an
+    improvement, not a requirement.
     """
     prev_user = prev_assistant = ""
+    model = None
     try:
         with open(transcript_path, errors="replace") as f:
             lines = f.readlines()[-CONTEXT_LINES:]
     except OSError:
-        return "", ""
+        return "", "", None
     for line in reversed(lines):
-        if prev_user and prev_assistant:
+        if prev_user and prev_assistant and model:
             break
         if len(line) > 500_000:
             continue
@@ -71,18 +74,20 @@ def conversation_tail(transcript_path: str, prompt: str) -> tuple[str, str]:
             # The current prompt may already be appended; it is not context.
             if text and text != prompt and not text.startswith("<"):
                 prev_user = text
-        elif d.get("type") == "assistant" and not prev_assistant and isinstance(content, list):
-            text = "\n".join(b.get("text", "") for b in content
-                             if isinstance(b, dict) and b.get("type") == "text").strip()
-            if text:
-                prev_assistant = text
-    return prev_user, prev_assistant
+        elif d.get("type") == "assistant" and isinstance(content, list):
+            if model is None:
+                m = msg.get("model")
+                if isinstance(m, str):
+                    model = m
+            if not prev_assistant:
+                text = "\n".join(b.get("text", "") for b in content
+                                 if isinstance(b, dict) and b.get("type") == "text").strip()
+                if text:
+                    prev_assistant = text
+    return prev_user, prev_assistant, model
 
 
-def build_state(prompt: str, transcript_path: str | None) -> str:
-    if not transcript_path:
-        return prompt
-    prev_user, prev_assistant = conversation_tail(transcript_path, prompt)
+def build_state(prompt: str, prev_user: str, prev_assistant: str) -> str:
     if not prev_user and not prev_assistant:
         return prompt
     parts = []
@@ -92,6 +97,34 @@ def build_state(prompt: str, transcript_path: str | None) -> str:
         parts.append(f"Assistant's last reply (truncated): {prev_assistant[-600:]}")
     parts.append(f"Current user message: {prompt}")
     return "\n\n".join(parts)
+
+
+def tier_of(model_name: str | None) -> str | None:
+    if not model_name:
+        return None
+    low = model_name.lower()
+    for tier in TIER_ORDER:
+        if tier in low:
+            return tier
+    return None
+
+
+def tier_hint(answers: dict, model_now: str | None) -> str | None:
+    """Advisory only — a hook can't switch the model, so a mismatch is a
+    nudge to the user (systemMessage), not a command to the agent."""
+    t = answers.get("model_tier") or {}
+    choice, conf = t.get("choice"), t.get("confidence", 0.0)
+    if choice not in TIER_ORDER or conf < MIN_CONFIDENCE:
+        return None
+    current = tier_of(model_now)
+    if current == choice:
+        return None
+    line = f"[jev router] model={choice} conf={conf:.2f} — "
+    if current is None:
+        return line + f"this prompt looks like {choice} work"
+    if TIER_ORDER.index(choice) < TIER_ORDER.index(current):
+        return line + f"looks like {choice} work; you're on {current}"
+    return line + f"may want {choice} for this; you're on {current}"
 
 
 def decide(answers: dict) -> tuple[str | None, dict]:
@@ -122,7 +155,8 @@ def decide(answers: dict) -> tuple[str | None, dict]:
     return f"{line}\n{tip}", answers
 
 
-def log_decision(event: dict, answers: dict, hint: str | None) -> None:
+def log_decision(event: dict, answers: dict, hint: str | None,
+                 tier: str | None, model_now: str | None) -> None:
     """Record what was predicted so a later eval can score it against what the
     session actually did. Joins to the transcript by session id and timestamp.
     """
@@ -136,6 +170,8 @@ def log_decision(event: dict, answers: dict, hint: str | None) -> None:
                 "prompt": (event.get("prompt") or "")[:200],
                 "answers": answers,
                 "hint": hint,
+                "tier_hint": tier,
+                "model_now": model_now,
             }) + "\n")
     except OSError:
         pass
@@ -148,17 +184,25 @@ def main() -> None:
         # Skip slash commands, #-memorize lines, and near-empty prompts.
         if len(prompt) < 3 or prompt[0] in "/#":
             return
-        answers = jev.ask(build_state(prompt, event.get("transcript_path")),
+        tp = event.get("transcript_path")
+        prev_user, prev_assistant, model_now = "", "", None
+        if tp:
+            prev_user, prev_assistant, model_now = conversation_tail(tp, prompt)
+        answers = jev.ask(build_state(prompt, prev_user, prev_assistant),
                           jev.intent_bundle())
         ctx, _ = decide(answers)
-        log_decision(event, answers, ctx)
+        tier = tier_hint(answers, model_now)
+        log_decision(event, answers, ctx, tier, model_now)
+        out = {}
         if ctx:
-            json.dump({
-                "hookSpecificOutput": {
-                    "hookEventName": "UserPromptSubmit",
-                    "additionalContext": ctx,
-                }
-            }, sys.stdout)
+            out["hookSpecificOutput"] = {
+                "hookEventName": "UserPromptSubmit",
+                "additionalContext": ctx,
+            }
+        if tier:
+            out["systemMessage"] = tier
+        if out:
+            json.dump(out, sys.stdout)
             sys.stdout.write("\n")
     except Exception:
         return  # fail open
