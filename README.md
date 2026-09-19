@@ -25,6 +25,13 @@ judgments cheaper.
   transcript — a `systemMessage` nudge lands in the transcript ("looks like
   haiku work; you're on opus"). Advisory only: a hook can't switch the
   model, so the hint targets you, not the agent.
+- **`PreToolUse` hook (`Agent|Task`)** — the enforceable half. Before a
+  subagent spawns, Jev reads its prompt and picks the cheapest tier that can
+  do the job; `updatedInput` sets `model` on the call itself, so the
+  subagent actually starts on haiku/sonnet/opus instead of inheriting the
+  session model. A `model` the caller set explicitly always wins, and
+  permission rules still evaluate against the rewritten input. Below the
+  confidence floor the spawn goes through untouched.
 - **`jev` skill** — offload snap decisions to the bundled CLI: pick between
   options (`choose`), yes/no gates (`noul`), rubric scores (`score`), or
   batched raw questions (`ask`).
