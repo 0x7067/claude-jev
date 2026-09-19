@@ -131,6 +131,28 @@ def intent_bundle() -> dict:
     }
 
 
+def subagent_bundle() -> dict:
+    """The question PreToolUse asks before an Agent/Task spawn. Unlike the
+    prompt-level tier question this one decides the model outright, so the
+    phrasing is about delegated tasks, not user requests."""
+    return {
+        "model_tier": {
+            "type": "choice",
+            "instructions": "A coding assistant is delegating this task to a "
+                            "subagent. What is the cheapest Claude model tier "
+                            "the subagent needs to do it well?",
+            "criteria": {
+                "haiku": "Mechanical, bounded work — search, fetch, summarize, "
+                         "count, check; shallow reasoning over clear instructions",
+                "sonnet": "Ordinary coding work — focused edits, standard "
+                          "features, debugging with a clear signal",
+                "opus": "Hardest reasoning — ambiguous multi-file work, "
+                        "architecture, subtle bugs",
+            },
+        },
+    }
+
+
 def main() -> int:
     p = argparse.ArgumentParser(prog="jev", description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
