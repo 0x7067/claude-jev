@@ -188,13 +188,23 @@ def ask_chunked(state: str, n: int) -> dict:
     return answers
 
 
+def cut_text(text: str, chars: int) -> str:
+    """Cap at chars, preferring a paragraph break near the limit so kept
+    blocks don't end mid-word."""
+    if len(text) <= chars:
+        return text
+    cut = text.rfind("\n\n", chars // 2, chars)
+    return text[:cut] if cut > 0 else text[:chars]
+
+
 def truncate_block(text: str) -> str:
     """Head of a kept block plus a pointer, instead of its full text — the
     block is visibly still there and the agent can re-read or re-run it."""
-    text = text[:KEEP_CHARS]
+    text = cut_text(text, KEEP_CHARS)
     if len(text) <= HEAD_CHARS + 200:
         return text
-    return (f"{text[:HEAD_CHARS]}\n[… {len(text) - HEAD_CHARS} chars elided by "
+    head = cut_text(text, HEAD_CHARS)
+    return (f"{head}\n[… {len(text) - len(head)} chars elided by "
             "jev-compact — re-read the file or re-run the command if needed]")
 
 
@@ -242,9 +252,9 @@ def judge(transcript_path: str, cwd: str | None) -> tuple[list[str], dict]:
     ms = int((time.monotonic() - t0) * 1000)
     kept: list[dict] = []
     for i, b in enumerate(blocks):
-        text = b["text"][:KEEP_CHARS]
+        text = cut_text(b["text"], KEEP_CHARS)
         if i >= n_judged:  # pinned tail — kept verbatim, unjudged
-            kept.append({"text": text, "kind": "full", "keep": 1.0, "full": 1.0})
+            kept.append({"i": i, "text": text, "kind": "full", "keep": 1.0, "full": 1.0})
             continue
         keep = (answers.get(f"keep_{i}") or {}).get("noul")
         full = (answers.get(f"full_{i}") or {}).get("noul")
@@ -253,12 +263,26 @@ def judge(transcript_path: str, cwd: str | None) -> tuple[list[str], dict]:
             kind = "truncated" if keep is not None and full is not None \
                 and full < KEEP_THRESHOLD else "full"
             kept.append({
+                "i": i,
                 "text": text if kind == "full" else truncate_block(text),
                 "kind": kind,
                 "keep": keep if keep is not None else 1.0,
                 "full": full if full is not None else 1.0,
             })
-    kept = fit_kept(kept)
+    # A kept tool_result without its tool_use is an orphan — pull the call in
+    # at the result's own confidence, or the digest loses the thread.
+    kept_idx = {k["i"] for k in kept}
+    paired: list[dict] = []
+    for k in kept:
+        i = k["i"]
+        if (k["text"].startswith("[tool_result]") and i > 0
+                and i - 1 not in kept_idx
+                and blocks[i - 1]["text"].startswith("[tool_use")):
+            paired.append({"i": i - 1, "text": cut_text(blocks[i - 1]["text"], KEEP_CHARS),
+                           "kind": "full", "keep": k["keep"], "full": k["full"]})
+            kept_idx.add(i - 1)
+        paired.append(k)
+    kept = fit_kept(paired)
     stats = {"judged": n_judged, "pinned": len(blocks) - n_judged,
              "kept": len(kept),
              "truncated": sum(1 for k in kept if k["kind"] == "truncated"),
@@ -310,7 +334,9 @@ def prepare(cwd: str, transcript_path: str | None) -> int:
         return 2
     kept, stats = judge(transcript_path, cwd)
     if not kept:
-        print("jev-compact: nothing worth keeping — just /clear")
+        # kept is empty only when the transcript yielded no usable blocks —
+        # there is nothing to select from, not a selection to apply.
+        print("jev-compact: nothing to compact — no usable blocks in the transcript")
         return 0
     if stats.get("reduction", 0) < MIN_REDUCTION:
         # Compaction replaces the prompt prefix — every later request re-reads
