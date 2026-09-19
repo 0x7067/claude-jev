@@ -3,8 +3,9 @@
 A Claude Code plugin that hands the small judgments in a session to
 [TypeSafe's Jev](https://docs.typesafe.ai/introduction), a System One model
 that returns typed judgments instead of generating text. Per prompt it asks
-three questions — what kind of request is this, how big is it, does it need
-tools — and on compaction a fourth: which transcript blocks still matter.
+four questions — what kind of request is this, how big is it, does it need
+tools, which model tier does it deserve — and on compaction a fifth: which
+transcript blocks still matter.
 The kept blocks survive verbatim; nothing is summarized by another LLM.
 
 Not a coding-agent replacement: it doesn't write code, it makes the small
@@ -18,7 +19,12 @@ judgments cheaper.
   follow-ups. `lookup` → one targeted search; `fix` → focused edit + narrow
   verification; `feature` → brief plan first; `ops` → run it and report.
   Below 0.75 confidence, no hint. The "answer directly, no tools" hint fires
-  only when a separate yes/no question is near-certain.
+  only when a separate yes/no question is near-certain. The same call also
+  asks Jev which model tier the prompt deserves (haiku / sonnet / opus); on
+  a confident mismatch with the model you're running — read from the
+  transcript — a `systemMessage` nudge lands in the transcript ("looks like
+  haiku work; you're on opus"). Advisory only: a hook can't switch the
+  model, so the hint targets you, not the agent.
 - **`jev` skill** — offload snap decisions to the bundled CLI: pick between
   options (`choose`), yes/no gates (`noul`), rubric scores (`score`), or
   batched raw questions (`ask`).
@@ -41,7 +47,9 @@ judgments cheaper.
   prompt for no win.
 - **`/jev:stats`** — scores the hints it already gave. The hook logs every
   decision, including the ones it suppressed, then finds each prompt in its
-  session transcript and compares the hint to what the session did.
+  session transcript and compares the hint to what the session did. Also
+  reports the predicted model-tier distribution and how many mismatch hints
+  were shown.
 
 ## Setup
 
@@ -89,12 +97,21 @@ and 22.0% against the derived ones. Read 34.6% as a floor, not an estimate.
 The hand labels live in `eval/audit_labels.json` keyed by record id —
 override any of them and re-score.
 
+`v8_tier` scores the model-tier question the same way: the proxy truth is
+the observed scale of the turn (substantial or feature → opus, trivial →
+haiku, else sonnet), and a "harmful" hint is one that said haiku on a turn
+that then churned through 5+ tool calls. `v8_shipped` re-scores intent on
+the shipped bundle to confirm adding the tier question didn't move it.
+Neither label measures capability — they measure whether the suggestion
+tracks the size of what actually happened.
+
 Reproduce on your own history:
 
 ```bash
 python3 eval/replay.py extract                     # your transcripts -> dataset
 python3 eval/replay.py run --variant v7_no_unclear # cached; re-runs are free
-python3 eval/replay.py report --variant v7_no_unclear --sweep
+python3 eval/replay.py run --variant v8_tier       # tier question, cache-shared with v8_shipped
+python3 eval/replay.py report --variant v8_tier --sweep
 python3 eval/replay.py compare
 ```
 
@@ -157,6 +174,10 @@ costs a session real work, which is why it stays near-certain-only.
   never blocks a prompt. Prompts go to `api.typesafe.ai` for
   classification; slash commands, `#` lines, and prompts under 3 chars are
   skipped locally.
+- **The tier nudge is advisory, not a switch.** Hooks can't change the
+  model a session is running, so the tier answer surfaces as a
+  `systemMessage` to you, and only on a confident mismatch with the model
+  the transcript last recorded.
 - **The taxonomy is what survived measurement.** The question bundle
   dropped `refactor`, `unclear`, and `needs_repo`: the first two never
   reached usable precision, and a hardcoded "yes" beat `needs_repo` by 18

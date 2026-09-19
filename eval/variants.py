@@ -41,6 +41,22 @@ NEEDS_REPO_Q = {
     "instructions": "Does fulfilling this request require reading files in the current repository?",
 }
 
+TIER_CRITERIA = {
+    "haiku": "Mechanical or conversational — chat, quick lookups, "
+             "renames, a single command",
+    "sonnet": "Ordinary coding work — focused edits, standard "
+              "features, debugging with a clear signal",
+    "opus": "Hardest reasoning — ambiguous multi-file work, "
+            "architecture, subtle bugs",
+}
+
+TIER_Q = {
+    "type": "choice",
+    "instructions": "What is the cheapest Claude model tier that would "
+                    "handle this request well?",
+    "criteria": TIER_CRITERIA,
+}
+
 
 def intent_bundle(refactor: bool = True, needs_repo: bool = True, unclear: bool = True) -> dict:
     crit = {k: v for k, v in INTENT_CRITERIA.items()
@@ -118,6 +134,18 @@ def truth_binary(rec: dict) -> str:
     return "tools" if rec["n_tools"] > 0 else "no_tools"
 
 
+def truth_tier(rec: dict) -> str:
+    """Proxy truth for model tier: the observed scale of the turn, mapped to
+    the cheapest tier that plausibly covers it. Same caveat as every label
+    here — it describes what the turn demanded, not what a model could have
+    done with less."""
+    if rec["scope_actual"] == "substantial" or rec["label"] == "feature":
+        return "opus"
+    if rec["scope_actual"] == "trivial":
+        return "haiku"
+    return "sonnet"
+
+
 # --- decision rules ---------------------------------------------------------
 
 def rule_intent(ans: dict, floor: float):
@@ -153,11 +181,13 @@ def rule_binary(ans: dict, floor: float):
     return ("tools" if p >= 0.5 else "no_tools", conf)
 
 
-def combined_bundle(unclear: bool = True) -> dict:
+def combined_bundle(unclear: bool = True, tier: bool = False) -> dict:
     """The shipping candidate: intent for the hint text, plus a dedicated
     yes/no question for the one call that is expensive to get wrong."""
     b = intent_bundle(refactor=False, needs_repo=False, unclear=unclear)
     b["needs_tools"] = binary_bundle()["needs_tools"]
+    if tier:
+        b["model_tier"] = TIER_Q
     return b
 
 
@@ -169,6 +199,12 @@ def rule_combined(ans: dict, floor: float):
         return ("chat", 1.0 - nt)
     c, conf = rule_intent(ans, floor)
     return (None, conf) if c == "chat" else (c, conf)
+
+
+def rule_tier(ans: dict, floor: float):
+    a = ans.get("model_tier") or {}
+    c, conf = a.get("choice"), a.get("confidence", 0.0)
+    return (c, conf) if c in TIER_CRITERIA and conf >= floor else (None, conf)
 
 
 # --- registry ---------------------------------------------------------------
@@ -222,6 +258,14 @@ VARIANTS = {
         "v7_no_unclear", "v6 minus the unclear class, which never earns its precision",
         combined_bundle(unclear=False), state_ctx, rule_combined, truth_intent,
         [i for i in INTENTS if i not in ("refactor", "unclear")], "chat"),
+    "v8_shipped": Variant(
+        "v8_shipped", "shipped bundle with model_tier — does intent still hold?",
+        combined_bundle(unclear=False, tier=True), state_ctx, rule_combined, truth_intent,
+        [i for i in INTENTS if i not in ("refactor", "unclear")], "chat"),
+    "v8_tier": Variant(
+        "v8_tier", "advisory model tier vs observed scale; harmful = said haiku, turn churned",
+        combined_bundle(unclear=False, tier=True), state_ctx, rule_tier, truth_tier,
+        list(TIER_CRITERIA), "haiku"),
     "v5_binary": Variant(
         "v5_binary", "change 5b: one bit — does this need tools at all?",
         binary_bundle(), state_ctx, rule_binary, truth_binary, ["no_tools", "tools"], "no_tools"),

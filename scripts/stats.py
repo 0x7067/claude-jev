@@ -134,6 +134,14 @@ def main() -> int:
         print(f"\n{len(quiet_missed)} suppressed hints would have been correct — "
               f"the floor may be too high.")
 
+    tiered = [e for e in entries if (e.get("answers") or {}).get("model_tier")]
+    if tiered:
+        dist = collections.Counter(
+            ((e["answers"]["model_tier"] or {}).get("choice") or "?") for e in tiered)
+        shown = sum(1 for e in tiered if e.get("tier_hint"))
+        print("\nModel tier (cheapest tier Jev thinks each prompt needs):")
+        print(f"  predicted: {dict(sorted(dist.items()))}   mismatch hints shown: {shown}")
+
     pred = collections.Counter(r["intent"] for r in scored)
     width = max(8, max(len(c) for c in set(list(counts) + list(pred))))
     print(f"\n  {'intent':<{width+2}}{'predicted':<12}{'observed':<10}")
