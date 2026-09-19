@@ -1,47 +1,47 @@
 # claude-jev
 
-A Claude Code plugin that hands three questions about every prompt — what kind
-of request is this, how big is it, does it need tools — to
-[TypeSafe's Jev](https://docs.typesafe.ai/introduction), a System One model that
-returns typed judgments instead of generating text. On compaction it hands Jev
-a fourth question — which blocks of the transcript still matter — and the
-kept ones survive verbatim; nothing is summarized by another LLM.
+A Claude Code plugin that hands the small judgments in a session to
+[TypeSafe's Jev](https://docs.typesafe.ai/introduction), a System One model
+that returns typed judgments instead of generating text. Per prompt it asks
+three questions — what kind of request is this, how big is it, does it need
+tools — and on compaction a fourth: which transcript blocks still matter.
+The kept blocks survive verbatim; nothing is summarized by another LLM.
 
-Not an agentic-coding replacement: it doesn't write code. It makes the small
+Not a coding-agent replacement: it doesn't write code, it makes the small
 judgments cheaper.
 
 ## What you get
 
-- **`UserPromptSubmit` hook** — each prompt is classified in one API call
-  (intent × scope × needs-tools) and a one-line routing hint is injected as
-  context. The previous turn goes into the classification, because most
-  prompts are follow-ups. `lookup` → one targeted search; `fix` → focused edit
-  + narrow verification; `feature` → brief plan first; `ops` → run it and
-  report. Below 0.75 confidence, no hint. The "answer directly, no tools" hint
-  fires only when a separate yes/no question is near-certain.
-- **`jev` skill** — teaches the agent to offload snap decisions to the bundled
-  CLI: choose between options (`choose`), yes/no gates (`noul`), rubric scores
-  (`score`), or batched raw questions (`ask`).
-- **`/jev:compact`** — the post-style path: Jev judges every transcript block
-  keep / truncate / drop in one batched request (~150 ms), writes the survivors
-  verbatim to a digest, and tells you to run `/clear`. A `SessionStart`
-  (`clear`) hook then rebuilds the session from *only* Jev's selection — no
-  generated summary anywhere in the loop. The digest has a hard size cap
-  (`JEV_COMPACT_TARGET_CHARS`), so the kept set can't grow without bound over
-  a long session.
-- **`SessionStart` (`compact`) hook** — the automatic path: when Claude Code's
-  own compaction runs (auto or manual `/compact`, which can't be replaced from
-  a hook), the same judgment re-injects the kept blocks verbatim on top of the
-  generated summary. Dropped-by-mistake is the costly failure, so a block Jev
-  couldn't score is kept.
-- **Cache discipline** — compaction replaces the prompt prefix, so every later
-  request re-reads the kept context uncached. The plugin therefore never
-  compacts proactively, and applies nothing when Jev's selection doesn't
-  shrink the transcript by at least `JEV_COMPACT_MIN_REDUCTION` (default
-  25%): a weak selection would pay a massive uncached prompt for no win.
+- **`UserPromptSubmit` hook** — classifies each prompt in one API call
+  (intent × scope × needs-tools) and injects a one-line routing hint. The
+  previous turn goes into the classification, because most prompts are
+  follow-ups. `lookup` → one targeted search; `fix` → focused edit + narrow
+  verification; `feature` → brief plan first; `ops` → run it and report.
+  Below 0.75 confidence, no hint. The "answer directly, no tools" hint fires
+  only when a separate yes/no question is near-certain.
+- **`jev` skill** — offload snap decisions to the bundled CLI: pick between
+  options (`choose`), yes/no gates (`noul`), rubric scores (`score`), or
+  batched raw questions (`ask`).
+- **`/jev:compact`** — the manual path. Jev judges every transcript block
+  keep / truncate / drop in one batched request (~1 s at the 45-block cap),
+  writes the survivors verbatim to a digest, and tells you to run `/clear`.
+  A `SessionStart` (`clear`) hook then rebuilds the session from only that
+  selection — no generated summary in the loop. The digest is hard-capped
+  (`JEV_COMPACT_TARGET_CHARS`), so the kept set can't grow without bound
+  over a long session.
+- **`SessionStart` (`compact`) hook** — the automatic path. Claude Code's
+  own compaction can't be replaced from a plugin, so when it runs — auto or
+  manual `/compact` — the same judgment re-injects the kept blocks verbatim
+  on top of its summary. Dropped-by-mistake is the costly failure, so a
+  block Jev couldn't score is kept.
+- **Cache discipline** — compaction replaces the prompt prefix, so every
+  later request re-reads the kept context uncached. The plugin never
+  compacts proactively, and applies nothing when the selection shrinks the
+  transcript by less than `JEV_COMPACT_MIN_REDUCTION` (default 25%): a weak
+  selection would pay a fresh uncached prompt for no win.
 - **`/jev:stats`** — scores the hints it already gave. The hook logs every
-  decision, including the ones it suppressed; this finds each prompt in its
-  session transcript and compares the hint to what the session then did.
+  decision, including the ones it suppressed, then finds each prompt in its
+  session transcript and compares the hint to what the session did.
 
 ## Setup
 
@@ -56,7 +56,7 @@ Set your key (either name works):
 export TYPESAFE_API_KEY="..."   # or TYPESAFE_AI_KEY
 ```
 
-Requires `python3` (stdlib only, no pip installs).
+Requires `python3`, stdlib only.
 
 ## Env vars
 
@@ -84,7 +84,7 @@ Requires `python3` (stdlib only, no pip installs).
 ## Does it work?
 
 `eval/` replays your own past sessions through the router and scores each
-prediction against what the agent actually did next. On 1,613 real prompts:
+prediction against what the agent did next. On 1,613 real prompts:
 
 | Variant | Coverage | Accuracy | Best constant guess | Lift | Harmful hints |
 |---|---|---|---|---|---|
@@ -97,16 +97,16 @@ prediction against what the agent actually did next. On 1,613 real prompts:
 | **v7 — shipped** | 42% | 34.6% | 29.3% | **+6.0** | **8** |
 
 A harmful hint tells the agent to skip work it then needed: a "no tools"
-routing hint followed by five or more tool calls.
+hint followed by five or more tool calls.
 
-Those labels are derived from transcripts, not written by hand, and they are
-noisy. On a blind sample of 120 prompts labeled by hand, the derived labels
-agreed 52.5% of the time; the shipped router scored 48.8% against the hand
-labels and 22.0% against the derived ones. Read 34.6% as a floor rather than an
-estimate. The hand labels are in `eval/audit_labels.json`, keyed by record id,
-so you can override any of them and re-score.
+The labels come from transcripts, not hand annotation, and they're noisy.
+On a blind sample of 120 hand-labeled prompts, the derived labels agreed
+52.5% of the time; the shipped router scored 48.8% against the hand labels
+and 22.0% against the derived ones. Read 34.6% as a floor, not an estimate.
+The hand labels live in `eval/audit_labels.json` keyed by record id —
+override any of them and re-score.
 
-Reproduce it on your own history:
+Reproduce on your own history:
 
 ```bash
 python3 eval/replay.py extract                     # your transcripts -> dataset
@@ -115,49 +115,49 @@ python3 eval/replay.py report --variant v7_no_unclear --sweep
 python3 eval/replay.py compare
 ```
 
-The run sends your past prompts to `api.typesafe.ai`. Start with `--sample 250`
-if that matters for your repos.
+The run sends your past prompts to `api.typesafe.ai` — start with
+`--sample 250` if that matters for your repos.
 
-Replay measures what the router *would* have said. `/jev:stats` measures what it
-did say, against sessions you actually ran.
+Replay measures what the router *would* have said. `/jev:stats` measures
+what it did say, on sessions you actually ran.
 
 ## Design notes
 
-- The hook **fails open**: any error, missing key, or timeout produces no
-  output and never blocks a prompt.
-- Prompts are sent to `api.typesafe.ai` for classification. Slash commands,
-  `#` lines, and prompts under 3 chars are skipped locally.
-- The question bundle dropped `refactor`, `unclear`, and `needs_repo`.
-  The first two never reached usable precision; a hardcoded "yes" beat
-  `needs_repo` by 18 points.
-- A smaller taxonomy scores higher and helps less. Collapsing to talk/read/act
-  reaches 58.8%, but always guessing "act" reaches 64.7% — the model is
-  reliable exactly where the default assumption already is.
-- `scripts/observed.py` decides what a past turn actually did — read, edit,
-  ops, nothing. Both the eval harness and `/jev:stats` score against it, so
-  changing it moves every number in this README.
-- All routing logic lives in `scripts/prompt_router.py`; question definitions
-  in `scripts/jev.py::intent_bundle`. If you edit either, re-run `eval/` —
+- **Fail open.** Any error, missing key, or timeout produces no output and
+  never blocks a prompt. Prompts go to `api.typesafe.ai` for
+  classification; slash commands, `#` lines, and prompts under 3 chars are
+  skipped locally.
+- **The taxonomy is what survived measurement.** The question bundle
+  dropped `refactor`, `unclear`, and `needs_repo`: the first two never
+  reached usable precision, and a hardcoded "yes" beat `needs_repo` by 18
+  points. A smaller taxonomy scores higher and helps less — collapsing to
+  talk/read/act reaches 58.8%, but always guessing "act" reaches 64.7%.
+  The model is reliable exactly where the default assumption already is.
+- **`scripts/observed.py` is the scorer.** It decides what a past turn
+  actually did — read, edit, ops, nothing — and both the eval harness and
+  `/jev:stats` score against it, so changing it moves every number above.
+  Routing logic lives in `scripts/prompt_router.py`, question definitions
+  in `scripts/jev.py::intent_bundle`. Edit either and re-run `eval/` —
   the shipped bundle is meant to stay identical to the measured one.
-- Claude Code's own compaction can't be replaced from a plugin: `/compact`
-  is excluded from the Skill tool, `PreCompact`/`PostCompact` output is
-  discarded, and `SessionStart` is the only post-compaction event that can
-  inject context. So the pure path composes `/clear` instead: `/jev:compact`
-  selects, `/clear` drops everything, the `clear`-matched hook restores the
-  selection. Digests are keyed by working directory with a 10-minute TTL, so
-  they only ever land in the session they were made for.
-- Sidechains, slash-command echoes, and one-word acks are filtered locally
-  before Jev sees anything.
-- Each block gets two `noul` judgments: *still needed at all* and *needed
+- **Built-in compaction can't be replaced, so the pure path composes
+  `/clear`.** `/compact` is excluded from the Skill tool and
+  `PreCompact`/`PostCompact` output is discarded; `SessionStart` is the
+  only post-compaction event that can inject context. So `/jev:compact`
+  selects, `/clear` drops everything, and the `clear`-matched hook
+  restores the selection. Digests are keyed by working directory with a
+  10-minute TTL — they only ever land in the session they were made for.
+- **Selection keeps bytes, not prose.** Sidechains, slash-command echoes,
+  and one-word acks are filtered before Jev sees anything. Each remaining
+  block gets two `noul` judgments — *still needed at all* and *needed
   verbatim*. A `no` on the second keeps a truncated head plus a re-read
-  pointer instead of the full text — most of the bulk lives in tool output
-  that can be re-fetched, while exact errors and constraints stay whole.
-- Kept blocks are always verbatim bytes, never reworded. The digest is
-  hard-capped (`TARGET_CHARS`) by deterministically downgrading the
-  lowest-confidence keeps — selection can shrink history but can never let
-  the compacted context grow without bound, which is the failure mode of
-  keeping user/assistant text forever.
-- Nothing runs per turn: there is no proactive compaction trigger, because
-  compaction's cost is a freshly-uncached prompt — it is only worth paying
-  when Claude Code already compacted or the user asked for it, and only
-  applied when the selection shrinks enough (`MIN_REDUCTION`) to cover it.
+  pointer: most of the bulk is tool output the agent can re-fetch, while
+  exact errors and constraints stay whole. A kept `tool_result` pulls its
+  `tool_use` in with it. Kept blocks are verbatim bytes, cut at paragraph
+  breaks, and the digest is hard-capped (`TARGET_CHARS`) by downgrading
+  the lowest-confidence keeps — selection can shrink history but can never
+  let the compacted context grow without bound, which is the failure mode
+  of keeping user/assistant text forever.
+- **Nothing runs per turn.** There is no proactive compaction trigger:
+  compaction's cost is a freshly-uncached prompt, worth paying only when
+  Claude Code already compacted or the user asked, and applied only when
+  the selection shrinks enough (`MIN_REDUCTION`) to cover it.
