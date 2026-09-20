@@ -114,25 +114,28 @@ def main() -> int:
     if unmatched:
         print(f"  not scorable   : {unmatched} (session transcript not found, or the turn "
               f"is still open)")
-    if not scored:
-        print("\nNothing scorable yet — come back after a few more sessions.")
-        return 0
-
-    ok = sum(1 for r in scored if r["intent"] == r["observed"])
     counts = collections.Counter(r["observed"] for r in scored)
-    best = counts.most_common(1)[0]
-    print(f"\nOf {len(scored)} scorable hints:")
-    print(f"  agreed with what the session did : {ok} ({100*ok/len(scored):.1f}%)")
-    print(f"  always guessing '{best[0]}' would give : {100*best[1]/len(scored):.1f}%")
+    pred = collections.Counter(r["intent"] for r in scored)
+    if scored:
+        ok = sum(1 for r in scored if r["intent"] == r["observed"])
+        best = counts.most_common(1)[0]
+        print(f"\nOf {len(scored)} scorable hints:")
+        print(f"  agreed with what the session did : {ok} ({100*ok/len(scored):.1f}%)")
+        print(f"  always guessing '{best[0]}' would give : "
+              f"{100*best[1]/len(scored):.1f}%")
 
-    harmful = [r for r in scored if r["intent"] == "chat" and (r["n_tools"] or 0) >= 5]
-    print(f"  said 'no tools', session used 5+  : {len(harmful)}")
+        harmful = [r for r in scored
+                   if r["intent"] == "chat" and (r["n_tools"] or 0) >= 5]
+        print(f"  said 'no tools', session used 5+  : {len(harmful)}")
 
-    quiet_missed = [r for r in rows
-                    if not r["fired"] and r["matched"] and r["observed"] == r["intent"]]
-    if quiet_missed:
-        print(f"\n{len(quiet_missed)} suppressed hints would have been correct — "
-              f"the floor may be too high.")
+        quiet_missed = [r for r in rows
+                        if not r["fired"] and r["matched"]
+                        and r["observed"] == r["intent"]]
+        if quiet_missed:
+            print(f"\n{len(quiet_missed)} suppressed hints would have been "
+                  f"correct — the floor may be too high.")
+    else:
+        print("\nNothing scorable yet — come back after a few more sessions.")
 
     tiered = [e for e in entries if (e.get("answers") or {}).get("model_tier")]
     if tiered:
@@ -142,11 +145,42 @@ def main() -> int:
         print("\nModel tier (cheapest tier Jev thinks each prompt needs):")
         print(f"  predicted: {dict(sorted(dist.items()))}   mismatch hints shown: {shown}")
 
-    pred = collections.Counter(r["intent"] for r in scored)
-    width = max(8, max(len(c) for c in set(list(counts) + list(pred))))
-    print(f"\n  {'intent':<{width+2}}{'predicted':<12}{'observed':<10}")
-    for c in sorted(set(list(pred) + list(counts))):
-        print(f"  {c:<{width+2}}{pred.get(c,0):<12}{counts.get(c,0):<10}")
+    rule_rows = [e for e in entries
+                 if e.get("kind") == "rules" and isinstance(e.get("probs"), dict)]
+    if rule_rows:
+        per_rule = collections.defaultdict(list)
+        for e in rule_rows:
+            for rid, p in e["probs"].items():
+                if isinstance(p, (int, float)):
+                    per_rule[rid].append(p)
+        print(f"\nRule calibration ({len(rule_rows)} checks logged):")
+        print(f"  {'rule':<34}{'checks':>7}{'median':>8}{'min':>6}{'max':>6}"
+              f"{'fired':>7}  verdict")
+        for rid, ps in sorted(per_rule.items()):
+            n = len(ps)
+            ordered = sorted(ps)
+            med = ordered[n // 2] if n % 2 else (ordered[n // 2 - 1]
+                                                 + ordered[n // 2]) / 2
+            fired_n = sum(1 for p in ps if p >= 0.80)
+            # abide's calibration bands: <5 samples can't be judged; firing
+            # on most hunks means too broad; never reaching the ends means
+            # underspecified; decisive rules answer near 0 or near 1.
+            if n < 5:
+                verdict = "skipped (need 5)"
+            elif fired_n / n >= 0.6:
+                verdict = "noisy — fires on most edits; narrow it"
+            elif max(ps) < 0.7 and med >= 0.25:
+                verdict = "weak — sits in the middle; make it concrete"
+            else:
+                verdict = "decisive"
+            print(f"  {rid:<34}{n:>7}{med:>8.2f}{min(ps):>6.2f}"
+                  f"{max(ps):>6.2f}{fired_n:>7}  {verdict}")
+
+    if scored:
+        width = max(8, max(len(c) for c in set(list(counts) + list(pred))))
+        print(f"\n  {'intent':<{width+2}}{'predicted':<12}{'observed':<10}")
+        for c in sorted(set(list(pred) + list(counts))):
+            print(f"  {c:<{width+2}}{pred.get(c,0):<12}{counts.get(c,0):<10}")
 
     if args.examples:
         wrong = [r for r in scored if r["intent"] != r["observed"]][: args.examples]
