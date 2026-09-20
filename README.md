@@ -7,89 +7,87 @@ four questions — what kind of request is this, how big is it, does it need
 tools, which model tier does it deserve — and on compaction a fifth: which
 transcript blocks still matter.
 The kept blocks survive verbatim; nothing is summarized by another LLM.
+It doesn't write code. It makes the small judgments cheaper.
 
-Not a coding-agent replacement: it doesn't write code, it makes the small
-judgments cheaper.
-
-## What you get
+## What it does
 
 - **`UserPromptSubmit` hook** — classifies each prompt in one API call
   (intent × scope × needs-tools) and injects a one-line routing hint. The
   previous turn goes into the classification, because most prompts are
-  follow-ups. `lookup` → one targeted search; `fix` → focused edit + narrow
-  verification; `feature` → brief plan first; `ops` → run it and report.
-  Below 0.75 confidence, no hint. The "answer directly, no tools" hint fires
-  only when a separate yes/no question is near-certain. The same call also
-  asks Jev which model tier the prompt deserves (haiku / sonnet / opus); on
-  a confident mismatch with the model you're running — read from the
-  transcript — a `systemMessage` nudge lands in the transcript ("looks like
+  follow-ups. `lookup` → one targeted search; `fix` → focused edit +
+  narrow verification; `feature` → brief plan first; `ops` → run it and
+  report. Below 0.75 confidence, no hint. The "answer directly, no tools"
+  hint fires only when a separate yes/no gate is near-certain, because
+  telling the agent to skip work it needed is the expensive miss. The same
+  call also asks which model tier the prompt deserves (haiku / sonnet /
+  opus); on a confident mismatch with the model you're running — read from
+  the transcript — a `systemMessage` nudge lands for you ("looks like
   haiku work; you're on opus"). Advisory only: a hook can't switch the
   model, so the hint targets you, not the agent.
-- **`PreToolUse` hook (`Agent|Task`)** — the enforceable half. Before a
-  subagent spawns, Jev reads its prompt and picks the cheapest tier that can
-  do the job; `updatedInput` sets `model` on the call itself, so the
-  subagent actually starts on haiku/sonnet/opus instead of inheriting the
-  session model. A `model` the caller set explicitly always wins, and
-  permission rules still evaluate against the rewritten input. Below the
-  confidence floor the spawn goes through untouched.
+- **`PreToolUse` hook (`Agent|Task`)** — the enforceable half of tier
+  routing. Before a subagent spawns, Jev reads its prompt and picks the
+  cheapest tier that can do it; `updatedInput` sets `model` on the call
+  itself, so the subagent starts on haiku/sonnet/opus instead of
+  inheriting the session model. A `model` the caller set explicitly always
+  wins, and permission rules still evaluate the rewritten input.
 - **`PostToolUse` hook (`Edit|Write|MultiEdit|NotebookEdit`)** — rules a
   linter can't express, enforced anyway. Rules come from a compiled rubric
   (`.claude/jev-rubric.json`, written by `/jev:rules-compile`) when one
   exists, else imperative lines parsed out of `CLAUDE.md`, `AGENTS.md`
-  (including nested ones, scoped to their directory), `.claude/rules/*`,
-  and `~/.claude/jev-rules.md`. Every edit is judged in one batched Jev
-  call — each rule is a typed question (boolean / choice / score) whose
-  answer maps to a violation probability. Only `model`-typed rules are
-  judged; `lint` rules name what a real linter owns and are never run or
-  sent to the model. The state Jev sees is the old→new hunk plus your last
-  prompt, so "don't touch generated files" means something. Verdicts are
-  banded: ≥0.80 blocks with the rule cited by id and line ("Repair
-  `logout.ts` now, then continue"), 0.50–0.80 becomes a user-only notice,
-  below stays silent. A rule can block the same file at most twice per
-  session — after that it only flags, because a repair that can't land is a
-  loop, not enforcement. Vendored/generated paths are never judged. No
-  rules, no judgment.
+  (nested ones included, scoped to their directory), `.claude/rules/*`,
+  and `~/.claude/jev-rules.md`. Every edit is judged in one batched call —
+  each rule is a typed question (boolean / choice / score) whose answer
+  maps to a violation probability. Only `model`-typed rules are judged;
+  `lint` rules name what a real linter owns and are never run or sent to
+  the model. The state is the old→new hunk plus your last prompt, so
+  "don't touch generated files" means something. Verdicts are banded:
+  ≥0.80 blocks with the rule cited by id and line ("Repair `logout.ts`
+  now, then continue"), 0.50–0.80 becomes a user-only notice, below stays
+  silent. A rule can block the same file at most twice per session — a
+  repair that can't land is a loop, not enforcement. Vendored/generated
+  paths are never judged. No rules, no judgment.
 - **`Stop` hook** — the turn half of rule enforcement. `when: "turn"`
   rubric rules judge the session's accumulated changes as a whole — the
   questions a per-edit hunk can't answer: scope creep, an abstraction with
   a single caller, a file that grew past its cap. Same bands, same loop
-  guard (2 blocks per session, and `stop_hook_active` prevents re-blocks).
+  guard (`stop_hook_active` plus two blocks per session).
 - **`/jev:rules-compile`** — turns your instruction files into the rubric.
   The agent reads `AGENTS.md`/`CLAUDE.md` (root and nested), rules files,
-  and `CONTRIBUTING.md`; extracts every statement that instructs; classifies
-  each as `model` / `lint` / `deferred` / `unenforceable`; writes a typed
-  question per model rule and picks `when` per rule; then
+  and `CONTRIBUTING.md`; extracts every statement that instructs;
+  classifies each as `model` / `lint` / `deferred` / `unenforceable`;
+  writes a typed question per model rule and picks `when` per rule; then
   `scripts/rubric.py --validate` fills source hashes and prints the bucket
-  table. The result is a committed, hand-editable file — editing a source
+  table. The result is committed and hand-editable — editing a source
   afterwards makes the rubric stale and the hook says so.
-- **`jev` skill** — offload snap decisions to the bundled CLI: pick between
-  options (`choose`), yes/no gates (`noul`), rubric scores (`score`), or
-  batched raw questions (`ask`).
-- **`/jev:compact`** — the manual path. Jev judges every transcript block
-  keep / truncate / drop in one batched request (~1 s at the 45-block cap),
-  writes the survivors verbatim to a digest, and tells you to run `/clear`.
-  A `SessionStart` (`clear`) hook then rebuilds the session from only that
-  selection — no generated summary in the loop. The digest is hard-capped
-  at 40k chars, so the kept set can't grow without bound over a long
-  session.
-- **`SessionStart` (`compact`) hook** — the automatic path. Claude Code's
-  own compaction can't be replaced from a plugin, so when it runs — auto or
-  manual `/compact` — the same judgment re-injects the kept blocks verbatim
-  on top of its summary. Dropped-by-mistake is the costly failure, so a
-  block Jev couldn't score is kept.
-- **Cache discipline** — compaction replaces the prompt prefix, so every
-  later request re-reads the kept context uncached. The plugin never
-  compacts proactively, and applies nothing when the selection shrinks the
-  transcript by less than 25%: a weak selection would pay a fresh uncached
-  prompt for no win.
+- **`jev` skill** — offload snap decisions to the bundled CLI: `choose`
+  between options, `noul` for yes/no gates, `score` on a rubric, `ask`
+  for batched raw questions.
 - **`/jev:stats`** — scores the hints it already gave. The hook logs every
-  decision, including the ones it suppressed, then finds each prompt in its
-  session transcript and compares the hint to what the session did. Also
-  reports the predicted model-tier distribution, how many mismatch hints
-  were shown, and a per-rule calibration table — each rule's checks,
-  median/min/max probability, fire count, and a verdict (decisive / weak /
-  noisy) so an underperforming rule can be rewritten or `status`-disabled
-  in the rubric instead of deleted.
+  decision, including the ones it suppressed, then finds each prompt in
+  its session transcript and compares the hint to what the session did.
+  Also reports the predicted model-tier distribution, and a per-rule
+  calibration table — each rule's checks, median/min/max probability, fire
+  count, and a verdict (decisive / weak / noisy) so an underperforming
+  rule can be rewritten or `status`-disabled instead of trusted.
+
+Compaction has two entry points and one mechanism. `/jev:compact` is the
+manual one: Jev judges every transcript block keep / truncate / drop in a
+single batched request (~1 s at the 45-block cap), writes the survivors
+verbatim to a digest, and the command tells you to run `/clear` — a
+`SessionStart` (`clear`) hook then rebuilds the session from only that
+selection. The automatic one fires when Claude Code's own compaction runs,
+auto or `/compact`, which a plugin can't replace: a `SessionStart`
+(`compact`) hook re-injects the kept blocks verbatim on top of the
+built-in summary. Either way no generated summary enters the loop, and a
+block Jev couldn't score is kept — dropped-by-mistake is the costly
+failure.
+
+Two limits keep this honest. The digest is hard-capped at 40k chars, so
+the kept set can't grow without bound over a long session. And compaction
+replaces the prompt prefix, so every later request re-reads the kept
+context uncached — the plugin never compacts proactively, and applies
+nothing when the selection shrinks the transcript by less than 25%: a
+weak selection would pay a fresh uncached prompt for no win.
 
 ## Setup
 
@@ -98,19 +96,10 @@ claude plugin marketplace add 0x7067/claude-jev
 claude plugin install claude-jev@claude-jev
 ```
 
-Set your key (either name works):
-
-```bash
-export TYPESAFE_API_KEY="..."   # or TYPESAFE_AI_KEY
-```
-
-Requires `python3`, stdlib only.
-
-## Env vars
-
-`TYPESAFE_API_KEY` (or `TYPESAFE_AI_KEY`) is the only one — required;
-without it the hooks silently disable. Every parameter the plugin uses is
-a constant in the source, tuned against the eval below.
+Set `TYPESAFE_API_KEY` (or `TYPESAFE_AI_KEY`) — the only env var, and
+required; without it the hooks silently disable. Every other parameter is
+a constant in the source, tuned against the eval below. Requires
+`python3`, stdlib only.
 
 ## Does it work?
 
@@ -230,13 +219,18 @@ costs a session real work, which is why it stays near-certain-only.
   Routing logic lives in `scripts/prompt_router.py`, question definitions
   in `scripts/jev.py::intent_bundle`. Edit either and re-run `eval/` —
   the shipped bundle is meant to stay identical to the measured one.
-- **Built-in compaction can't be replaced, so the pure path composes
-  `/clear`.** `/compact` is excluded from the Skill tool and
-  `PreCompact`/`PostCompact` output is discarded; `SessionStart` is the
-  only post-compaction event that can inject context. So `/jev:compact`
-  selects, `/clear` drops everything, and the `clear`-matched hook
-  restores the selection. Digests are keyed by working directory with a
-  10-minute TTL — they only ever land in the session they were made for.
+- **The rubric is the rules' trust surface.** `.claude/jev-rubric.json` is
+  committed and human-editable; every block or flag names a rule id and
+  its source line. A verdict that can't be traced to a rule a person can
+  point at is a bug. No default rules ship — rules come only from the
+  user's own instruction files.
+- **Why the manual path composes `/clear`.** `/compact` is excluded from
+  the Skill tool and `PreCompact`/`PostCompact` output is discarded;
+  `SessionStart` is the only post-compaction event that can inject
+  context. So `/jev:compact` selects, `/clear` drops everything, and the
+  `clear`-matched hook restores the selection. Digests are keyed by
+  working directory with a 10-minute TTL — they only ever land in the
+  session they were made for.
 - **Selection keeps bytes, not prose.** Sidechains, slash-command echoes,
   and one-word acks are filtered before Jev sees anything. Each remaining
   block gets two `noul` judgments — *still needed at all* and *needed
@@ -244,11 +238,10 @@ costs a session real work, which is why it stays near-certain-only.
   pointer: most of the bulk is tool output the agent can re-fetch, while
   exact errors and constraints stay whole. A kept `tool_result` pulls its
   `tool_use` in with it. Kept blocks are verbatim bytes, cut at paragraph
-  breaks, and the digest is hard-capped (`TARGET_CHARS`) by downgrading
-  the lowest-confidence keeps — selection can shrink history but can never
-  let the compacted context grow without bound, which is the failure mode
-  of keeping user/assistant text forever.
+  breaks; the 40k cap is enforced by downgrading the lowest-confidence
+  keeps, so selection can shrink history but can never let the compacted
+  context grow without bound — the failure mode of keeping user and
+  assistant text forever.
 - **Nothing runs per turn.** There is no proactive compaction trigger:
   compaction's cost is a freshly-uncached prompt, worth paying only when
-  Claude Code already compacted or the user asked, and applied only when
-  the selection shrinks enough (`MIN_REDUCTION`) to cover it.
+  Claude Code already compacted or the user asked.
