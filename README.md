@@ -3,8 +3,9 @@
 A Claude Code plugin that hands the small judgments in a session to
 [TypeSafe's Jev](https://docs.typesafe.ai/introduction), a System One model
 that returns typed judgments instead of generating text. Per prompt it asks
-three questions — what kind of request is this, how big is it, does it need
-tools — and on compaction a fourth: which transcript blocks still matter.
+four questions — what kind of request is this, how big is it, does it need
+tools, which model tier does it deserve — and on compaction a fifth: which
+transcript blocks still matter.
 The kept blocks survive verbatim; nothing is summarized by another LLM.
 It doesn't write code. It makes the small judgments cheaper.
 
@@ -17,13 +18,60 @@ It doesn't write code. It makes the small judgments cheaper.
   narrow verification; `feature` → brief plan first; `ops` → run it and
   report. Below 0.75 confidence, no hint. The "answer directly, no tools"
   hint fires only when a separate yes/no gate is near-certain, because
-  telling the agent to skip work it needed is the expensive miss.
+  telling the agent to skip work it needed is the expensive miss. The same
+  call also asks Jev which model tier the prompt deserves (haiku / sonnet / opus); on
+  a confident mismatch with the model you're running — read from the
+  transcript — a `systemMessage` nudge lands in the transcript ("looks like
+  haiku work; you're on opus"). Advisory only: a hook can't switch the
+  model, so the hint targets you, not the agent.
+- **`PreToolUse` hook (`Agent|Task`)** — the enforceable half. Before a
+  subagent spawns, Jev reads its prompt and picks the cheapest tier that can
+  do the job; `updatedInput` sets `model` on the call itself, so the
+  subagent actually starts on haiku/sonnet/opus instead of inheriting the
+  session model. A `model` the caller set explicitly always wins, and
+  permission rules still evaluate against the rewritten input. Below the
+  confidence floor the spawn goes through untouched.
+- **`PostToolUse` hook (`Edit|Write|MultiEdit|NotebookEdit`)** — rules a
+  linter can't express, enforced anyway. Rules come from a compiled rubric
+  (`.claude/jev-rubric.json`, written by `/jev:rules-compile`) when one
+  exists, else imperative lines parsed out of `CLAUDE.md`, `AGENTS.md`
+  (including nested ones, scoped to their directory), `.claude/rules/*`,
+  and `~/.claude/jev-rules.md`. Every edit is judged in one batched Jev
+  call — each rule is a typed question (boolean / choice / score) whose
+  answer maps to a violation probability. Only `model`-typed rules are
+  judged; `lint` rules name what a real linter owns and are never run or
+  sent to the model. The state Jev sees is the old→new hunk plus your last
+  prompt, so "don't touch generated files" means something. Verdicts are
+  banded: ≥0.80 blocks with the rule cited by id and line ("Repair
+  `logout.ts` now, then continue"), 0.50–0.80 becomes a user-only notice,
+  below stays silent. A rule can block the same file at most twice per
+  session — after that it only flags, because a repair that can't land is a
+  loop, not enforcement. Vendored/generated paths are never judged. No
+  rules, no judgment.
+- **`Stop` hook** — the turn half of rule enforcement. `when: "turn"`
+  rubric rules judge the session's accumulated changes as a whole — the
+  questions a per-edit hunk can't answer: scope creep, an abstraction with
+  a single caller, a file that grew past its cap. Same bands, same loop
+  guard (2 blocks per session, and `stop_hook_active` prevents re-blocks).
+- **`/jev:rules-compile`** — turns your instruction files into the rubric.
+  The agent reads `AGENTS.md`/`CLAUDE.md` (root and nested), rules files,
+  and `CONTRIBUTING.md`; extracts every statement that instructs; classifies
+  each as `model` / `lint` / `deferred` / `unenforceable`; writes a typed
+  question per model rule and picks `when` per rule; then
+  `scripts/rubric.py --validate` fills source hashes and prints the bucket
+  table. The result is a committed, hand-editable file — editing a source
+  afterwards makes the rubric stale and the hook says so.
 - **`jev` skill** — offload snap decisions to the bundled CLI: `choose`
   between options, `noul` for yes/no gates, `score` on a rubric, `ask`
   for batched raw questions.
 - **`/jev:stats`** — scores the hints it already gave. The hook logs every
   decision, including the ones it suppressed, then finds each prompt in
-  its session transcript and compares the hint to what the session did.
+  its session transcript and compares the hint to what the session did. Also
+  reports the predicted model-tier distribution, how many mismatch hints
+  were shown, and a per-rule calibration table — each rule's checks,
+  median/min/max probability, fire count, and a verdict (decisive / weak /
+  noisy) so an underperforming rule can be rewritten or `status`-disabled
+  in the rubric instead of deleted.
 
 Compaction has two entry points and one mechanism. `/jev:compact` is the
 manual one: Jev judges every transcript block keep / truncate / drop in a
@@ -81,12 +129,21 @@ and 22.0% against the derived ones. Read 34.6% as a floor, not an estimate.
 The hand labels live in `eval/audit_labels.json` keyed by record id —
 override any of them and re-score.
 
+`v8_tier` scores the model-tier question the same way: the proxy truth is
+the observed scale of the turn (substantial or feature → opus, trivial →
+haiku, else sonnet), and a "harmful" hint is one that said haiku on a turn
+that then churned through 5+ tool calls. `v8_shipped` re-scores intent on
+the shipped bundle to confirm adding the tier question didn't move it.
+Neither label measures capability — they measure whether the suggestion
+tracks the size of what actually happened.
+
 Reproduce on your own history:
 
 ```bash
 python3 eval/replay.py extract                     # your transcripts -> dataset
 python3 eval/replay.py run --variant v7_no_unclear # cached; re-runs are free
-python3 eval/replay.py report --variant v7_no_unclear --sweep
+python3 eval/replay.py run --variant v8_tier       # tier question, cache-shared with v8_shipped
+python3 eval/replay.py report --variant v8_tier --sweep
 python3 eval/replay.py compare
 ```
 
@@ -149,6 +206,10 @@ costs a session real work, which is why it stays near-certain-only.
   never blocks a prompt. Prompts go to `api.typesafe.ai` for
   classification; slash commands, `#` lines, and prompts under 3 chars are
   skipped locally.
+- **The tier nudge is advisory, not a switch.** Hooks can't change the
+  model a session is running, so the tier answer surfaces as a
+  `systemMessage` to you, and only on a confident mismatch with the model
+  the transcript last recorded.
 - **The taxonomy is what survived measurement.** The question bundle
   dropped `refactor`, `unclear`, and `needs_repo`: the first two never
   reached usable precision, and a hardcoded "yes" beat `needs_repo` by 18
