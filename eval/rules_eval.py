@@ -48,7 +48,7 @@ PRED = os.path.join(DATA, "rules_pred.jsonl")
 CACHE = os.path.join(DATA, "rules_cache.jsonl")
 PROJECTS = os.path.expanduser("~/.claude/projects")
 
-_lock = threading.Lock()
+_lock = threading.RLock()  # load_rules may call the cached ask while held
 
 
 # --- extract ---------------------------------------------------------------
