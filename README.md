@@ -34,14 +34,20 @@ It doesn't write code. It makes the small judgments cheaper.
 - **`PostToolUse` hook (`Edit|Write|MultiEdit|NotebookEdit`)** — rules a
   linter can't express, enforced anyway. Rules come from a compiled rubric
   (`.claude/jev-rubric.json`, written by `/jev:rules-compile`) when one
-  exists, else imperative lines parsed out of `CLAUDE.md`, `AGENTS.md`
-  (including nested ones, scoped to their directory), `.claude/rules/*`,
-  and `~/.claude/jev-rules.md`. Every edit is judged in one batched Jev
-  call — each rule is a typed question (boolean / choice / score) whose
+  exists; otherwise from `CLAUDE.md`, `AGENTS.md` (nested ones scoped to
+  their directory), `.claude/rules/*`, `~/.claude/CLAUDE.md` and
+  `~/.claude/jev-rules.md`. Each bullet or paragraph in those files is
+  judged once by Jev — is this an instruction to the agent, or a fact, a
+  directory map, a pointer? — and the verdict is cached by file hash, so
+  only instructions become questions. Every edit is judged in one batched
+  Jev call — each rule is a typed question (boolean / choice / score) whose
   answer maps to a violation probability. Only `model`-typed rules are
   judged; `lint` rules name what a real linter owns and are never run or
   sent to the model. The state Jev sees is the old→new hunk plus your last
-  prompt, so "don't touch generated files" means something. Verdicts are
+  prompt, so "don't touch generated files" means something. At most 40
+  questions per edit, chosen after scope filtering: rules written for the
+  edited path first, then the repo's own, then global ones, with rule files
+  taking turns so one long file can't crowd out the rest. Verdicts are
   banded: ≥0.80 blocks with the rule cited by id and line ("Repair
   `logout.ts` now, then continue"), 0.50–0.80 becomes a user-only notice,
   below stays silent. A rule can block the same file at most twice per
@@ -137,7 +143,34 @@ the shipped bundle to confirm adding the tier question didn't move it.
 Neither label measures capability — they measure whether the suggestion
 tracks the size of what actually happened.
 
-Reproduce on your own history:
+**Rule enforcement.** `eval/rules_eval.py` judges two corpora through the
+same `judge_edit` the hook calls. The first is every edit in your local
+transcripts — accepted at the time, so a block there is a false positive
+under the repo's current instruction files. The second is
+`eval/rules_cases.jsonl`: hand-written violations of the *real* rules in
+real local repos (a k3s GitOps repo, a Next.js/tRPC monorepo with
+`.claude/rules/*`, a Flue app, two smaller projects, and the user-level
+`CLAUDE.md`), each paired with a compliant near-miss. Nothing is written to
+those repos; the judge sees the exact PostToolUse payload.
+
+| | blocked (≥0.80) | blocked or flagged (≥0.50) |
+|---|---|---|
+| 25 violations | 24, all by the rule the case targets | 25 |
+| 16 compliant near-misses | 1 false block | 6 |
+| 128 real edits | 2 (1.6%) | 33 (25.8%) |
+
+Median 0.75 s per edit with a median of 32 questions. The one miss and the
+one false block are the same rule: a long paragraph that mixes a directory
+map with instructions scores 0.79 on the violation and 0.82 on the
+compliant edit. Rules that are one idea score near 0 or near 1.
+
+```bash
+python3 eval/rules_eval.py extract    # your transcripts -> real edits
+python3 eval/rules_eval.py run        # cases + real edits, cached
+python3 eval/rules_eval.py report
+```
+
+Reproduce the router numbers on your own history:
 
 ```bash
 python3 eval/replay.py extract                     # your transcripts -> dataset
