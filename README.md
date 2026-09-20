@@ -33,19 +33,35 @@ judgments cheaper.
   permission rules still evaluate against the rewritten input. Below the
   confidence floor the spawn goes through untouched.
 - **`PostToolUse` hook (`Edit|Write|MultiEdit|NotebookEdit`)** — rules a
-  linter can't express, enforced anyway. Every edit is judged in one batched
-  Jev call against the imperative rules parsed out of `CLAUDE.md`,
-  `AGENTS.md`, `.claude/rules/*` (with `paths:` front matter), and
-  `~/.claude/jev-rules.md` — each rule is a parallel `noul` ("does this edit
-  violate: …"). The state Jev sees is the old→new hunk plus your last
+  linter can't express, enforced anyway. Rules come from a compiled rubric
+  (`.claude/jev-rubric.json`, written by `/jev:rules-compile`) when one
+  exists, else imperative lines parsed out of `CLAUDE.md`, `AGENTS.md`
+  (including nested ones, scoped to their directory), `.claude/rules/*`,
+  and `~/.claude/jev-rules.md`. Every edit is judged in one batched Jev
+  call — each rule is a typed question (boolean / choice / score) whose
+  answer maps to a violation probability. Only `model`-typed rules are
+  judged; `lint` rules name what a real linter owns and are never run or
+  sent to the model. The state Jev sees is the old→new hunk plus your last
   prompt, so "don't touch generated files" means something. Verdicts are
-  banded: ≥0.80 blocks with the rule cited by file and line ("Repair
+  banded: ≥0.80 blocks with the rule cited by id and line ("Repair
   `logout.ts` now, then continue"), 0.50–0.80 becomes a user-only notice,
   below stays silent. A rule can block the same file at most twice per
   session — after that it only flags, because a repair that can't land is a
-  loop, not enforcement. Rules with `(scope: glob)` are only asked on
-  matching files, and vendored/generated paths are never judged. No rules
-  file, no judgment.
+  loop, not enforcement. Vendored/generated paths are never judged. No
+  rules, no judgment.
+- **`Stop` hook** — the turn half of rule enforcement. `when: "turn"`
+  rubric rules judge the session's accumulated changes as a whole — the
+  questions a per-edit hunk can't answer: scope creep, an abstraction with
+  a single caller, a file that grew past its cap. Same bands, same loop
+  guard (2 blocks per session, and `stop_hook_active` prevents re-blocks).
+- **`/jev:rules-compile`** — turns your instruction files into the rubric.
+  The agent reads `AGENTS.md`/`CLAUDE.md` (root and nested), rules files,
+  and `CONTRIBUTING.md`; extracts every statement that instructs; classifies
+  each as `model` / `lint` / `deferred` / `unenforceable`; writes a typed
+  question per model rule and picks `when` per rule; then
+  `scripts/rubric.py --validate` fills source hashes and prints the bucket
+  table. The result is a committed, hand-editable file — editing a source
+  afterwards makes the rubric stale and the hook says so.
 - **`jev` skill** — offload snap decisions to the bundled CLI: pick between
   options (`choose`), yes/no gates (`noul`), rubric scores (`score`), or
   batched raw questions (`ask`).
@@ -69,8 +85,11 @@ judgments cheaper.
 - **`/jev:stats`** — scores the hints it already gave. The hook logs every
   decision, including the ones it suppressed, then finds each prompt in its
   session transcript and compares the hint to what the session did. Also
-  reports the predicted model-tier distribution and how many mismatch hints
-  were shown.
+  reports the predicted model-tier distribution, how many mismatch hints
+  were shown, and a per-rule calibration table — each rule's checks,
+  median/min/max probability, fire count, and a verdict (decisive / weak /
+  noisy) so an underperforming rule can be rewritten or `status`-disabled
+  in the rubric instead of deleted.
 
 ## Setup
 
