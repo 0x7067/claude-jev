@@ -53,7 +53,9 @@ BLOCK_DIR = os.path.expanduser("~/.claude/jev-rule-blocks")
 
 RULE_FILES = ("CLAUDE.md", "AGENTS.md")
 RULE_DIRS = (".claude/rules", ".cursor/rules")
-GLOBAL_RULES = os.path.expanduser("~/.claude/jev-rules.md")
+GLOBAL_RULE_FILES = (os.path.expanduser("~/.claude/CLAUDE.md"),
+                     os.path.expanduser("~/.claude/jev-rules.md"))
+MAX_ITEM_CHARS = 600
 
 EXCLUDED = re.compile(r"(^|/)(node_modules|\.git|dist|build|\.next|coverage|"
                       r"\.claude|vendor|target)(/|$)|\.lock$|"
@@ -62,9 +64,26 @@ SKIP_DIRS = {"node_modules", ".git", "dist", "build", "out", ".next",
              "vendor", "coverage", ".turbo", ".cache", "target", ".claude"}
 
 BULLET = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+(.*)")
-HEADING = re.compile(r"^\s*#{1,4}\s+(.*)")
-IMPERATIVE = re.compile(r"\b(?:DO NOT|Do not|NEVER|Never|ALWAYS|Always|"
-                        r"MUST NOT|must not|MUST|must)\b")
+HEADING = re.compile(r"^\s*#{1,6}\s+")
+# An item is a rule only if it instructs. Two signals: a modal anywhere
+# ("never", "must", "do not"), or a sentence that opens with an imperative
+# verb. Facts ("`k8s/infra/` — operators", "TZ=America/Sao_Paulo") and doc
+# pointers carry neither, and they were most of what the old parser kept.
+MODAL = re.compile(r"\b(?:do not|don't|never|always|must(?: not)?|should(?: not)?|"
+                   r"is a defect|are a defect|not allowed|is required|are required|"
+                   r"only when|only if|no longer)\b", re.I)
+IMPERATIVE_VERBS = (
+    "use|prefer|avoid|keep|run|ban|set|follow|load|write|read|query|treat|"
+    "verify|add|put|get|delete|remove|search|track|pass|mock|declare|create|"
+    "name|match|trace|account|generate|stop|inspect|preserve|bound|update|"
+    "apply|record|start|delegate|fix|investigate|measure|compare|assume|mark|"
+    "annotate|work|make|ensure|require|check|test|document|reuse|extract|"
+    "return|report|ask|hand|rehearse|cover|bump|leave|do|include|exclude|"
+    "commit|push|install|import|export|define|wrap|split|migrate|scale|call|"
+    "open|close|send|store|save|log|print|handle|throw|catch|validate|reject|"
+    "accept|limit|cap|pin|rotate|back|grep|encrypt|decrypt|list|show|skip"
+)
+IMPERATIVE = re.compile(r"(?:^|[.:;!?\u2014\u2013-]\s+|^\*\*|\*\*\s*)(?:" + IMPERATIVE_VERBS + r")\b", re.I)
 NAMED = re.compile(r"^\*\*([\w-]+)\*\*:?\s*(.*)")
 SCOPE_TAIL = re.compile(r"\(scope:\s*([^)]+)\)\s*$")
 FRONT_MATTER = re.compile(r"^---\s*$")
@@ -122,10 +141,59 @@ def frontmatter_paths(lines: list[str]) -> list[str]:
     return paths
 
 
+def markdown_items(lines: list[str]) -> list[tuple[int, str]]:
+    """(line, text) per bullet or paragraph, with wrapped lines joined.
+    Instruction files wrap at ~80 columns, so a rule is rarely one line;
+    judging fragments produced mid-sentence "rules" and lost the rest.
+    Code fences, headings and front matter are skipped — examples and
+    titles are not rules."""
+    items: list[tuple[int, str]] = []
+    cur_line, cur = 0, []
+    in_fence = False
+    in_front = bool(lines) and bool(FRONT_MATTER.match(lines[0]))
+
+    def flush():
+        nonlocal cur
+        if cur:
+            items.append((cur_line, " ".join(x.strip() for x in cur)))
+        cur = []
+
+    for i, raw in enumerate(lines, 1):
+        line = raw.rstrip("\n")
+        if in_front:
+            if i > 1 and FRONT_MATTER.match(line):
+                in_front = False
+            continue
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            flush()
+            continue
+        if in_fence:
+            continue
+        if not line.strip() or HEADING.match(line) or line.lstrip().startswith("|"):
+            flush()
+            continue
+        m = BULLET.match(line)
+        if m:
+            flush()
+            cur_line, cur = i, [m.group(1)]
+        elif cur and (line.startswith((" ", "\t")) or not BULLET.match(cur[0])):
+            cur.append(line)
+        else:
+            flush()
+            cur_line, cur = i, [line]
+    flush()
+    return items
+
+
+def is_instruction(text: str) -> bool:
+    return bool(MODAL.search(text) or IMPERATIVE.search(text))
+
+
 def parse_rules(path: str, base_label: str | None = None,
                 file_scope: list[str] | None = None) -> list[dict]:
-    """Imperative rules from a markdown instruction file, each with its line
-    number for citation. Code fences are skipped — examples aren't rules."""
+    """Instructions from a markdown file, each with its line for citation.
+    Only items that tell the agent to do or not do something qualify."""
     rules = []
     try:
         with open(path, errors="replace") as f:
@@ -134,20 +202,13 @@ def parse_rules(path: str, base_label: str | None = None,
         return rules
     base = base_label or os.path.basename(path)
     scope0 = list(file_scope or []) + frontmatter_paths(lines)
-    in_fence = False
-    for i, raw in enumerate(lines, 1):
-        line = raw.strip()
-        if line.startswith("```"):
-            in_fence = not in_fence
-            continue
-        if in_fence or not line:
-            continue
-        m = BULLET.match(line)
-        text = m.group(1).strip() if m else None
-        if text is None and IMPERATIVE.search(line) and not HEADING.match(line):
-            text = line
-        if not text or len(text) < 20 or len(text) > 500:
-            continue
+    for line_no, text in markdown_items(lines):
+        text = text.strip()
+        if len(text) < 20 or text.endswith(":") or not is_instruction(text):
+            continue  # a trailing colon introduces a list; the items follow
+        if len(text) > MAX_ITEM_CHARS:
+            cut = text.rfind(". ", 0, MAX_ITEM_CHARS)
+            text = text[: cut + 1] if cut > 100 else text[:MAX_ITEM_CHARS]
         scope = list(scope0)
         sm = SCOPE_TAIL.search(text)
         if sm:
@@ -158,7 +219,7 @@ def parse_rules(path: str, base_label: str | None = None,
         if nm:
             name, text = nm.group(1), nm.group(2).strip() or text
         rules.append({"id": name or slug(text), "text": text,
-                      "file": base, "line": i, "scope": scope,
+                      "file": base, "line": line_no, "scope": scope,
                       "when": "edit", "check": {"type": "model"},
                       "status": "active"})
     return rules
@@ -166,7 +227,8 @@ def parse_rules(path: str, base_label: str | None = None,
 
 def nested_files(cwd: str) -> list[tuple[str, str]]:
     """(path, scope-glob) for AGENTS.md/CLAUDE.md below the root — abide's
-    convention: a nested instruction file governs its own tree."""
+    convention: a nested instruction file governs its own tree. Root files
+    are the caller's job."""
     out = []
     def walk(d: str, depth: int):
         if depth > MAX_NESTED_DEPTH:
@@ -175,18 +237,32 @@ def nested_files(cwd: str) -> list[tuple[str, str]]:
             entries = sorted(os.listdir(d))
         except OSError:
             return
-        rel = os.path.relpath(d, cwd)
-        for name in RULE_FILES:
-            p = os.path.join(d, name)
-            if os.path.isfile(p):
-                scope = "**" if rel == "." else f"{rel}/**"
-                out.append((p, scope))
+        if depth > 0:
+            rel = os.path.relpath(d, cwd)
+            for name in RULE_FILES:
+                p = os.path.join(d, name)
+                if os.path.isfile(p):
+                    out.append((p, f"{rel}/**"))
         for e in entries:
             sub = os.path.join(d, e)
             if (os.path.isdir(sub) and e not in SKIP_DIRS
-                    and not e.startswith(".")):
+                    and not e.startswith(".")
+                    and not os.path.exists(os.path.join(sub, ".git"))):
                 walk(sub, depth + 1)
     walk(cwd, 0)
+    return out
+
+
+def dedupe(rules: list[dict]) -> list[dict]:
+    """AGENTS.md is often a byte-for-byte copy of CLAUDE.md; one judgment
+    per distinct instruction, first source wins the citation."""
+    seen, out = set(), []
+    for r in rules:
+        key = " ".join(r["text"].lower().split())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
     return out
 
 
@@ -211,9 +287,10 @@ def load_rules(cwd: str) -> tuple[list[dict], dict]:
                                  base_label=os.path.relpath(path, cwd),
                                  file_scope=[scope])
     if not meta["has_global"]:
-        rules += parse_rules(GLOBAL_RULES,
-                             base_label="~/.claude/jev-rules.md")
-    return rules[:MAX_RULES], meta
+        for path in GLOBAL_RULE_FILES:
+            rules += parse_rules(path, base_label="~/" + os.path.relpath(
+                path, os.path.expanduser("~")))
+    return dedupe(rules), meta
 
 
 def relative(path: str, cwd: str) -> str:
@@ -405,6 +482,31 @@ def model_rules(rules: list[dict], phase: str) -> list[dict]:
             and r["check"]["type"] == "model" and r.get("when") == phase]
 
 
+def scoped_rules(rules: list[dict], phase: str, files: list[str]) -> list[dict]:
+    """The questions one request carries: model rules for the phase whose
+    scope covers a changed file, capped after scoping so a scoped rule is
+    never crowded out by unscoped ones loaded before it."""
+    hit = [r for r in model_rules(rules, phase)
+           if not r["scope"] or any(glob_match(f, r["scope"]) for f in files)]
+    # A rule written for this path outranks a repo-wide one, and the repo's
+    # own rules outrank the user's global ones.
+    hit.sort(key=lambda r: (not r["scope"], r["file"].startswith("~/")))
+    return hit[:MAX_RULES]
+
+
+def judge_edit(rel: str, hunk: str, task: str, in_scope: list[dict],
+               act: float = ACT, flag: float = FLAG) -> tuple[list[dict], dict, dict]:
+    """One judged edit, no session side effects: (hits, probs, answers).
+    The hook and the eval harness share this so they measure the same thing."""
+    parts = [f"File: {rel}"]
+    if task:
+        parts.append(f"The user's current request: {task}")
+    parts.append(f"The edit:\n{hunk[:MAX_STATE_CHARS]}")
+    answers = ask_rules("\n\n".join(parts), in_scope)
+    hits, probs = collect_verdicts(in_scope, answers, act, flag)
+    return hits, probs, answers
+
+
 def stale_notice(meta: dict, state: dict) -> str | None:
     if meta.get("stale") and not state.get("stale_warned"):
         state["stale_warned"] = True
@@ -423,8 +525,7 @@ def handle_edit(event: dict) -> dict:
     rules, meta = load_rules(cwd)
     if not rules:
         return {}
-    in_scope = [r for r in model_rules(rules, "edit")
-                if not r["scope"] or glob_match(rel, r["scope"])]
+    in_scope = scoped_rules(rules, "edit", [rel])
     state = edit_hunks(inp).strip()
     if not state:
         return {}
@@ -442,15 +543,9 @@ def handle_edit(event: dict) -> dict:
         return {}
 
     task = last_user_prompt(event.get("transcript_path"))
-    parts = [f"File: {rel}"]
-    if task:
-        parts.append(f"The user's current request: {task}")
-    parts.append(f"The edit:\n{state[:MAX_STATE_CHARS]}")
-    answers = ask_rules("\n\n".join(parts), in_scope)
-
     t = meta["thresholds"] or {}
     act, flag = t.get("act", ACT), t.get("flag", FLAG)
-    hits, probs = collect_verdicts(in_scope, answers, act, flag)
+    hits, probs, answers = judge_edit(rel, state, task, in_scope, act, flag)
     acting, flagged = [], []
     for v in hits:
         key = f"{v['rule']}|{rel}"
@@ -491,9 +586,7 @@ def handle_stop(event: dict) -> dict:
         return {}
     cwd = event.get("cwd") or os.getcwd()
     rules, meta = load_rules(cwd)
-    turn_rules = [r for r in model_rules(rules, "turn")
-                  if not r["scope"]
-                  or any(glob_match(f, r["scope"]) for f in sstate["files"])]
+    turn_rules = scoped_rules(rules, "turn", sstate["files"])
     if not turn_rules:
         return {}
 
