@@ -511,9 +511,22 @@ def scoped_rules(rules: list[dict], phase: str, files: list[str]) -> list[dict]:
     hit = [r for r in model_rules(rules, phase)
            if not r["scope"] or any(glob_match(f, r["scope"]) for f in files)]
     # A rule written for this path outranks a repo-wide one, and the repo's
-    # own rules outrank the user's global ones.
-    hit.sort(key=lambda r: (not r["scope"], r["file"].startswith("~/")))
-    return hit[:MAX_RULES]
+    # own rules outrank the user's global ones. Within a tier the files take
+    # turns, so one long rules file can't crowd out the others.
+    tiers: dict[tuple, dict[str, list]] = {}
+    for r in hit:
+        tier = (not r["scope"], r["file"].startswith("~/"))
+        tiers.setdefault(tier, {}).setdefault(r["file"], []).append(r)
+    out: list[dict] = []
+    for tier in sorted(tiers):
+        queues = list(tiers[tier].values())
+        while queues and len(out) < MAX_RULES:
+            for q in list(queues):
+                if q:
+                    out.append(q.pop(0))
+                if not q:
+                    queues.remove(q)
+    return out[:MAX_RULES]
 
 
 def judge_edit(rel: str, hunk: str, task: str, in_scope: list[dict],
