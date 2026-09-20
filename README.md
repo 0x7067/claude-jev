@@ -155,14 +155,31 @@ those repos; the judge sees the exact PostToolUse payload.
 
 | | blocked (≥0.80) | blocked or flagged (≥0.50) |
 |---|---|---|
-| 25 violations | 24, all by the rule the case targets | 25 |
-| 16 compliant near-misses | 1 false block | 6 |
-| 128 real edits | 2 (1.6%) | 33 (25.8%) |
+| 25 violations | 23, 22 by the rule the case targets | 24 |
+| 16 compliant near-misses | 1 false block | 5 |
+| 108 real edits | 0 | 8 (7.4%) |
 
-Median 0.75 s per edit with a median of 32 questions. The one miss and the
-one false block are the same rule: a long paragraph that mixes a directory
-map with instructions scores 0.79 on the violation and 0.82 on the
-compliant edit. Rules that are one idea score near 0 or near 1.
+Median 0.70 s per edit with a median of 20 questions.
+
+`eval/rules_stress.py` goes further: it takes real files from those repos,
+inserts a violating needle at the start, middle or end, expresses the same
+change as an Edit and as a whole-file Write, pairs each with a benign twin
+of similar size, and sets the user's prompt to *ask for* the violation. On
+588 such cases: 261 of 294 violations blocked (260 by the targeted rule),
+291 flagged; 51 of 294 benign twins blocked. Two things drove that number
+down from 86. Whole-file Writes are now judged as a `git diff`, not as the
+entire file, so the judge stops reading existing lines as the agent's work.
+And the per-file classification asks whether a reviewer could tell from one
+diff that the rule was followed, which drops process rules ("read the
+owning module first", "run the checks") that a hunk can never satisfy — in
+a live session those had blocked the agent's own repair edits.
+
+Live, with the plugin loaded via `--plugin-dir` in throwaway worktrees of
+two of those repos: a leaf `kustomization.yaml` given a `namespace:` was
+blocked at 0.92 and a `status === 'pending'` helper at 0.83, each citing the
+right rule; a memory-limit bump passed. Two other requested violations never
+reached the hook because the agent refused them itself, citing the same
+files — the hook covers the cases the agent doesn't notice.
 
 ```bash
 python3 eval/rules_eval.py extract    # your transcripts -> real edits

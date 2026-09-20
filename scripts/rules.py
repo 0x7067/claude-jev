@@ -33,6 +33,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -170,9 +171,12 @@ def markdown_items(lines: list[str]) -> list[tuple[int, str]]:
     return items
 
 
-INSTRUCTION_Q = ("Is item [{i}] an instruction that tells a coding agent what to do "
-                 "or not do when it changes code or files in this repository? "
-                 "Facts, descriptions, background and pointers to other documents are not.")
+INSTRUCTION_Q = ("Is item [{i}] a rule about the code or files a coding agent writes, "
+                 "such that a reviewer looking at one diff could tell whether it was "
+                 "followed? Facts, descriptions and pointers are not. Neither are "
+                 "process rules about how to work — what to read first, which "
+                 "commands or tools to run, how to communicate, keeping changes "
+                 "small — because no single diff can show compliance.")
 INSTRUCTION_CACHE = os.path.expanduser("~/.claude/jev-rules-cache.json")
 INSTRUCTION_MIN = 0.5
 ITEMS_PER_REQUEST = 60
@@ -183,7 +187,7 @@ def instruction_lines(path: str, lines: list[str],
     """Line numbers of the items Jev judges to be instructions. One batched
     request per file, cached by content hash — the file changes rarely, the
     hook runs on every edit."""
-    digest = hashlib.sha256("".join(lines).encode()).hexdigest()
+    digest = hashlib.sha256((INSTRUCTION_Q + "".join(lines)).encode()).hexdigest()
     try:
         with open(INSTRUCTION_CACHE) as f:
             cache = json.load(f)
@@ -352,7 +356,27 @@ def last_user_prompt(transcript_path: str | None) -> str:
     return ""
 
 
-def edit_hunks(inp: dict) -> str:
+def write_hunk(cwd: str, rel: str, content: str) -> str:
+    """A Write replaces the file, so PostToolUse holds only the new bytes.
+    When the file is tracked and was clean, `git diff` recovers the actual
+    change; a whole-file payload made the judge read every existing line as
+    the agent's doing (a 4x false-block rate on the stress corpus). A new
+    or untracked file is judged whole, marked as such."""
+    try:
+        r = subprocess.run(["git", "diff", "--no-color", "--no-ext-diff", "-U3", "--", rel],
+                           cwd=cwd, capture_output=True, text=True, timeout=5)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout
+        tracked = subprocess.run(["git", "ls-files", "--error-unmatch", rel], cwd=cwd,
+                                 capture_output=True, timeout=5).returncode == 0
+        if tracked:  # written back identical, or diff unavailable
+            return ""
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return f"NEW FILE (whole content):\n{content}"
+
+
+def edit_hunks(inp: dict, cwd: str | None = None) -> str:
     """Old→new per edit: rules about *removing* something need both sides."""
     if isinstance(inp.get("edits"), list):  # MultiEdit
         parts = []
@@ -373,7 +397,10 @@ def edit_hunks(inp: dict) -> str:
         if new:
             hunk += f"ADDED:\n{new}"
         return hunk
-    return inp.get("content") or inp.get("new_source") or ""
+    content = inp.get("content") or inp.get("new_source") or ""
+    if content and cwd and inp.get("file_path"):
+        return write_hunk(cwd, relative(inp["file_path"], cwd), content)
+    return content
 
 
 def rule_question(rule: dict) -> dict | None:
@@ -561,7 +588,7 @@ def handle_edit(event: dict) -> dict:
     if not rules:
         return {}
     in_scope = scoped_rules(rules, "edit", [rel])
-    state = edit_hunks(inp).strip()
+    state = edit_hunks(inp, cwd).strip()
     if not state:
         return {}
     sid = event.get("session_id") or "unknown"
