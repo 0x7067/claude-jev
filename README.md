@@ -181,6 +181,25 @@ right rule; a memory-limit bump passed. Two other requested violations never
 reached the hook because the agent refused them itself, citing the same
 files — the hook covers the cases the agent doesn't notice.
 
+**Markdown fallback vs a compiled rubric.** The same corpus was run against
+a rubric compiled from one of those repos with `/jev:rules-compile` — 336
+rules from 13 instruction files, 137 of them filed under `lint`, 71 left
+for the judge (44 per edit, 27 at Stop), the rest deferred or
+unenforceable. The judge asked fewer questions per edit (22–33 instead of
+the 40 cap) and produced no false blocks on the hand-written near-misses.
+Detection on the needles fell from 156 to 48 of 168, and every drop traced
+to a rule the rubric had filed under `lint`: magic strings, `as any`, bare
+TODOs, a migration moved into `start.sh`. That is the design working: the
+judge does not redo the linter's job. It also names the one thing the
+plugin cannot check for you. **A `lint` rule is enforced only if that
+repo's linter actually runs it.** In that repo, 81 of the 137 lint rules
+named an ESLint rule, ast-grep pattern, or grep that nothing was configured
+to run — so, with the rubric in place, neither the linter nor the judge
+enforced them. Wiring the linter is the repo owner's job; so is deciding,
+per rule, to leave it in `model` until then (`status` and `check.type` are
+hand-editable). The engine takes no position: it never runs a lint rule, in
+any repo, and never rewrites a rubric.
+
 ```bash
 python3 eval/rules_eval.py extract    # your transcripts -> real edits
 python3 eval/rules_eval.py run        # cases + real edits, cached
