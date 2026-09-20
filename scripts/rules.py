@@ -3,9 +3,11 @@
 and Stop for turn-level rules.
 
 Rules come from a compiled rubric (`.claude/jev-rubric.json`, written by the
-/jev:rules-compile command) when one exists, and otherwise from prose parsed
-out of CLAUDE.md, AGENTS.md, .claude/rules/* (bullets, numbered items, and
-imperative DO NOT / NEVER / ALWAYS / MUST lines), plus ~/.claude/jev-rules.md.
+/jev:rules-compile command) when one exists, and otherwise from CLAUDE.md,
+AGENTS.md, .claude/rules/*, ~/.claude/CLAUDE.md and ~/.claude/jev-rules.md:
+each bullet or paragraph is judged once by Jev — is this an instruction to
+the agent, or a fact, description or pointer? — and the verdict is cached by
+file hash, so the per-edit request carries only real instructions.
 Only `model` rules are judged — `lint` rules name what a real linter owns and
 are never run or sent to Jev; `deferred` and `unenforceable` are recorded for
 the report and skipped. Scope globs (`paths:` front matter, `(scope: glob)`
@@ -27,9 +29,11 @@ Env:
 """
 
 import datetime
+import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -53,7 +57,9 @@ BLOCK_DIR = os.path.expanduser("~/.claude/jev-rule-blocks")
 
 RULE_FILES = ("CLAUDE.md", "AGENTS.md")
 RULE_DIRS = (".claude/rules", ".cursor/rules")
-GLOBAL_RULES = os.path.expanduser("~/.claude/jev-rules.md")
+GLOBAL_RULE_FILES = (os.path.expanduser("~/.claude/CLAUDE.md"),
+                     os.path.expanduser("~/.claude/jev-rules.md"))
+MAX_ITEM_CHARS = 600
 
 EXCLUDED = re.compile(r"(^|/)(node_modules|\.git|dist|build|\.next|coverage|"
                       r"\.claude|vendor|target)(/|$)|\.lock$|"
@@ -62,9 +68,7 @@ SKIP_DIRS = {"node_modules", ".git", "dist", "build", "out", ".next",
              "vendor", "coverage", ".turbo", ".cache", "target", ".claude"}
 
 BULLET = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+(.*)")
-HEADING = re.compile(r"^\s*#{1,4}\s+(.*)")
-IMPERATIVE = re.compile(r"\b(?:DO NOT|Do not|NEVER|Never|ALWAYS|Always|"
-                        r"MUST NOT|must not|MUST|must)\b")
+HEADING = re.compile(r"^\s*#{1,6}\s+")
 NAMED = re.compile(r"^\*\*([\w-]+)\*\*:?\s*(.*)")
 SCOPE_TAIL = re.compile(r"\(scope:\s*([^)]+)\)\s*$")
 FRONT_MATTER = re.compile(r"^---\s*$")
@@ -122,10 +126,99 @@ def frontmatter_paths(lines: list[str]) -> list[str]:
     return paths
 
 
+def markdown_items(lines: list[str]) -> list[tuple[int, str]]:
+    """(line, text) per bullet or paragraph, with wrapped lines joined.
+    Instruction files wrap at ~80 columns, so a rule is rarely one line;
+    judging fragments produced mid-sentence "rules" and lost the rest.
+    Code fences, headings and front matter are skipped — examples and
+    titles are not rules."""
+    items: list[tuple[int, str]] = []
+    cur_line, cur = 0, []
+    in_fence = False
+    in_front = bool(lines) and bool(FRONT_MATTER.match(lines[0]))
+
+    def flush():
+        nonlocal cur
+        if cur:
+            items.append((cur_line, " ".join(x.strip() for x in cur)))
+        cur = []
+
+    for i, raw in enumerate(lines, 1):
+        line = raw.rstrip("\n")
+        if in_front:
+            if i > 1 and FRONT_MATTER.match(line):
+                in_front = False
+            continue
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            flush()
+            continue
+        if in_fence:
+            continue
+        if not line.strip() or HEADING.match(line) or line.lstrip().startswith("|"):
+            flush()
+            continue
+        m = BULLET.match(line)
+        if m:
+            flush()
+            cur_line, cur = i, [m.group(1)]
+        elif cur and (line.startswith((" ", "\t")) or not BULLET.match(cur[0])):
+            cur.append(line)
+        else:
+            flush()
+            cur_line, cur = i, [line]
+    flush()
+    return items
+
+
+INSTRUCTION_Q = ("Is item [{i}] a rule about the code or files a coding agent writes, "
+                 "such that a reviewer looking at one diff could tell whether it was "
+                 "followed? Facts, descriptions and pointers are not. Neither are "
+                 "process rules about how to work — what to read first, which "
+                 "commands or tools to run, how to communicate, keeping changes "
+                 "small — because no single diff can show compliance.")
+INSTRUCTION_CACHE = os.path.expanduser("~/.claude/jev-rules-cache.json")
+INSTRUCTION_MIN = 0.5
+ITEMS_PER_REQUEST = 60
+
+
+def instruction_lines(path: str, lines: list[str],
+                      items: list[tuple[int, str]]) -> set[int]:
+    """Line numbers of the items Jev judges to be instructions. One batched
+    request per file, cached by content hash — the file changes rarely, the
+    hook runs on every edit."""
+    digest = hashlib.sha256((INSTRUCTION_Q + "".join(lines)).encode()).hexdigest()
+    try:
+        with open(INSTRUCTION_CACHE) as f:
+            cache = json.load(f)
+    except (OSError, ValueError):
+        cache = {}
+    if cache.get(digest) is not None:
+        return set(cache[digest])
+    keep: set[int] = set()
+    for start in range(0, len(items), ITEMS_PER_REQUEST):
+        chunk = items[start:start + ITEMS_PER_REQUEST]
+        state = "\n\n".join(f"[{i}] {text}" for i, (_ln, text) in enumerate(chunk))
+        questions = {f"q{i}": {"type": "noul", "instructions": INSTRUCTION_Q.format(i=i)}
+                     for i in range(len(chunk))}
+        answers = jev.ask(state, questions)
+        for i, (ln, _text) in enumerate(chunk):
+            p = (answers.get(f"q{i}") or {}).get("noul")
+            if isinstance(p, (int, float)) and p >= INSTRUCTION_MIN:
+                keep.add(ln)
+    cache[digest] = sorted(keep)
+    try:
+        with open(INSTRUCTION_CACHE, "w") as f:
+            json.dump(cache, f)
+    except OSError:
+        pass
+    return keep
+
+
 def parse_rules(path: str, base_label: str | None = None,
                 file_scope: list[str] | None = None) -> list[dict]:
-    """Imperative rules from a markdown instruction file, each with its line
-    number for citation. Code fences are skipped — examples aren't rules."""
+    """Instructions from a markdown file, each with its line for citation.
+    Only items that tell the agent to do or not do something qualify."""
     rules = []
     try:
         with open(path, errors="replace") as f:
@@ -134,20 +227,14 @@ def parse_rules(path: str, base_label: str | None = None,
         return rules
     base = base_label or os.path.basename(path)
     scope0 = list(file_scope or []) + frontmatter_paths(lines)
-    in_fence = False
-    for i, raw in enumerate(lines, 1):
-        line = raw.strip()
-        if line.startswith("```"):
-            in_fence = not in_fence
+    items = [(ln, t.strip()) for ln, t in markdown_items(lines) if len(t.strip()) >= 20]
+    keep = instruction_lines(path, lines, items)
+    for line_no, text in items:
+        if line_no not in keep:
             continue
-        if in_fence or not line:
-            continue
-        m = BULLET.match(line)
-        text = m.group(1).strip() if m else None
-        if text is None and IMPERATIVE.search(line) and not HEADING.match(line):
-            text = line
-        if not text or len(text) < 20 or len(text) > 500:
-            continue
+        if len(text) > MAX_ITEM_CHARS:
+            cut = text.rfind(". ", 0, MAX_ITEM_CHARS)
+            text = text[: cut + 1] if cut > 100 else text[:MAX_ITEM_CHARS]
         scope = list(scope0)
         sm = SCOPE_TAIL.search(text)
         if sm:
@@ -158,7 +245,7 @@ def parse_rules(path: str, base_label: str | None = None,
         if nm:
             name, text = nm.group(1), nm.group(2).strip() or text
         rules.append({"id": name or slug(text), "text": text,
-                      "file": base, "line": i, "scope": scope,
+                      "file": base, "line": line_no, "scope": scope,
                       "when": "edit", "check": {"type": "model"},
                       "status": "active"})
     return rules
@@ -166,7 +253,8 @@ def parse_rules(path: str, base_label: str | None = None,
 
 def nested_files(cwd: str) -> list[tuple[str, str]]:
     """(path, scope-glob) for AGENTS.md/CLAUDE.md below the root — abide's
-    convention: a nested instruction file governs its own tree."""
+    convention: a nested instruction file governs its own tree. Root files
+    are the caller's job."""
     out = []
     def walk(d: str, depth: int):
         if depth > MAX_NESTED_DEPTH:
@@ -175,18 +263,32 @@ def nested_files(cwd: str) -> list[tuple[str, str]]:
             entries = sorted(os.listdir(d))
         except OSError:
             return
-        rel = os.path.relpath(d, cwd)
-        for name in RULE_FILES:
-            p = os.path.join(d, name)
-            if os.path.isfile(p):
-                scope = "**" if rel == "." else f"{rel}/**"
-                out.append((p, scope))
+        if depth > 0:
+            rel = os.path.relpath(d, cwd)
+            for name in RULE_FILES:
+                p = os.path.join(d, name)
+                if os.path.isfile(p):
+                    out.append((p, f"{rel}/**"))
         for e in entries:
             sub = os.path.join(d, e)
             if (os.path.isdir(sub) and e not in SKIP_DIRS
-                    and not e.startswith(".")):
+                    and not e.startswith(".")
+                    and not os.path.exists(os.path.join(sub, ".git"))):
                 walk(sub, depth + 1)
     walk(cwd, 0)
+    return out
+
+
+def dedupe(rules: list[dict]) -> list[dict]:
+    """AGENTS.md is often a byte-for-byte copy of CLAUDE.md; one judgment
+    per distinct instruction, first source wins the citation."""
+    seen, out = set(), []
+    for r in rules:
+        key = " ".join(r["text"].lower().split())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(r)
     return out
 
 
@@ -211,9 +313,10 @@ def load_rules(cwd: str) -> tuple[list[dict], dict]:
                                  base_label=os.path.relpath(path, cwd),
                                  file_scope=[scope])
     if not meta["has_global"]:
-        rules += parse_rules(GLOBAL_RULES,
-                             base_label="~/.claude/jev-rules.md")
-    return rules[:MAX_RULES], meta
+        for path in GLOBAL_RULE_FILES:
+            rules += parse_rules(path, base_label="~/" + os.path.relpath(
+                path, os.path.expanduser("~")))
+    return dedupe(rules), meta
 
 
 def relative(path: str, cwd: str) -> str:
@@ -253,7 +356,27 @@ def last_user_prompt(transcript_path: str | None) -> str:
     return ""
 
 
-def edit_hunks(inp: dict) -> str:
+def write_hunk(cwd: str, rel: str, content: str) -> str:
+    """A Write replaces the file, so PostToolUse holds only the new bytes.
+    When the file is tracked and was clean, `git diff` recovers the actual
+    change; a whole-file payload made the judge read every existing line as
+    the agent's doing (a 4x false-block rate on the stress corpus). A new
+    or untracked file is judged whole, marked as such."""
+    try:
+        r = subprocess.run(["git", "diff", "--no-color", "--no-ext-diff", "-U3", "--", rel],
+                           cwd=cwd, capture_output=True, text=True, timeout=5)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout
+        tracked = subprocess.run(["git", "ls-files", "--error-unmatch", rel], cwd=cwd,
+                                 capture_output=True, timeout=5).returncode == 0
+        if tracked:  # written back identical, or diff unavailable
+            return ""
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return f"NEW FILE (whole content):\n{content}"
+
+
+def edit_hunks(inp: dict, cwd: str | None = None) -> str:
     """Old→new per edit: rules about *removing* something need both sides."""
     if isinstance(inp.get("edits"), list):  # MultiEdit
         parts = []
@@ -274,7 +397,10 @@ def edit_hunks(inp: dict) -> str:
         if new:
             hunk += f"ADDED:\n{new}"
         return hunk
-    return inp.get("content") or inp.get("new_source") or ""
+    content = inp.get("content") or inp.get("new_source") or ""
+    if content and cwd and inp.get("file_path"):
+        return write_hunk(cwd, relative(inp["file_path"], cwd), content)
+    return content
 
 
 def rule_question(rule: dict) -> dict | None:
@@ -405,6 +531,44 @@ def model_rules(rules: list[dict], phase: str) -> list[dict]:
             and r["check"]["type"] == "model" and r.get("when") == phase]
 
 
+def scoped_rules(rules: list[dict], phase: str, files: list[str]) -> list[dict]:
+    """The questions one request carries: model rules for the phase whose
+    scope covers a changed file, capped after scoping so a scoped rule is
+    never crowded out by unscoped ones loaded before it."""
+    hit = [r for r in model_rules(rules, phase)
+           if not r["scope"] or any(glob_match(f, r["scope"]) for f in files)]
+    # A rule written for this path outranks a repo-wide one, and the repo's
+    # own rules outrank the user's global ones. Within a tier the files take
+    # turns, so one long rules file can't crowd out the others.
+    tiers: dict[tuple, dict[str, list]] = {}
+    for r in hit:
+        tier = (not r["scope"], r["file"].startswith("~/"))
+        tiers.setdefault(tier, {}).setdefault(r["file"], []).append(r)
+    out: list[dict] = []
+    for tier in sorted(tiers):
+        queues = list(tiers[tier].values())
+        while queues and len(out) < MAX_RULES:
+            for q in list(queues):
+                if q:
+                    out.append(q.pop(0))
+                if not q:
+                    queues.remove(q)
+    return out[:MAX_RULES]
+
+
+def judge_edit(rel: str, hunk: str, task: str, in_scope: list[dict],
+               act: float = ACT, flag: float = FLAG) -> tuple[list[dict], dict, dict]:
+    """One judged edit, no session side effects: (hits, probs, answers).
+    The hook and the eval harness share this so they measure the same thing."""
+    parts = [f"File: {rel}"]
+    if task:
+        parts.append(f"The user's current request: {task}")
+    parts.append(f"The edit:\n{hunk[:MAX_STATE_CHARS]}")
+    answers = ask_rules("\n\n".join(parts), in_scope)
+    hits, probs = collect_verdicts(in_scope, answers, act, flag)
+    return hits, probs, answers
+
+
 def stale_notice(meta: dict, state: dict) -> str | None:
     if meta.get("stale") and not state.get("stale_warned"):
         state["stale_warned"] = True
@@ -423,9 +587,8 @@ def handle_edit(event: dict) -> dict:
     rules, meta = load_rules(cwd)
     if not rules:
         return {}
-    in_scope = [r for r in model_rules(rules, "edit")
-                if not r["scope"] or glob_match(rel, r["scope"])]
-    state = edit_hunks(inp).strip()
+    in_scope = scoped_rules(rules, "edit", [rel])
+    state = edit_hunks(inp, cwd).strip()
     if not state:
         return {}
     sid = event.get("session_id") or "unknown"
@@ -442,15 +605,9 @@ def handle_edit(event: dict) -> dict:
         return {}
 
     task = last_user_prompt(event.get("transcript_path"))
-    parts = [f"File: {rel}"]
-    if task:
-        parts.append(f"The user's current request: {task}")
-    parts.append(f"The edit:\n{state[:MAX_STATE_CHARS]}")
-    answers = ask_rules("\n\n".join(parts), in_scope)
-
     t = meta["thresholds"] or {}
     act, flag = t.get("act", ACT), t.get("flag", FLAG)
-    hits, probs = collect_verdicts(in_scope, answers, act, flag)
+    hits, probs, answers = judge_edit(rel, state, task, in_scope, act, flag)
     acting, flagged = [], []
     for v in hits:
         key = f"{v['rule']}|{rel}"
@@ -491,9 +648,7 @@ def handle_stop(event: dict) -> dict:
         return {}
     cwd = event.get("cwd") or os.getcwd()
     rules, meta = load_rules(cwd)
-    turn_rules = [r for r in model_rules(rules, "turn")
-                  if not r["scope"]
-                  or any(glob_match(f, r["scope"]) for f in sstate["files"])]
+    turn_rules = scoped_rules(rules, "turn", sstate["files"])
     if not turn_rules:
         return {}
 
