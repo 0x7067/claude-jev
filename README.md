@@ -35,10 +35,17 @@ judgments cheaper.
 - **`PostToolUse` hook (`Edit|Write|MultiEdit|NotebookEdit`)** — rules a
   linter can't express, enforced anyway. Every edit is judged in one batched
   Jev call against the imperative rules parsed out of `CLAUDE.md`,
-  `AGENTS.md`, and `.claude/rules/*` — each rule is a parallel `noul`
-  ("does this edit violate: …"). At ≥0.85 the hook blocks with the rule
-  cited by file and line — "Repair `logout.ts` now, then continue" — so the
-  agent fixes it while the context is fresh. No rules file, no judgment.
+  `AGENTS.md`, `.claude/rules/*` (with `paths:` front matter), and
+  `~/.claude/jev-rules.md` — each rule is a parallel `noul` ("does this edit
+  violate: …"). The state Jev sees is the old→new hunk plus your last
+  prompt, so "don't touch generated files" means something. Verdicts are
+  banded: ≥0.80 blocks with the rule cited by file and line ("Repair
+  `logout.ts` now, then continue"), 0.50–0.80 becomes a user-only notice,
+  below stays silent. A rule can block the same file at most twice per
+  session — after that it only flags, because a repair that can't land is a
+  loop, not enforcement. Rules with `(scope: glob)` are only asked on
+  matching files, and vendored/generated paths are never judged. No rules
+  file, no judgment.
 - **`jev` skill** — offload snap decisions to the bundled CLI: pick between
   options (`choose`), yes/no gates (`noul`), rubric scores (`score`), or
   batched raw questions (`ask`).
