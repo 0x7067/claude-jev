@@ -32,6 +32,13 @@ judgments cheaper.
   session model. A `model` the caller set explicitly always wins, and
   permission rules still evaluate against the rewritten input. Below the
   confidence floor the spawn goes through untouched.
+- **`PostToolUse` hook (`Edit|Write|MultiEdit|NotebookEdit`)** — rules a
+  linter can't express, enforced anyway. Every edit is judged in one batched
+  Jev call against the imperative rules parsed out of `CLAUDE.md`,
+  `AGENTS.md`, and `.claude/rules/*` — each rule is a parallel `noul`
+  ("does this edit violate: …"). At ≥0.85 the hook blocks with the rule
+  cited by file and line — "Repair `logout.ts` now, then continue" — so the
+  agent fixes it while the context is fresh. No rules file, no judgment.
 - **`jev` skill** — offload snap decisions to the bundled CLI: pick between
   options (`choose`), yes/no gates (`noul`), rubric scores (`score`), or
   batched raw questions (`ask`).
