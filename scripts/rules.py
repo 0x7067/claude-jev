@@ -3,9 +3,11 @@
 and Stop for turn-level rules.
 
 Rules come from a compiled rubric (`.claude/jev-rubric.json`, written by the
-/jev:rules-compile command) when one exists, and otherwise from prose parsed
-out of CLAUDE.md, AGENTS.md, .claude/rules/* (bullets, numbered items, and
-imperative DO NOT / NEVER / ALWAYS / MUST lines), plus ~/.claude/jev-rules.md.
+/jev:rules-compile command) when one exists, and otherwise from CLAUDE.md,
+AGENTS.md, .claude/rules/*, ~/.claude/CLAUDE.md and ~/.claude/jev-rules.md:
+each bullet or paragraph is judged once by Jev — is this an instruction to
+the agent, or a fact, description or pointer? — and the verdict is cached by
+file hash, so the per-edit request carries only real instructions.
 Only `model` rules are judged — `lint` rules name what a real linter owns and
 are never run or sent to Jev; `deferred` and `unenforceable` are recorded for
 the report and skipped. Scope globs (`paths:` front matter, `(scope: glob)`
@@ -27,6 +29,7 @@ Env:
 """
 
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -65,25 +68,6 @@ SKIP_DIRS = {"node_modules", ".git", "dist", "build", "out", ".next",
 
 BULLET = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+(.*)")
 HEADING = re.compile(r"^\s*#{1,6}\s+")
-# An item is a rule only if it instructs. Two signals: a modal anywhere
-# ("never", "must", "do not"), or a sentence that opens with an imperative
-# verb. Facts ("`k8s/infra/` — operators", "TZ=America/Sao_Paulo") and doc
-# pointers carry neither, and they were most of what the old parser kept.
-MODAL = re.compile(r"\b(?:do not|don't|never|always|must(?: not)?|should(?: not)?|"
-                   r"is a defect|are a defect|not allowed|is required|are required|"
-                   r"only when|only if|no longer)\b", re.I)
-IMPERATIVE_VERBS = (
-    "use|prefer|avoid|keep|run|ban|set|follow|load|write|read|query|treat|"
-    "verify|add|put|get|delete|remove|search|track|pass|mock|declare|create|"
-    "name|match|trace|account|generate|stop|inspect|preserve|bound|update|"
-    "apply|record|start|delegate|fix|investigate|measure|compare|assume|mark|"
-    "annotate|work|make|ensure|require|check|test|document|reuse|extract|"
-    "return|report|ask|hand|rehearse|cover|bump|leave|do|include|exclude|"
-    "commit|push|install|import|export|define|wrap|split|migrate|scale|call|"
-    "open|close|send|store|save|log|print|handle|throw|catch|validate|reject|"
-    "accept|limit|cap|pin|rotate|back|grep|encrypt|decrypt|list|show|skip"
-)
-IMPERATIVE = re.compile(r"(?:^|[.:;!?\u2014\u2013-]\s+|^\*\*|\*\*\s*)(?:" + IMPERATIVE_VERBS + r")\b", re.I)
 NAMED = re.compile(r"^\*\*([\w-]+)\*\*:?\s*(.*)")
 SCOPE_TAIL = re.compile(r"\(scope:\s*([^)]+)\)\s*$")
 FRONT_MATTER = re.compile(r"^---\s*$")
@@ -186,8 +170,45 @@ def markdown_items(lines: list[str]) -> list[tuple[int, str]]:
     return items
 
 
-def is_instruction(text: str) -> bool:
-    return bool(MODAL.search(text) or IMPERATIVE.search(text))
+INSTRUCTION_Q = ("Is item [{i}] an instruction that tells a coding agent what to do "
+                 "or not do when it changes code or files in this repository? "
+                 "Facts, descriptions, background and pointers to other documents are not.")
+INSTRUCTION_CACHE = os.path.expanduser("~/.claude/jev-rules-cache.json")
+INSTRUCTION_MIN = 0.5
+ITEMS_PER_REQUEST = 60
+
+
+def instruction_lines(path: str, lines: list[str],
+                      items: list[tuple[int, str]]) -> set[int]:
+    """Line numbers of the items Jev judges to be instructions. One batched
+    request per file, cached by content hash — the file changes rarely, the
+    hook runs on every edit."""
+    digest = hashlib.sha256("".join(lines).encode()).hexdigest()
+    try:
+        with open(INSTRUCTION_CACHE) as f:
+            cache = json.load(f)
+    except (OSError, ValueError):
+        cache = {}
+    if cache.get(digest) is not None:
+        return set(cache[digest])
+    keep: set[int] = set()
+    for start in range(0, len(items), ITEMS_PER_REQUEST):
+        chunk = items[start:start + ITEMS_PER_REQUEST]
+        state = "\n\n".join(f"[{i}] {text}" for i, (_ln, text) in enumerate(chunk))
+        questions = {f"q{i}": {"type": "noul", "instructions": INSTRUCTION_Q.format(i=i)}
+                     for i in range(len(chunk))}
+        answers = jev.ask(state, questions)
+        for i, (ln, _text) in enumerate(chunk):
+            p = (answers.get(f"q{i}") or {}).get("noul")
+            if isinstance(p, (int, float)) and p >= INSTRUCTION_MIN:
+                keep.add(ln)
+    cache[digest] = sorted(keep)
+    try:
+        with open(INSTRUCTION_CACHE, "w") as f:
+            json.dump(cache, f)
+    except OSError:
+        pass
+    return keep
 
 
 def parse_rules(path: str, base_label: str | None = None,
@@ -202,10 +223,11 @@ def parse_rules(path: str, base_label: str | None = None,
         return rules
     base = base_label or os.path.basename(path)
     scope0 = list(file_scope or []) + frontmatter_paths(lines)
-    for line_no, text in markdown_items(lines):
-        text = text.strip()
-        if len(text) < 20 or text.endswith(":") or not is_instruction(text):
-            continue  # a trailing colon introduces a list; the items follow
+    items = [(ln, t.strip()) for ln, t in markdown_items(lines) if len(t.strip()) >= 20]
+    keep = instruction_lines(path, lines, items)
+    for line_no, text in items:
+        if line_no not in keep:
+            continue
         if len(text) > MAX_ITEM_CHARS:
             cut = text.rfind(". ", 0, MAX_ITEM_CHARS)
             text = text[: cut + 1] if cut > 100 else text[:MAX_ITEM_CHARS]
