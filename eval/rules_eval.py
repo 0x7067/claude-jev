@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import difflib
 import glob
 import hashlib
 import json
@@ -121,10 +122,27 @@ def cached_ask(cache: dict, cache_f):
     return ask
 
 
+def case_hunk(rec: dict, cwd: str, rel: str) -> str:
+    """The hook diffs a Write against git after the file changed; here the
+    file is unchanged on disk, so diff the payload against it the same way."""
+    inp = rec["tool_input"]
+    content = inp.get("content")
+    if content is None:
+        return rules.edit_hunks(inp)
+    try:
+        with open(os.path.join(cwd, rel), errors="replace") as f:
+            old = f.read()
+    except OSError:
+        return f"NEW FILE (whole content):\n{content}"
+    diff = difflib.unified_diff(old.splitlines(keepends=True), content.splitlines(keepends=True),
+                                fromfile=f"a/{rel}", tofile=f"b/{rel}", n=3)
+    return "".join(diff)
+
+
 def judge(rec: dict, rule_cache: dict) -> dict:
     cwd = rec["cwd"]
     rel = rules.relative(rec["file_path"], cwd)
-    out = {k: rec.get(k) for k in ("id", "kind", "cwd", "task", "violates", "expect", "note")}
+    out = {k: rec.get(k) for k in ("id", "kind", "cwd", "task", "violates", "expect", "note", "tags")}
     out["rel"] = rel
     if rules.EXCLUDED.search(rel):
         out["skipped"] = "excluded path"
@@ -134,7 +152,7 @@ def judge(rec: dict, rule_cache: dict) -> dict:
             rule_cache[cwd] = rules.load_rules(cwd)
     all_rules, meta = rule_cache[cwd]
     in_scope = rules.scoped_rules(all_rules, "edit", [rel])
-    hunk = rules.edit_hunks(rec["tool_input"]).strip()
+    hunk = case_hunk(rec, cwd, rel).strip()
     out.update(n_rules=len(all_rules), n_scope=len(in_scope), hunk_chars=len(hunk))
     if not hunk:
         out["skipped"] = "empty hunk"
@@ -159,7 +177,7 @@ def cmd_run(args) -> int:
     os.makedirs(DATA, exist_ok=True)
     recs = []
     if not args.edits_only:
-        recs += load_jsonl(CASES)
+        recs += load_jsonl(args.cases)
     if not args.cases_only:
         real = load_jsonl(EDITS)
         if args.sample and len(real) > args.sample:
@@ -188,11 +206,11 @@ def cmd_run(args) -> int:
         list(ex.map(work, recs))
     print(file=sys.stderr)
     cache_f.close()
-    with open(PRED, "w") as f:
+    with open(args.out, "w") as f:
         for r in results:
             f.write(json.dumps(r) + "\n")
     errors = sum(1 for r in results if r.get("error"))
-    print(f"{len(results)} judged ({errors} errors) -> {PRED}")
+    print(f"{len(results)} judged ({errors} errors) -> {args.out}")
     if errors:
         print("  first error:", next(r["error"] for r in results if r.get("error")))
     return 0
@@ -215,8 +233,27 @@ def expected_fired(r: dict, threshold_band: str) -> bool:
     return False
 
 
+def by_tag(cases: list[dict]) -> None:
+    """Detection and false-block rate per tag value — where does the judge
+    break: whole-file writes, needles at the end, large files?"""
+    keys = sorted({k for c in cases for k in (c.get("tags") or {})})
+    for key in keys:
+        groups = collections.defaultdict(list)
+        for c in cases:
+            groups[(c.get("tags") or {}).get(key, "-")].append(c)
+        print(f"\n  by {key:<10} {'violations':>11} {'blocked':>8} {'flagged+':>9}"
+              f" {'benign':>7} {'false blk':>10} {'expected rule':>14}")
+        for val, cs in sorted(groups.items()):
+            v = [c for c in cs if c.get("violates")]
+            b = [c for c in cs if not c.get("violates")]
+            print(f"  {str(val):<13}{len(v):>11}{sum(1 for c in v if band(c) == 'act'):>8}"
+                  f"{sum(1 for c in v if band(c) != 'quiet'):>9}"
+                  f"{len(b):>8}{sum(1 for c in b if band(c) == 'act'):>10}"
+                  f"{sum(1 for c in v if expected_fired(c, 'act')):>14}")
+
+
 def cmd_report(args) -> int:
-    preds = load_jsonl(PRED)
+    preds = load_jsonl(args.pred)
     judged = [p for p in preds if not p.get("skipped") and not p.get("error")]
     cases = [p for p in judged if p["kind"] == "case"]
     real = [p for p in judged if p["kind"] == "real"]
@@ -240,8 +277,12 @@ def cmd_report(args) -> int:
         fb = sum(1 for c in clean if band(c) == "act")
         ff = sum(1 for c in clean if band(c) == "flag")
         print(f"  compliant edits blocked : {fb}/{len(clean)}   flagged only: {ff}/{len(clean)}")
+        if args.by_tag:
+            by_tag(cases)
         print("\n  case                          violates  band   top rule (p)")
-        for c in cases:
+        for c in (cases if not args.by_tag else
+                  [c for c in cases if (c.get("violates") and band(c) != "act")
+                   or (not c.get("violates") and band(c) == "act")]):
             hits = sorted(c.get("hits") or [], key=lambda h: -h["prob"])
             top = f"{hits[0]['rule'][:34]} ({hits[0]['prob']:.2f})" if hits else "-"
             mark = ""
@@ -307,10 +348,15 @@ def main() -> int:
     r.add_argument("--sample", type=int, default=0, help="cap on real edits")
     r.add_argument("--seed", type=int, default=0)
     r.add_argument("--workers", type=int, default=4)
+    r.add_argument("--cases", default=CASES)
+    r.add_argument("--out", default=PRED)
     r.set_defaults(fn=cmd_run)
     rp = sub.add_parser("report", help="detection, false blocks, calibration")
     rp.add_argument("--examples", type=int, default=8)
     rp.add_argument("--rules", type=int, default=25)
+    rp.add_argument("--pred", default=PRED)
+    rp.add_argument("--by-tag", action="store_true",
+                    help="breakdown per tag; the case list shows only misses and false blocks")
     rp.set_defaults(fn=cmd_report)
     args = p.parse_args()
     return args.fn(args)
