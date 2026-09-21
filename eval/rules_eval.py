@@ -157,8 +157,7 @@ def case_hunk(rec: dict, cwd: str, rel: str) -> str:
 def judge(rec: dict, rule_cache: dict) -> dict:
     cwd = rec["cwd"]
     rel = rules.relative(rec["file_path"], cwd)
-    out = {k: rec.get(k) for k in ("id", "kind", "cwd", "task", "violates", "expect",
-                                   "expect_band", "note", "tags")}
+    out = {k: rec.get(k) for k in ("id", "kind", "cwd", "task", "violates", "expect", "note", "tags")}
     out["rel"] = rel
     if rules.EXCLUDED.search(rel) or rules.outside(rel):
         out["skipped"] = "excluded path"
@@ -168,8 +167,6 @@ def judge(rec: dict, rule_cache: dict) -> dict:
             rule_cache[cwd] = rules.load_rules(cwd)
     all_rules = rule_cache[cwd]
     in_scope = rules.scoped_rules(all_rules, "edit", [rel])
-    if rec.get("only_rule"):
-        in_scope = [r for r in in_scope if r["text"] == rec["only_rule"]]
     hunk = case_hunk(rec, cwd, rel).strip()
     out.update(n_rules=len(all_rules), n_scope=len(in_scope), hunk_chars=len(hunk))
     if not hunk:
@@ -245,15 +242,11 @@ def band(r: dict) -> str:
 
 
 def expected_fired(r: dict, threshold_band: str) -> bool:
-    """Did the rule the case targets fire? A case may declare expect_band:
-    "flag" when landing in the uncertainty band is the right answer, so a
-    borderline case is not counted as a miss forever."""
     exp = (r.get("expect") or "").lower()
     if not exp:
         return False
-    ok = {"act"} if r.get("expect_band", "act") == "act" else {"act", "flag"}
     for h in r.get("hits") or []:
-        if exp in h["text"].lower() and (threshold_band == "flag" or h["band"] in ok):
+        if exp in h["text"].lower() and (threshold_band == "flag" or h["band"] == "act"):
             return True
     return False
 
@@ -277,39 +270,6 @@ def by_tag(cases: list[dict]) -> None:
                   f"{sum(1 for c in v if expected_fired(c, 'act')):>14}")
 
 
-def side_by_side(cases: list[dict], iso_preds: list[dict]) -> None:
-    """Per needle, integration next to isolated. Low isolated means the rule or
-    its needle is weak; high isolated with low integration means it lost to the
-    other rules competing for the same edit."""
-    def group(cs):
-        g = collections.defaultdict(list)
-        for c in cs:
-            g[(c.get("tags") or {}).get("needle", "-")].append(c)
-        return g
-    iso = [p for p in iso_preds if p.get("kind") == "case"
-           and not p.get("skipped") and not p.get("error")]
-    ints, isos = group(cases), group(iso)
-    print(f"\n  {'needle':<26}{'viol':>5}{'int blk':>8}{'int exp':>8}"
-          f"{'iso blk':>8}{'iso exp':>8}{'int fb':>7}{'iso fb':>7}")
-    for needle in sorted(ints):
-        v = [c for c in ints[needle] if c.get("violates")]
-        b = [c for c in ints[needle] if not c.get("violates")]
-        iv = [c for c in isos.get(needle, []) if c.get("violates")]
-        ib = [c for c in isos.get(needle, []) if not c.get("violates")]
-        cell = lambda n, d, w=8: f"{n:>{w}}" if d else f"{'-':>{w}}"
-        print(f"  {needle[:25]:<26}{len(v):>5}"
-              f"{sum(1 for c in v if band(c) == 'act'):>8}"
-              f"{sum(1 for c in v if expected_fired(c, 'act')):>8}"
-              f"{cell(sum(1 for c in iv if band(c) == 'act'), iv)}"
-              f"{cell(sum(1 for c in iv if expected_fired(c, 'act')), iv)}"
-              f"{sum(1 for c in b if band(c) == 'act'):>7}"
-              f"{cell(sum(1 for c in ib if band(c) == 'act'), ib, 7)}")
-    dropped = sum(1 for p in iso_preds if p.get("skipped") == "no rules in scope")
-    if dropped:
-        print(f"  {dropped} isolated cases had no rules in scope: the classifier dropped "
-              f"that rule,\n  so the hook would never ask about it in a real repo either")
-
-
 def cmd_report(args) -> int:
     preds = load_jsonl(args.pred)
     judged = [p for p in preds if not p.get("skipped") and not p.get("error")]
@@ -322,29 +282,16 @@ def cmd_report(args) -> int:
     viol = [c for c in cases if c.get("violates")]
     clean = [c for c in cases if not c.get("violates")]
     if cases:
-        fixtures = os.path.join(HERE, "fixtures")
-        generated = all(str(c.get("cwd", "")).startswith(fixtures) for c in cases)
-        what = ("Generated cases against the fixture rules" if generated
-                else "Hand-written cases against real repo rules")
-        print(f"\n{what}: {len(viol)} violations, "
+        print(f"\nHand-written cases against real repo rules: {len(viol)} violations, "
               f"{len(clean)} compliant near-misses")
         det_act = sum(1 for c in viol if band(c) == "act")
         det_flag = sum(1 for c in viol if band(c) != "quiet")
         exp_act = sum(1 for c in viol if expected_fired(c, "act"))
         exp_flag = sum(1 for c in viol if expected_fired(c, "flag"))
-        soft = [c for c in viol if c.get("expect_band") == "flag"]
-        hard = [c for c in viol if c.get("expect_band") != "flag"]
         print(f"  violations blocked (>= {rules.ACT}) : {det_act}/{len(viol)}"
-              f"   by the expected rule: "
-              f"{sum(1 for c in hard if expected_fired(c, 'act'))}/{len(hard)}")
+              f"   by the expected rule: {exp_act}/{len(viol)}")
         print(f"  violations blocked or flagged (>= {rules.FLAG}) : {det_flag}/{len(viol)}"
               f"   by the expected rule: {exp_flag}/{len(viol)}")
-        if soft:
-            # Cases that declare the flag band as their pass: borderline by
-            # construction, so blocking them would be the wrong answer.
-            landed = sum(1 for c in soft if expected_fired(c, "act"))
-            print(f"  of those, {len(soft)} expect the flag band, not a block: "
-                  f"{landed}/{len(soft)} landed there")
         fb = sum(1 for c in clean if band(c) == "act")
         ff = sum(1 for c in clean if band(c) == "flag")
         print(f"  compliant edits blocked : {fb}/{len(clean)}   flagged only: {ff}/{len(clean)}")
@@ -392,21 +339,6 @@ def cmd_report(args) -> int:
                 if r.get("task"):
                     print(f"      task: {' '.join(r['task'].split())[:110]}")
 
-    twin_blocks = collections.Counter()
-    for c in clean:
-        for h in c.get("hits") or []:
-            if h["band"] == "act":
-                twin_blocks[(((c.get("tags") or {}).get("needle") or c["id"]), h["rule"])] += 1
-    if twin_blocks:
-        # A twin tripped by a rule other than its own pair is a corpus defect.
-        print("\nBenign twins blocked, by the rule that fired:")
-        print(f"  {'twin':<26}{'blocked by':<42}{'n':>4}")
-        for (needle, rid), n in twin_blocks.most_common(20):
-            print(f"  {needle[:26]:<26}{rid[:42]:<42}{n:>4}")
-
-    if args.iso:
-        side_by_side(cases, load_jsonl(args.iso))
-
     per_rule = collections.defaultdict(list)
     for r in judged:
         for rid, p in (r.get("probs") or {}).items():
@@ -441,7 +373,6 @@ def main() -> int:
     rp.add_argument("--examples", type=int, default=8)
     rp.add_argument("--rules", type=int, default=25)
     rp.add_argument("--pred", default=PRED)
-    rp.add_argument("--iso", help="isolated-mode predictions, shown beside the integration ones")
     rp.add_argument("--by-tag", action="store_true",
                     help="breakdown per tag; the case list shows only misses and false blocks")
     rp.set_defaults(fn=cmd_report)
