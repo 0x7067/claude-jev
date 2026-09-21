@@ -1,0 +1,317 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: firecrawl
+  labels:
+    app.kubernetes.io/name: firecrawl
+    app.kubernetes.io/part-of: apps
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: firecrawl
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: firecrawl
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3002"
+        prometheus.io/path: /metrics
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: wait-for-redis
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until nc -z redis 6379; do echo waiting for redis; sleep 2; done
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+      containers:
+        - name: api
+          image: ghcr.io/mendableai/firecrawl:v1.14.2
+          command: ["pnpm", "run", "start:production"]
+          ports:
+            - name: http
+              containerPort: 3002
+          env:
+            - name: TZ
+              value: America/Sao_Paulo
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3002"
+            - name: HOST
+              value: 0.0.0.0
+            - name: REDIS_URL
+              value: redis://redis:6379
+            - name: REDIS_RATE_LIMIT_URL
+              value: redis://redis:6379
+            - name: PLAYWRIGHT_MICROSERVICE_URL
+              value: http://localhost:3000/scrape
+            - name: USE_DB_AUTHENTICATION
+              value: "false"
+            - name: NUM_WORKERS_PER_QUEUE
+              value: "8"
+            - name: MAX_CPU
+              value: "0.8"
+            - name: MAX_RAM
+              value: "0.8"
+            - name: LOGGING_LEVEL
+              value: info
+            - name: BULL_AUTH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: firecrawl
+                  key: BULL_AUTH_KEY
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: firecrawl
+                  key: OPENAI_API_KEY
+            - name: SERPER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: firecrawl
+                  key: SERPER_API_KEY
+            - name: SEARCHAPI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: firecrawl
+                  key: SEARCHAPI_API_KEY
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /test
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /test
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /test
+              port: http
+            periodSeconds: 10
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /app/.cache
+        - name: worker
+          image: ghcr.io/mendableai/firecrawl:v1.14.2
+          command: ["pnpm", "run", "workers"]
+          env:
+            - name: TZ
+              value: America/Sao_Paulo
+            - name: NODE_ENV
+              value: production
+            - name: REDIS_URL
+              value: redis://redis:6379
+            - name: REDIS_RATE_LIMIT_URL
+              value: redis://redis:6379
+            - name: PLAYWRIGHT_MICROSERVICE_URL
+              value: http://localhost:3000/scrape
+            - name: USE_DB_AUTHENTICATION
+              value: "false"
+            - name: NUM_WORKERS_PER_QUEUE
+              value: "8"
+            - name: LOGGING_LEVEL
+              value: info
+            - name: BULL_AUTH_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: firecrawl
+                  key: BULL_AUTH_KEY
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: firecrawl
+                  key: OPENAI_API_KEY
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /app/.cache
+        - name: playwright
+          image: ghcr.io/mendableai/playwright-service:v1.14.2
+          ports:
+            - name: pw
+              containerPort: 3000
+          env:
+            - name: TZ
+              value: America/Sao_Paulo
+            - name: PORT
+              value: "3000"
+            - name: BLOCK_MEDIA
+              value: "true"
+            - name: PROXY_SERVER
+              value: ""
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              memory: 3Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: pw
+            periodSeconds: 10
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: firecrawl
+  labels:
+    app.kubernetes.io/name: firecrawl
+    app.kubernetes.io/part-of: apps
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: firecrawl
+  ports:
+    - name: http
+      port: 3002
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: firecrawl-cache
+  labels:
+    app.kubernetes.io/name: firecrawl
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: firecrawl
+  labels:
+    app.kubernetes.io/name: firecrawl
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: firecrawl
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: apps
+      ports:
+        - port: 3002
+          protocol: TCP
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis
+      ports:
+        - port: 6379
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: firecrawl
+  labels:
+    app.kubernetes.io/name: firecrawl
+spec:
+  parentRefs:
+    - name: internal
+      namespace: gateway
+  hostnames:
+    - firecrawl.example.internal
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: firecrawl
+          port: 3002
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: firecrawl
+  labels:
+    app.kubernetes.io/name: firecrawl
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: firecrawl
