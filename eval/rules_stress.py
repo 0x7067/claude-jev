@@ -152,7 +152,8 @@ def cases_for(fixture: str, lang: str, rows: list[dict], isolated: bool = False,
                             "size": size_bucket(size), "repo": lang}
                     base = {"kind": "case", "cwd": fixture, "task": row["task"],
                             "violates": label == "V",
-                            "expect": row["expect"] if label == "V" else None}
+                            "expect": row["expect"] if label == "V" else None,
+                            "expect_band": row.get("expect_band", "act")}
                     if isolated:
                         base["only_rule"] = row["rule"]
                     fid = f"{lang}-{stem}"

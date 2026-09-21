@@ -146,7 +146,8 @@ def case_hunk(rec: dict, cwd: str, rel: str) -> str:
 def judge(rec: dict, rule_cache: dict) -> dict:
     cwd = rec["cwd"]
     rel = rules.relative(rec["file_path"], cwd)
-    out = {k: rec.get(k) for k in ("id", "kind", "cwd", "task", "violates", "expect", "note", "tags")}
+    out = {k: rec.get(k) for k in ("id", "kind", "cwd", "task", "violates", "expect",
+                                   "expect_band", "note", "tags")}
     out["rel"] = rel
     if rules.EXCLUDED.search(rel):
         out["skipped"] = "excluded path"
@@ -233,11 +234,15 @@ def band(r: dict) -> str:
 
 
 def expected_fired(r: dict, threshold_band: str) -> bool:
+    """Did the rule the case targets fire? A case may declare expect_band:
+    "flag" when landing in the uncertainty band is the right answer, so a
+    borderline case is not counted as a miss forever."""
     exp = (r.get("expect") or "").lower()
     if not exp:
         return False
+    ok = {"act"} if r.get("expect_band", "act") == "act" else {"act", "flag"}
     for h in r.get("hits") or []:
-        if exp in h["text"].lower() and (threshold_band == "flag" or h["band"] == "act"):
+        if exp in h["text"].lower() and (threshold_band == "flag" or h["band"] in ok):
             return True
     return False
 
@@ -316,10 +321,19 @@ def cmd_report(args) -> int:
         det_flag = sum(1 for c in viol if band(c) != "quiet")
         exp_act = sum(1 for c in viol if expected_fired(c, "act"))
         exp_flag = sum(1 for c in viol if expected_fired(c, "flag"))
+        soft = [c for c in viol if c.get("expect_band") == "flag"]
+        hard = [c for c in viol if c.get("expect_band") != "flag"]
         print(f"  violations blocked (>= {rules.ACT}) : {det_act}/{len(viol)}"
-              f"   by the expected rule: {exp_act}/{len(viol)}")
+              f"   by the expected rule: "
+              f"{sum(1 for c in hard if expected_fired(c, 'act'))}/{len(hard)}")
         print(f"  violations blocked or flagged (>= {rules.FLAG}) : {det_flag}/{len(viol)}"
               f"   by the expected rule: {exp_flag}/{len(viol)}")
+        if soft:
+            # Cases that declare the flag band as their pass: borderline by
+            # construction, so blocking them would be the wrong answer.
+            landed = sum(1 for c in soft if expected_fired(c, "act"))
+            print(f"  of those, {len(soft)} expect the flag band, not a block: "
+                  f"{landed}/{len(soft)} landed there")
         fb = sum(1 for c in clean if band(c) == "act")
         ff = sum(1 for c in clean if band(c) == "flag")
         print(f"  compliant edits blocked : {fb}/{len(clean)}   flagged only: {ff}/{len(clean)}")
