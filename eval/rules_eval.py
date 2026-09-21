@@ -150,7 +150,7 @@ def judge(rec: dict, rule_cache: dict) -> dict:
     with _lock:
         if cwd not in rule_cache:
             rule_cache[cwd] = rules.load_rules(cwd)
-    all_rules, meta = rule_cache[cwd]
+    all_rules = rule_cache[cwd]
     in_scope = rules.scoped_rules(all_rules, "edit", [rel])
     hunk = case_hunk(rec, cwd, rel).strip()
     out.update(n_rules=len(all_rules), n_scope=len(in_scope), hunk_chars=len(hunk))
@@ -160,11 +160,9 @@ def judge(rec: dict, rule_cache: dict) -> dict:
     if not in_scope:
         out["skipped"] = "no rules in scope"
         return out
-    t = meta["thresholds"] or {}
-    act, flag = t.get("act", rules.ACT), t.get("flag", rules.FLAG)
     t0 = time.time()
     try:
-        hits, probs, _ = rules.judge_edit(rel, hunk, rec.get("task") or "", in_scope, act, flag)
+        hits, probs, _ = rules.judge_edit(rel, hunk, rec.get("task") or "", in_scope)
         out.update(hits=[{k: h[k] for k in ("rule", "prob", "band", "text", "file", "line")}
                          for h in hits], probs=probs)
     except Exception as e:  # the hook fails open; the eval records why
