@@ -43,7 +43,11 @@ from observed import prompt_text  # noqa: E402
 
 DATA = os.path.join(HERE, "data")
 EDITS = os.path.join(DATA, "rules_edits.jsonl")
-CASES = os.path.join(HERE, "rules_cases.jsonl")
+# The hand-written cases judge edits inside real repos: `cwd` has to be a
+# checkout with its own instruction files. They are not in the repo and are
+# not reproducible from a clone, so they live under eval/private/, which is
+# gitignored. Absent, `run` just judges whatever else was asked for.
+CASES = os.path.join(HERE, "private", "rules_cases.jsonl")
 PRED = os.path.join(DATA, "rules_pred.jsonl")
 CACHE = os.path.join(DATA, "rules_cache.jsonl")
 PROJECTS = os.path.expanduser("~/.claude/projects")
@@ -55,7 +59,7 @@ _lock = threading.RLock()  # load_rules may call the cached ask while held
 
 def cmd_extract(args) -> int:
     os.makedirs(DATA, exist_ok=True)
-    n = 0
+    n = gone = excluded = 0
     with open(EDITS, "w") as out:
         for fp in sorted(glob.glob(os.path.join(PROJECTS, "*", "*.jsonl"))):
             task = ""
@@ -83,6 +87,16 @@ def cmd_extract(args) -> int:
                     cwd = d.get("cwd")
                     if not cwd or not inp.get("file_path"):
                         continue
+                    # An edit the judge cannot reach is not a sample: a gone
+                    # repo has no rules to load, and an excluded path is never
+                    # judged. Both would otherwise land in the sample and skip.
+                    if not os.path.isdir(cwd):
+                        gone += 1
+                        continue
+                    rel = rules.relative(inp["file_path"], cwd)
+                    if rules.EXCLUDED.search(rel) or rules.outside(rel):
+                        excluded += 1
+                        continue
                     n += 1
                     out.write(json.dumps({
                         "id": f"{os.path.basename(fp)[:8]}#{n}", "kind": "real",
@@ -90,7 +104,8 @@ def cmd_extract(args) -> int:
                         "tool_name": b["name"], "tool_input": inp, "task": task,
                         "ts": d.get("timestamp"),
                     }) + "\n")
-    print(f"{n} real edits -> {EDITS}")
+    print(f"{n} real edits -> {EDITS}"
+          f"   (pruned {gone} in repos that are gone, {excluded} on excluded paths)")
     return 0
 
 
@@ -144,13 +159,13 @@ def judge(rec: dict, rule_cache: dict) -> dict:
     rel = rules.relative(rec["file_path"], cwd)
     out = {k: rec.get(k) for k in ("id", "kind", "cwd", "task", "violates", "expect", "note", "tags")}
     out["rel"] = rel
-    if rules.EXCLUDED.search(rel):
+    if rules.EXCLUDED.search(rel) or rules.outside(rel):
         out["skipped"] = "excluded path"
         return out
     with _lock:
         if cwd not in rule_cache:
             rule_cache[cwd] = rules.load_rules(cwd)
-    all_rules, meta = rule_cache[cwd]
+    all_rules = rule_cache[cwd]
     in_scope = rules.scoped_rules(all_rules, "edit", [rel])
     hunk = case_hunk(rec, cwd, rel).strip()
     out.update(n_rules=len(all_rules), n_scope=len(in_scope), hunk_chars=len(hunk))
@@ -160,11 +175,9 @@ def judge(rec: dict, rule_cache: dict) -> dict:
     if not in_scope:
         out["skipped"] = "no rules in scope"
         return out
-    t = meta["thresholds"] or {}
-    act, flag = t.get("act", rules.ACT), t.get("flag", rules.FLAG)
     t0 = time.time()
     try:
-        hits, probs, _ = rules.judge_edit(rel, hunk, rec.get("task") or "", in_scope, act, flag)
+        hits, probs, _ = rules.judge_edit(rel, hunk, rec.get("task") or "", in_scope)
         out.update(hits=[{k: h[k] for k in ("rule", "prob", "band", "text", "file", "line")}
                          for h in hits], probs=probs)
     except Exception as e:  # the hook fails open; the eval records why
@@ -177,7 +190,12 @@ def cmd_run(args) -> int:
     os.makedirs(DATA, exist_ok=True)
     recs = []
     if not args.edits_only:
-        recs += load_jsonl(args.cases)
+        if os.path.exists(args.cases):
+            recs += load_jsonl(args.cases)
+        elif args.cases == CASES:
+            print(f"no private cases at {args.cases}; skipping them")
+        else:
+            raise SystemExit(f"no cases file at {args.cases}")
     if not args.cases_only:
         real = load_jsonl(EDITS)
         if args.sample and len(real) > args.sample:
