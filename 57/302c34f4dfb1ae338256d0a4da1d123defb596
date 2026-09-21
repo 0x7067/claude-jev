@@ -1,0 +1,26 @@
+eval/rules_corpus.jsonl
+  s_773de635b6a909::t_f5067c7af45110 8,26,30,41
+  s_773de635b6a909::t_490285329b0bd6 42
+eval/rules_eval.py
+  s_773de635b6a909::t_633018419ca990 149-150
+  s_773de635b6a909::t_f632197185c045 237-239,243,245
+  s_773de635b6a909::t_0ea8d15c450d57 324-325,327-328,331-336
+eval/rules_stress.py
+  s_773de635b6a909::t_f632197185c045 155-156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "57302c34f4dfb1ae338256d0a4da1d123defb596",
+  "prompts": {},
+  "sessions": {
+    "s_773de635b6a909": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7c4cdae-369e-4a49-9e26-a8a7806fcaeb",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
