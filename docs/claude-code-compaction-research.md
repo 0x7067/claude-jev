@@ -27,12 +27,14 @@ path at all; it gets Jev's blocks appended on top of the built-in summary.
    that, Claude Code writes `additionalContext` to a file and hands Claude a
    path plus a 2,000-character preview (Documented). `TARGET_CHARS = 8000`
    is inside the limit; the wrapper text must stay inside it too.
-3. **The real replacement exists but is gated.** A plugin "hooks module" can
-   hook `session.compact` and return the messages to keep; the built-in
-   summary then never runs. It also gets `$.session.compact()` to trigger a
-   compaction between turns. Rollout flag off by default, env override
-   `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`, API undocumented, module is
-   JavaScript (Experimental). Worth a prototype branch, not a release.
+3. **The real replacement exists, is gated, and now ships here behind the
+   gate.** A plugin "hooks module" can hook `session.compact` and return the
+   messages to keep; the built-in summary then never runs. Rollout flag off
+   by default, env override `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`, API
+   undocumented, module is JavaScript (Experimental). Section 4 has the
+   contract as verified live on 2.1.278, and `hooks/register.ts` plus
+   `compactor.py rows` implement it. Measured on a 15-row session: 0.7 s
+   instead of 35 s, 7 rows kept, no summary written.
 
 ## 1. Hook events around compaction
 
@@ -193,44 +195,138 @@ Binary, 2.1.278, the pieces around the summary:
 
 ## 4. Experimental: hooks modules and a hookable `session.compact`
 
-Everything in this section is Binary and gated. None of it is on a docs page
-as of 2026-09-21; plugins-reference.md documents `experimental.themes`,
-`experimental.monitors`, and `experimental.evals` only.
+Everything in this section is Binary and gated, and everything marked
+*verified* was exercised live on 2.1.278 in this container with the flag on.
+None of it is on a docs page as of 2026-09-21; plugins-reference.md documents
+`experimental.themes`, `experimental.monitors`, and `experimental.evals` only.
+Expect the shapes below to change without notice.
 
-- **Gate.** Rollout flag `tengu_plugin_hooks_modules`, default off, with the
-  message "installed plugins' hooks modules not loaded: rollout flag is off;
-  built-in plugins load regardless". Override: `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`.
-  Also refused when hooks are disabled for the session and until workspace
-  trust is accepted.
-- **Shape.** One JavaScript hooks module per plugin ("The plugin names one
-  hooks module per plugin"), run in a separate hooks worker. Hooks register
-  as `on("<method>", filter, ($, e) => ...)` and chain with `next(e)`. The
-  module is scanned statically: "what a hooks module hooks and calls on $ is
-  read from its source". The manifest key is not recoverable from the binary
-  strings; it belongs to the `experimental` family.
-- **`session.compact` is hookable.** The event carries `trigger` (`manual`,
-  `auto`, or `precompute`), `agentId`, optional `instructions`, and
-  `messages` as rows. A row is one message with `role`, `text`,
-  `toolUses: [{tool_use_id, tool, input}]`, `toolResults: [{tool_use_id,
-  text, isError}]`, and a `handle`. The hook returns `{messages}` or
-  `{skip: "<reason>"}`. Returned rows whose `handle` matches an input row
-  pass the original message through verbatim; rows without a handle are
-  synthesized. When a hook returns its own rows without calling `next`, the
-  log line reads "a hook's N messages stand ... core never ran", and the
-  built-in summarizer is skipped entirely (`tengu_compact_replaced_by_hook`).
-  Validation refuses "a skip after next() compacted", "an empty messages (a
-  compaction leaves at least one)", and non-numeric token counts.
-- **`$.session.compact({instructions})`** triggers a compaction from a hook.
-  It refuses while a turn is running: "the conversation compacts between
-  turns, so call it from turn.complete or later", and refuses under
-  `DISABLE_COMPACT`.
-- **Other methods that map onto this plugin's hooks:** `prompt.submit`
-  (routing), `agent.spawn` (subagent model), `tool.call` and `tool.check`
-  (rule enforcement), `model.classify` and `model.complete`, `http.fetch`,
-  `store.get/set`, `turn.start/step/complete`. A future version of this
-  plugin could be one module instead of five Python processes, but the API
-  is unpublished and the module language is JavaScript, against the
-  standard-library-Python invariant in AGENTS.md.
+### 4.1 Gate
+
+- Rollout flag `tengu_plugin_hooks_modules`, default off. Log line when off:
+  "installed plugins' hooks modules not loaded: rollout flag is off; built-in
+  plugins load regardless". Override: `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`
+  (*verified*: the module loads with it set, silently does not without).
+- Also refused when managed settings set `disableAllHooks`, in safe or bare
+  mode, and until workspace trust is accepted ("hooks modules not loaded
+  until workspace trust is accepted").
+- Compactions inside a subagent, and sessions with settings hooks off, bypass
+  the hook (`isIsolated`). Manual `/compact`, auto-compaction, and the
+  background `precompute` pass all go through it.
+
+### 4.2 Declaring the module (*verified*)
+
+`hooks/hooks.json` gains a `modules` array beside `hooks`:
+
+```json
+{ "hooks": { ... }, "modules": ["./register.ts"] }
+```
+
+Paths resolve relative to `hooks.json` and must stay inside the plugin
+directory. One module per plugin: naming one in both `hooks.json` and
+`plugin.json` is refused. Accepted extensions: `.js`, `.ts`, `.tsx`, `.mjs`,
+`.mts`, `.cjs`; TypeScript is stripped, not type-checked. A module imports
+its own files by relative path only. Built-in plugins use the fixed path
+`hooks/register.ts`, which is why this plugin uses the same name.
+
+Compatibility (*verified* on 2.1.42 via the old npm bundle): a `hooks.json`
+with both `hooks` and `modules` loads fine, the unknown key ignored. A
+`hooks.json` with `modules` alone fails the whole plugin's hook load there
+("expected record, received undefined" at `hooks`). Always keep the `hooks`
+object.
+
+### 4.3 Module shape (*verified*)
+
+```ts
+export function register(on, options) {
+  on("session.compact", async ($, e, next) => { ... });
+}
+```
+
+- `register(on, options)` is the entry point. `options` is the plugin's
+  user configuration from `plugin.json` `userConfig`; without one, every
+  option reads as absent and a warning is logged.
+- `on("<event>", hook)` or `on("<event>", matcher, hook)`. The same event
+  without a matcher may be registered once. Hooks are `($, e, next) =>
+  result`; streaming events (`turn.step`) take an async generator.
+- `next(e)` runs whatever is beneath: other plugins, then the built-in
+  ("core") behavior. Returning without calling `next` replaces it.
+  `next.to(e, "<tier>")` exists for managed plugins only.
+- The module is scanned statically before it loads. `$` must be spelled
+  `$.noun.event(...)` at the call site, event names must be string literals,
+  and `next` may not be rebound or destructured. Violations are refused at
+  load with a message naming the rule.
+- It runs in a hardened `vm` context on a separate worker thread with no
+  Node globals; `$` is the whole API.
+
+### 4.4 The `$` API used here (*verified* shapes)
+
+| Call | Takes | Returns |
+|---|---|---|
+| `$.process.run(argv, init?)` | `argv` string list; `init` `{cwd?, env?, stdin?, timeoutMs?}` | `{exitCode, stdout, stderr}` |
+| `$.session.cwd()`, `$.session.id()`, `$.session.model()` | nothing | string |
+| `$.session.compact({instructions?})` | optional string | triggers a compaction; refused while a turn is running ("call it from turn.complete or later") and under `DISABLE_COMPACT` |
+| `$.env.get(name)` | string | string or undefined |
+| `$.store.get(key)` / `$.store.set(key, value)` | JSON data, 4 MB cap | value / undefined |
+| `$.fs.read(path)` | path | file text |
+| `$.http.fetch(url, init?)` | `init` `{method?, headers?, body?, auth?, socketPath?}` | `{status, ok, headers, text}` |
+| `$.ui.log(text)` | string | writes to the debug log as `[plugin] $.ui.log: ...` |
+| `$.plugin.root`, `$.plugin.name` | properties | plugin directory, name |
+| `$.clock.now()` | nothing | epoch ms |
+
+Also present, not exercised: `$.model.classify`, `$.model.complete`,
+`$.agent.spawn`, `$.tool.register`, `$.ui.toast`, `$.settings.read`,
+`$.clock.every`, `$.flag.value` (absent on `$` in this build).
+
+### 4.5 The `session.compact` contract (*verified*)
+
+Event `e`: `{trigger, messages}` plus `agentId` and `instructions` when set.
+`trigger` is `manual`, `auto`, or `precompute`. `messages` is a list of rows,
+oldest first, each `{role, text, toolUses, toolResults?, handle}`:
+
+- `role` is `user` or `assistant`; `text` is the concatenated text blocks.
+- `toolUses` is `[{tool_use_id, tool, input}]`; `toolResults` is
+  `[{tool_use_id, text, isError}]` and appears on user rows that carry
+  results.
+- `handle` is the message uuid. Messages the engine does not show as rows
+  (meta, virtual) travel attached to the row before them.
+
+Result: `{messages}` or `{skip: "<reason>"}`, optionally with numeric
+`tokensBefore` and `tokensAfter`.
+
+- A returned row **identical to an input row** (same object is simplest)
+  passes the original message through verbatim, new uuid, usage zeroed.
+- Any other row is **synthesized** into a fresh message from `role` and
+  `text`. It must carry `toolUses: []` for the validator; a bare
+  `{handle}` or a row without `toolUses` is rejected ("messages[1] that has
+  toolUses that are not a list of { tool_use_id, tool, input }").
+- The list must be non-empty. Consecutive same-role rows are accepted; the
+  API merges them into one message on the next request.
+- A rejected shape or a thrown error is fail-open: "hook failed ...
+  (session.compact; skipped; what is below it ran in its place)", and the
+  built-in summary runs.
+- When the hook answers without `next`, the log reads "session.compact
+  (manual): a hook's N messages stand (hooked by <plugin>); core never ran"
+  and the `compact_boundary` record shows `durationMs` in the hundreds
+  instead of tens of thousands. `PostCompact` still fires, with an empty
+  `compact_summary`, and `SessionStart` `compact` hooks still run.
+- Passing a kept `toolUses` row through by handle without its `toolResults`
+  row, or the reverse, yields an invalid message sequence for the API. This
+  plugin therefore passes only tool-free rows through by handle and returns
+  tool rows as text.
+
+### 4.6 Measured (*verified*, one run each)
+
+| Session | Rows in | Result | Compaction time |
+|---|---|---|---|
+| 1 turn, 1 file read | 5 | 0% smaller, fell through to the built-in summary | 35.6 s (built-in) |
+| 4 turns, 3 tool calls, 1 decision | 15 | 7 rows out, 2 passed through by handle, 47% smaller | 0.7 s |
+
+On the second session the follow-up turn recalled the `DEFAULT_TIMEOUT`
+value and the no-retry decision, and had lost the opening request and the
+exact error line: Jev's current two questions dropped both. That is the
+selection quality gap `docs/compaction-design.md` items 1 to 3 address, not
+a transport problem; the transport delivered exactly what was selected.
 
 ## 5. What to change here
 
@@ -305,16 +401,27 @@ mentions to `STATS_LOG` gives the `refetch_default_covered` column live data
 instead of replayed data. It cannot change anything, so it is pure
 measurement, and it fails open like the others.
 
-### 5.4 Prototype a hooks module on a branch
+### 5.4 The hooks module, as shipped
 
-Set `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`, scaffold with `claude plugin init
---with hooks` to see the current layout, and write the smallest module that
-hooks `session.compact`, calls Jev over `$.http.fetch`, and returns the rows
-to keep by handle. Success looks like the log line "core never ran". This is
-the only path where the summarizer genuinely does not run and the kept bytes
-are the model's own messages rather than a system reminder. Do not ship it
-until the API is documented; do record what the event and row shapes were
-so the design doc's proposals can be re-costed against them.
+`hooks/register.ts` hooks `session.compact`, pipes the event to
+`compactor.py rows` over stdin, and returns the rows Python hands back, or
+calls `next(e)` on any failure or a `fallback` answer. `compactor.py rows`
+renders each row the way `block_text` renders a transcript line, reuses the
+same two Jev questions, pin, cap, and `MIN_REDUCTION` gate, and emits:
+
+1. a fixed user-role header (the validator needs a non-empty list and the
+   API needs a user turn first),
+2. tool-free rows kept whole, returned as the same object so the engine
+   restores them verbatim,
+3. everything else kept as a text row: tool calls and results rendered,
+   truncated blocks with their elision note.
+
+It also leaves a per-session marker so the `SessionStart` `compact` hook
+stays silent for a compaction the module already handled. Nothing in the
+module judges; the Python-only invariant in AGENTS.md is kept in spirit and
+noted there. Untested so far: an `auto` trigger (it takes the same path as
+`manual` in the binary), and interactive sessions; every run above was
+`-p --resume`.
 
 ### 5.5 Things not to do
 

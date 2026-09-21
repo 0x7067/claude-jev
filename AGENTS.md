@@ -12,12 +12,13 @@ explains what each hook decides and why. Read it before changing behavior.
 | `scripts/prompt_router.py` | `UserPromptSubmit` — routing hint |
 | `scripts/subagent_router.py` | `PreToolUse` on `Agent\|Task` — sets subagent model |
 | `scripts/rules.py` | `PostToolUse` on edits, and `Stop` — rule enforcement |
-| `scripts/compactor.py` | `SessionStart` on `compact`/`clear`, plus `prepare` CLI |
+| `scripts/compactor.py` | `SessionStart` on `compact`/`clear`, the `rows` bridge, plus `prepare` CLI |
+| `hooks/register.ts` | Experimental function-hooks module: `session.compact` -> `compactor.py rows`. A bridge, not a second implementation. |
 | `scripts/observed.py` | Scores what a past turn actually did |
 | `scripts/stats.py` | `/claude-jev:stats` — scores live decisions |
 | `eval/` | Offline measurement. See `eval/README.md`. |
 | `skills/` | User-facing entry points. `/claude-jev:<dir name>`. |
-| `hooks/hooks.json` | Hook registration. New hook means an entry here. |
+| `hooks/hooks.json` | Hook registration. New hook means an entry here. `modules` names the function-hooks module; older Claude Code ignores the key. |
 
 ## Invariants
 
@@ -26,7 +27,10 @@ explains what each hook decides and why. Read it before changing behavior.
   hook `main`. Never add a path where a failure blocks or corrupts a session.
   `compactor.py prepare` is the exception: it runs as a CLI and prints errors.
 - **Python 3 standard library only.** No dependency file, no third-party
-  imports. `urllib.request` is the HTTP client.
+  imports. `urllib.request` is the HTTP client. The one non-Python file,
+  `hooks/register.ts`, exists because Claude Code loads function-hook modules
+  as JavaScript; it holds no judgment, only the call into `compactor.py rows`
+  and the fail-open fallthrough to `next(e)`. Keep it that way.
 - **One environment variable:** `TYPESAFE_API_KEY`. Do not add another, and
   do not add a fallback name. Every other tunable is a module-level constant.
 - **A constant carries a comment saying why it has that value.** Thresholds
@@ -62,6 +66,25 @@ echo '{"prompt":"hi","transcript_path":""}' | python3 scripts/prompt_router.py; 
 
 Every hook must exit 0 on a malformed or empty event. Feed the script you
 changed a matching JSON event on stdin and check the exit code.
+
+The `rows` bridge answers bad input with `{"fallback": ...}` and exit 0:
+
+```bash
+echo '' | python3 scripts/compactor.py rows
+```
+
+To exercise the function-hooks module end to end, run a session with the
+plugin loaded from disk, compact it, and read the debug log:
+
+```bash
+export CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1
+claude -p "..." --session-id "$ID" --plugin-dir "$PWD"
+claude -p "/compact" --resume "$ID" --plugin-dir "$PWD" -d
+grep 'jev-compact\|core never ran' ~/.claude/debug/"$ID".txt
+```
+
+"a hook's N messages stand ... core never ran" means the summary was
+replaced; "built-in summary runs" means the bridge fell through.
 
 To measure a routing or threshold change, run the relevant eval and compare
 against the table in `README.md`:

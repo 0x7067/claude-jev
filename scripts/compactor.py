@@ -2,7 +2,16 @@
 """Jev-powered context compaction: Jev decides which transcript blocks still
 matter, and only those survive — no LLM summary in the loop.
 
-Two surfaces:
+Three surfaces:
+
+  rows               Stdin/stdout bridge for the hooks module in
+                     hooks/register.ts. Claude Code's experimental function
+                     hooks (CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1) let a plugin
+                     hook `session.compact` itself: the module hands the
+                     conversation rows here, Jev judges them, and the rows it
+                     keeps go back as the whole post-compaction context. The
+                     built-in summarizer never runs. This is the path that
+                     replaces summarization entirely.
 
   prepare            CLI for the /claude-jev:compact skill: judge the current
                      session's transcript, write the kept blocks verbatim to a
@@ -14,9 +23,11 @@ Two surfaces:
                      compaction, re-inject Jev's kept blocks on top of the
                      generated summary. Matcher "clear": if a fresh digest from
                      `prepare` is waiting, inject it as the new session's
-                     context and delete it. SessionStart is the only
-                     post-compaction event that can inject context
-                     (PreCompact/PostCompact output is discarded).
+                     context and delete it. SessionStart is the only classic
+                     hook event that can inject context after compaction
+                     (PreCompact/PostCompact output is discarded). When the
+                     `rows` path replaced this compaction, the marker it left
+                     tells this hook to stay silent.
 
 Hook mode always exits 0 and prints nothing on any failure — a hook must
 never block or corrupt a session. `prepare` prints errors for the user.
@@ -65,6 +76,17 @@ STATS_LOG = os.path.expanduser("~/.claude/jev-compact-log.jsonl")
 PROJECTS = os.path.expanduser("~/.claude/projects")
 TAIL_LINES = 5000  # transcript read window; a bound, not a target
 DIGEST_TTL = 600   # a pending digest is applied only to the /clear it was made for
+REPLACED_TTL = 120  # `rows` leaves a marker for the SessionStart compact hook that
+                    # follows within seconds; older markers are from a crashed run
+CONTEXT_CHARS = 9500  # additionalContext over 10,000 chars becomes a file path plus
+                      # a 2,000-char preview (hooks reference, "Add context for
+                      # Claude"); the digest must stay a digest
+ROWS_HEADER = ("This session's history was compacted by Jev. Every message below "
+               "was judged still needed and kept verbatim, or as a head with an "
+               "elision note; everything else was dropped. Continue the last task "
+               "without asking the user to repeat anything.")
+# Fixed text, not generated: the first message must be a user turn, and the
+# validator refuses an empty result. Same header the SessionStart path uses.
 
 # Fallback only: the harness now flags its own injections (see `injected`),
 # but transcripts written before it did have nothing but the tag to go on.
@@ -324,7 +346,14 @@ def fit_kept(kept: list[dict]) -> list[dict]:
 def judge(transcript_path: str, cwd: str | None) -> tuple[list[str], dict]:
     """The whole selection pass: transcript -> Jev keep/truncate/drop ->
     digest entries. The newest PIN_TAIL blocks are never judged."""
-    blocks = transcript_blocks(transcript_path)[-MAX_BLOCKS:]
+    kept, stats = select_blocks(transcript_blocks(transcript_path)[-MAX_BLOCKS:], cwd)
+    return [k["text"] for k in kept], stats
+
+
+def select_blocks(blocks: list[dict], cwd: str | None) -> tuple[list[dict], dict]:
+    """Jev keep/truncate/drop over labeled blocks. Each kept entry carries the
+    block index `i`, its digest `text`, and `kind` (full or truncated), so the
+    caller can hand back either the text or the row the block came from."""
     if not blocks:
         return [], {"judged": 0}
     n_judged = max(0, len(blocks) - PIN_TAIL)
@@ -374,7 +403,120 @@ def judge(transcript_path: str, cwd: str | None) -> tuple[list[str], dict]:
     stats["est_tokens_after"] = stats["chars_after"] // 4
     stats["reduction"] = round(
         1 - stats["chars_after"] / max(stats["chars_before"], 1), 3)
-    return [k["text"] for k in kept], stats
+    return kept, stats
+
+
+def row_text(row: dict) -> str | None:
+    """The judge-visible text of one `session.compact` row, or None.
+
+    A row is one message as the hooks engine shows it: `role`, `text`,
+    `toolUses` [{tool_use_id, tool, input}], `toolResults` [{tool_use_id,
+    text, isError}], and a `handle`. Rendered the way `block_text` renders a
+    transcript line, so the same questions and thresholds apply. Harness
+    rows (slash-command wrappers, caveats) and one-word acks are invisible,
+    as in `visible_text`; the engine already drops isMeta rows.
+    """
+    parts = []
+    text = (row.get("text") or "").strip()
+    if text:
+        parts.append(text)
+    for u in row.get("toolUses") or []:
+        if isinstance(u, dict):
+            parts.append(f"[tool_use {u.get('tool', '?')}] "
+                         f"{json.dumps(u.get('input', {}))[:400]}")
+    for r in row.get("toolResults") or []:
+        if isinstance(r, dict):
+            parts.append(f"[tool_result] {str(r.get('text') or '')[:800]}")
+    text = "\n".join(parts).strip()
+    if not text or text.startswith(META_PREFIXES):
+        return None
+    if row.get("role") == "user" and re.fullmatch(r"(ok|yes|no|thanks|continue)\.?", text, re.I):
+        return None
+    return text
+
+
+def plain_row(row: dict) -> bool:
+    """A row with no tool blocks. Only these pass through by handle: a kept
+    tool_use whose tool_result was dropped (or the reverse) is an invalid
+    message sequence, so tool rows come back as text instead."""
+    return not row.get("toolUses") and not row.get("toolResults")
+
+
+def rows_out(blocks: list[dict], kept: list[dict]) -> list[dict]:
+    """Kept entries -> rows the engine accepts.
+
+    An unchanged row (same object, same handle) is passed through: the
+    engine restores the original message verbatim. Anything else is a text
+    row with no handle, which the engine turns into a new message whose
+    bytes are still the transcript's own, cut or with an elision note.
+    """
+    out = [{"role": "user", "text": ROWS_HEADER, "toolUses": [], "toolResults": []}]
+    for k in kept:
+        row = blocks[k["i"]]["row"]
+        if (k["kind"] == "full" and plain_row(row)
+                and len((row.get("text") or "")) <= KEEP_CHARS):
+            out.append(row)
+            continue
+        out.append({"role": row.get("role") or "assistant", "text": k["text"],
+                    "toolUses": [], "toolResults": []})
+    return out
+
+
+def replaced_marker(session_id: str) -> str:
+    return os.path.join(DIGEST_DIR, re.sub(r"[^A-Za-z0-9-]", "_", session_id) + ".replaced")
+
+
+def rows(stdin) -> int:
+    """`session.compact` bridge: {trigger, cwd, session_id, messages} in,
+    {messages} or {fallback} out. `fallback` tells the module to call
+    next(e) so the built-in summary runs; nothing here ever leaves the
+    conversation uncompacted."""
+    try:
+        event = json.load(stdin)
+    except ValueError as e:
+        print(json.dumps({"fallback": f"unreadable event: {e}"}))
+        return 0
+    if not isinstance(event, dict):
+        print(json.dumps({"fallback": "event is not an object"}))
+        return 0
+    incoming = [r for r in event.get("messages") or [] if isinstance(r, dict)]
+    blocks = []
+    for r in incoming:
+        text = row_text(r)
+        if text is not None:
+            blocks.append({"role": r.get("role") or "assistant", "text": text, "row": r})
+    blocks = blocks[-MAX_BLOCKS:]
+    if not blocks:
+        print(json.dumps({"fallback": "no judgeable rows"}))
+        return 0
+    try:
+        kept, stats = select_blocks(blocks, event.get("cwd"))
+    except jev.JevError as e:
+        print(json.dumps({"fallback": f"jev: {e}"}))
+        return 0
+    stats["rows_in"] = len(incoming)
+    if stats.get("reduction", 0) < MIN_REDUCTION:
+        log_stats({"session_id": event.get("session_id"), "source": "rows"},
+                  {**stats, "gated": True})
+        print(json.dumps({"fallback": f"only {stats['reduction']:.0%} smaller; "
+                                      "letting the built-in summary run"}))
+        return 0
+    out = rows_out(blocks, kept)
+    stats["rows_out"] = len(out)
+    stats["passed_through"] = sum(1 for r in out if r.get("handle"))
+    log_stats({"session_id": event.get("session_id"), "source": "rows"}, stats)
+    sid = event.get("session_id")
+    if sid:
+        try:
+            os.makedirs(DIGEST_DIR, exist_ok=True)
+            with open(replaced_marker(sid), "w") as f:
+                f.write(str(time.time()))
+        except OSError:
+            pass
+    print(json.dumps({"messages": out, "stats": {
+        "kept": stats["kept"], "truncated": stats["truncated"],
+        "reduction": stats["reduction"], "ms": stats["ms"]}}))
+    return 0
 
 
 def log_stats(event: dict, stats: dict) -> None:
@@ -448,6 +590,8 @@ def prepare(cwd: str, transcript_path: str | None) -> int:
 
 
 def emit_context(text: str) -> None:
+    if len(text) > CONTEXT_CHARS:
+        text = cut_text(text, CONTEXT_CHARS - 80) + "\n[… digest cut at the context limit]"
     json.dump({
         "hookSpecificOutput": {
             "hookEventName": "SessionStart",
@@ -489,6 +633,14 @@ def hook(event: dict) -> None:
                          "verbatim; the rest was dropped entirely.\n\n"
                          "# Jev-compacted context\n\n" + digest)
     elif source == "compact":
+        marker = replaced_marker(event.get("session_id") or "")
+        try:
+            fresh = time.time() - os.path.getmtime(marker) < REPLACED_TTL
+            os.remove(marker)
+            if fresh:
+                return  # the hooks module already chose this context
+        except OSError:
+            pass
         kept, stats = judge(event.get("transcript_path") or "", event.get("cwd"))
         weak = stats.get("reduction", 0) < MIN_REDUCTION
         log_stats(event, {**stats, "gated": weak})
@@ -501,6 +653,8 @@ def hook(event: dict) -> None:
 
 def main() -> int:
     try:
+        if len(sys.argv) > 1 and sys.argv[1] == "rows":
+            return rows(sys.stdin)
         if len(sys.argv) > 1 and sys.argv[1] == "prepare":
             tp = sys.argv[2] if len(sys.argv) > 2 else None
             return prepare(os.getcwd(), tp)
