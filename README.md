@@ -204,9 +204,24 @@ an instruction at all. Everything else the rubric did is either the
 markdown path's job already (ids, line citations, scope, dedupe) or was
 the person's (the `lint` bucket, hand-tuned questions, `status` flags).
 The engine judges every instruction it finds and never files one away.
-The phase question has not been through the eval yet. The numbers above
-were measured with every rule judged per edit; until the Stop-time rules
-are scored the same way, treat them as the unmeasured part.
+
+The phase question was checked live on 20 sample rules: 8 per-edit, 7
+whole-turn, 5 non-instructions (facts, pointers, process). All 20 landed
+where expected. Without `criteria` the whole-turn rules scored 0.51–0.73
+and the per-edit ones 0.15–0.21; with the shipped `criteria` they scored
+0.53–0.90 and 0.08–0.12, so the gate at 0.50 has room on both sides. In a
+throwaway repo with a seven-line `CLAUDE.md`, the hook classified the five
+instructions (three per-edit, two whole-turn) and dropped the description,
+the "run `pnpm test`" line and the docs pointer. Eight hand-written cases
+against it: 4 of 4 violations blocked by the expected rule (0.90–0.97),
+0 of 4 compliant near-misses flagged. At Stop, an unasked-for helper file
+scored 0.86 on "keep changes minimal" once the user's request was in the
+state, and 0.32 without it. Live, with the plugin loaded, the agent given a
+task that broke a rule it could not see (the rule sat in
+`~/.claude/jev-rules.md`, which Claude Code does not load) was blocked at
+0.92, repaired the edit, and finished; the repair scored 0.58 and reached
+the user as a notice only. The stress corpus above has not been re-run
+with whole-turn rules in place; it needs the local repos it was built from.
 
 ```bash
 python3 eval/rules_eval.py extract    # your transcripts -> real edits

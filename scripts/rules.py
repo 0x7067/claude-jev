@@ -189,6 +189,16 @@ TURN_Q = ("Does judging item [{i}] need every change the agent made for the task
           "its total size, scope creep, edits outside what was asked, an "
           "abstraction with a single caller, or the same code repeated across "
           "files? Answer no for a rule a single hunk can break on its own.")
+# Live, on 15 rules: without criteria the whole-turn rules scored 0.51–0.73
+# and per-edit ones 0.15–0.21; with them 0.53–0.90 and 0.08–0.12.
+TURN_CRITERIA = {
+    "true": "A rule about the change as a whole: how much was changed, whether "
+            "it stayed within the task, whether new code has callers, whether "
+            "the same code now appears in several places.",
+    "false": "A rule one hunk can break by itself: a forbidden construct, call, "
+             "pattern, comment style, naming, error handling, or a required "
+             "element in the code being added.",
+}
 CLASSIFY_CACHE = os.path.expanduser("~/.claude/jev-rules-cache.json")
 INSTRUCTION_MIN = 0.5
 TURN_MIN = 0.5
@@ -205,7 +215,8 @@ def classify_items(lines: list[str],
     that markdown parsing couldn't recover: it happens on first use, in
     ~/.claude, with nothing for the user to run or commit."""
     digest = hashlib.sha256(
-        (INSTRUCTION_Q + TURN_Q + "".join(lines)).encode()).hexdigest()
+        (INSTRUCTION_Q + TURN_Q + json.dumps(TURN_CRITERIA, sort_keys=True)
+         + "".join(lines)).encode()).hexdigest()
     try:
         with open(CLASSIFY_CACHE) as f:
             cache = json.load(f)
@@ -221,7 +232,8 @@ def classify_items(lines: list[str],
         questions = {}
         for i in range(len(chunk)):
             questions[f"q{i}"] = {"type": "noul", "instructions": INSTRUCTION_Q.format(i=i)}
-            questions[f"t{i}"] = {"type": "noul", "instructions": TURN_Q.format(i=i)}
+            questions[f"t{i}"] = {"type": "noul", "instructions": TURN_Q.format(i=i),
+                                  "criteria": TURN_CRITERIA}
         answers = jev.ask(state, questions)
         for i, (ln, _text) in enumerate(chunk):
             p = (answers.get(f"q{i}") or {}).get("noul")
