@@ -1,0 +1,25 @@
+skills/stats/SKILL.md
+  s_951b9bb55d2f3b::t_e6132444125891 1-31
+eval/compare.py
+  s_951b9bb55d2f3b::t_d87eb6db76f907 348
+skills/compact/SKILL.md
+  s_951b9bb55d2f3b::t_e6132444125891 1-35
+scripts/compactor.py
+  s_951b9bb55d2f3b::t_d55b2f52e048c1 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d1709e346993645d920ed467b5e60d02a5f3024d",
+  "prompts": {},
+  "sessions": {
+    "s_951b9bb55d2f3b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6cc4b3d3-229d-47d5-8d86-cf79a477ddbc",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
