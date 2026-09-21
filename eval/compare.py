@@ -345,7 +345,7 @@ def cmd_compact(args) -> int:
             post_tokens = len(default_ctx) // 4
             duration_s = None
             trigger = "synth"
-        # The pure /jev:compact path applies nothing under the MIN_REDUCTION
+        # The pure /claude-jev:compact path applies nothing under the MIN_REDUCTION
         # gate — a gated digest's coverage is what the session actually got.
         gated = stats.get("reduction", 0) < compactor.MIN_REDUCTION or not kept
         kept = [] if gated else kept

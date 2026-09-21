@@ -4,7 +4,7 @@ matter, and only those survive — no LLM summary in the loop.
 
 Two surfaces:
 
-  prepare            CLI for the /jev:compact command: judge the current
+  prepare            CLI for the /claude-jev:compact skill: judge the current
                      session's transcript, write the kept blocks verbatim to a
                      digest file, and print a one-line plan. The user then runs
                      /clear and the compacted context is all that remains —
