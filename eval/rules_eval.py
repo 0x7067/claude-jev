@@ -261,6 +261,39 @@ def by_tag(cases: list[dict]) -> None:
                   f"{sum(1 for c in v if expected_fired(c, 'act')):>14}")
 
 
+def side_by_side(cases: list[dict], iso_preds: list[dict]) -> None:
+    """Per needle, integration next to isolated. Low isolated means the rule or
+    its needle is weak; high isolated with low integration means it lost to the
+    other rules competing for the same edit."""
+    def group(cs):
+        g = collections.defaultdict(list)
+        for c in cs:
+            g[(c.get("tags") or {}).get("needle", "-")].append(c)
+        return g
+    iso = [p for p in iso_preds if p.get("kind") == "case"
+           and not p.get("skipped") and not p.get("error")]
+    ints, isos = group(cases), group(iso)
+    print(f"\n  {'needle':<26}{'viol':>5}{'int blk':>8}{'int exp':>8}"
+          f"{'iso blk':>8}{'iso exp':>8}{'int fb':>7}{'iso fb':>7}")
+    for needle in sorted(ints):
+        v = [c for c in ints[needle] if c.get("violates")]
+        b = [c for c in ints[needle] if not c.get("violates")]
+        iv = [c for c in isos.get(needle, []) if c.get("violates")]
+        ib = [c for c in isos.get(needle, []) if not c.get("violates")]
+        cell = lambda n, d, w=8: f"{n:>{w}}" if d else f"{'-':>{w}}"
+        print(f"  {needle[:25]:<26}{len(v):>5}"
+              f"{sum(1 for c in v if band(c) == 'act'):>8}"
+              f"{sum(1 for c in v if expected_fired(c, 'act')):>8}"
+              f"{cell(sum(1 for c in iv if band(c) == 'act'), iv)}"
+              f"{cell(sum(1 for c in iv if expected_fired(c, 'act')), iv)}"
+              f"{sum(1 for c in b if band(c) == 'act'):>7}"
+              f"{cell(sum(1 for c in ib if band(c) == 'act'), ib, 7)}")
+    dropped = sum(1 for p in iso_preds if p.get("skipped") == "no rules in scope")
+    if dropped:
+        print(f"  {dropped} isolated cases had no rules in scope: the classifier dropped "
+              f"that rule,\n  so the hook would never ask about it in a real repo either")
+
+
 def cmd_report(args) -> int:
     preds = load_jsonl(args.pred)
     judged = [p for p in preds if not p.get("skipped") and not p.get("error")]
@@ -346,6 +379,9 @@ def cmd_report(args) -> int:
         for (needle, rid), n in twin_blocks.most_common(20):
             print(f"  {needle[:26]:<26}{rid[:42]:<42}{n:>4}")
 
+    if args.iso:
+        side_by_side(cases, load_jsonl(args.iso))
+
     per_rule = collections.defaultdict(list)
     for r in judged:
         for rid, p in (r.get("probs") or {}).items():
@@ -380,6 +416,7 @@ def main() -> int:
     rp.add_argument("--examples", type=int, default=8)
     rp.add_argument("--rules", type=int, default=25)
     rp.add_argument("--pred", default=PRED)
+    rp.add_argument("--iso", help="isolated-mode predictions, shown beside the integration ones")
     rp.add_argument("--by-tag", action="store_true",
                     help="breakdown per tag; the case list shows only misses and false blocks")
     rp.set_defaults(fn=cmd_report)
