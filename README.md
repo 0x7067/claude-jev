@@ -10,10 +10,9 @@ Agents burn the expensive model on small judgments: what is this prompt, how big
 | `PreToolUse` (`Agent\|Task`) | Pick the model tier a subagent spawns on |
 | `PostToolUse` (edits) | Judge the edit against your instruction files |
 | `Stop` | Judge the whole turn against the rules that need it |
-| `SessionStart` (`compact`, `clear`) | Re-inject the blocks Jev kept |
 | `session.compact` (experimental function hook) | Replace the compaction summary with the rows Jev kept; the summarizer never runs |
 
-All five fail open: any error, missing key, or timeout produces no output and never blocks a prompt. Slash commands, `#` lines, and prompts under 3 characters are skipped locally.
+All five fail open: any error, missing key, or timeout produces no output and never blocks a prompt; the compaction hook falls through to Claude Code's own summary. Slash commands, `#` lines, and prompts under 3 characters are skipped locally.
 
 ### Routing
 
@@ -31,13 +30,11 @@ At 0.80 the edit is blocked with a file:line cite; 0.50–0.80 flags to you only
 
 ### Compaction
 
-With Claude Code's experimental function hooks on (`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`, 2.1.278 or later), `hooks/register.ts` hooks `session.compact` itself: `/compact` and auto-compaction hand the conversation to Jev as rows, and the rows it keeps become the whole post-compaction context. No summary is written, and the compaction takes under a second instead of 30-60 s. Kept plain messages come back byte-identical; kept tool calls and results come back as text; a weak selection, a missing key, or any error falls through to the built-in summary. `docs/claude-code-compaction-research.md` has the verified API and the measurements.
+Requires Claude Code 2.1.278 or later with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` (an undocumented, gated feature; see `docs/claude-code-compaction-research.md` for what was verified). `hooks/register.ts` hooks `session.compact`: `/compact`, auto-compaction, and the `/rewind` summaries hand the conversation to Jev as rows, and the rows it keeps become the whole post-compaction context. No summary is written, and compaction takes under a second instead of 30-60 s. Without the flag, Claude Code compacts as it always did; the plugin adds nothing to that path.
 
-Without that flag, `/claude-jev:compact` is manual: Jev scores every block keep/truncate/drop in one batched request, writes survivors verbatim to a digest, and tells you to run `/clear`; a `SessionStart` hook restores the selection. Claude Code's own compaction can't be replaced, so a second hook re-injects the kept blocks on top of its summary. No generated summary ever enters the loop; unscored blocks are kept.
+Bytes, not prose: harness rows (slash-command wrappers, caveats) and one-word acks are dropped locally. Each row gets two judgments — needed at all, needed verbatim. Kept plain messages come back byte-identical; kept tool calls and results come back as text, and a no on the second question keeps a truncated head plus a re-read pointer. Unscored rows are kept. A fixed one-line header opens the compacted context.
 
-Bytes, not prose: sidechains, one-word acks, and Claude-injected context (skill bodies, caveats, notifications, the compaction turn) are filtered first since the next session gets them free. Each block gets two judgments — needed at all, needed verbatim. A no on the second keeps a truncated head plus a re-read pointer; exact errors and constraints stay whole. A kept `tool_result` pulls its `tool_use` along.
-
-Limits: newest 150 blocks judged, digest capped at 8k chars (lowest-confidence keeps downgraded first), nothing applied under a 25% shrink — a weak selection isn't worth a freshly uncached prompt. Digests are keyed by working directory with a 10-minute TTL.
+Limits: newest 150 rows judged, kept text capped at 8k chars (lowest-confidence keeps downgraded first), nothing replaced under a 25% shrink — a weak selection falls through to the built-in summary. So does a missing key, a Jev outage, or any error in the bridge.
 
 ## Setup
 

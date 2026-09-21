@@ -12,7 +12,7 @@ explains what each hook decides and why. Read it before changing behavior.
 | `scripts/prompt_router.py` | `UserPromptSubmit` — routing hint |
 | `scripts/subagent_router.py` | `PreToolUse` on `Agent\|Task` — sets subagent model |
 | `scripts/rules.py` | `PostToolUse` on edits, and `Stop` — rule enforcement |
-| `scripts/compactor.py` | `SessionStart` on `compact`/`clear`, the `rows` bridge, plus `prepare` CLI |
+| `scripts/compactor.py` | The `rows` bridge behind `session.compact`; `judge` is kept for the eval |
 | `hooks/register.ts` | Experimental function-hooks module: `session.compact` -> `compactor.py rows`. A bridge, not a second implementation. |
 | `scripts/observed.py` | Scores what a past turn actually did |
 | `scripts/stats.py` | `/claude-jev:stats` — scores live decisions |
@@ -25,7 +25,8 @@ explains what each hook decides and why. Read it before changing behavior.
 - **Hooks fail open.** A hook exits 0 and prints nothing on any error, missing
   key, or timeout. Keep the `except Exception: return` at the top of every
   hook `main`. Never add a path where a failure blocks or corrupts a session.
-  `compactor.py prepare` is the exception: it runs as a CLI and prints errors.
+  `compactor.py rows` fails open differently: it answers `{"fallback": ...}`
+  on stdout and exits 0, and `hooks/register.ts` then calls `next(e)`.
 - **Python 3 standard library only.** No dependency file, no third-party
   imports. `urllib.request` is the HTTP client. The one non-Python file,
   `hooks/register.ts`, exists because Claude Code loads function-hook modules

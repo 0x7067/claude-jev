@@ -1,46 +1,28 @@
 #!/usr/bin/env python3
-"""Jev-powered context compaction: Jev decides which transcript blocks still
+"""Jev-powered context compaction: Jev decides which conversation rows still
 matter, and only those survive — no LLM summary in the loop.
 
-Three surfaces:
+Surface: `rows`, the stdin/stdout bridge behind `hooks/register.ts`. Claude
+Code's function hooks (CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1, 2.1.278+) let a
+plugin hook `session.compact` itself. The module hands the conversation rows
+here, Jev judges them, and the rows it keeps go back as the whole
+post-compaction context. The built-in summarizer never runs.
 
-  rows               Stdin/stdout bridge for the hooks module in
-                     hooks/register.ts. Claude Code's experimental function
-                     hooks (CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1) let a plugin
-                     hook `session.compact` itself: the module hands the
-                     conversation rows here, Jev judges them, and the rows it
-                     keeps go back as the whole post-compaction context. The
-                     built-in summarizer never runs. This is the path that
-                     replaces summarization entirely.
-
-  prepare            CLI for the /claude-jev:compact skill: judge the current
-                     session's transcript, write the kept blocks verbatim to a
-                     digest file, and print a one-line plan. The user then runs
-                     /clear and the compacted context is all that remains —
-                     this is the path that replaces summarization entirely.
-
-  SessionStart hook  matcher "compact": after Claude Code's built-in
-                     compaction, re-inject Jev's kept blocks on top of the
-                     generated summary. Matcher "clear": if a fresh digest from
-                     `prepare` is waiting, inject it as the new session's
-                     context and delete it. SessionStart is the only classic
-                     hook event that can inject context after compaction
-                     (PreCompact/PostCompact output is discarded). When the
-                     `rows` path replaced this compaction, the marker it left
-                     tells this hook to stay silent.
-
-Hook mode always exits 0 and prints nothing on any failure — a hook must
-never block or corrupt a session. `prepare` prints errors for the user.
+Contract with the module: stdout is one JSON object, either {"messages":
+[...]} to replace the compaction or {"fallback": "<reason>"} to let the
+built-in summary run. Bad input, a missing key, a Jev outage, or a weak
+selection all answer with a fallback and exit 0, so a failure here can never
+leave a session uncompacted. `judge` stays because `eval/compare.py` replays
+recorded transcripts through it.
 
 Env:
-  TYPESAFE_API_KEY   required (hook disables silently without it)
+  TYPESAFE_API_KEY   required (the bridge falls back silently without it)
 """
 
 from __future__ import annotations
 
 import concurrent.futures
 import datetime
-import hashlib
 import json
 import os
 import re
@@ -71,22 +53,14 @@ TARGET_CHARS = 8000     # hard cap on digest size. Sized against the default
                         # A wider window is for choosing better, not keeping more.
 MIN_REDUCTION = 0.25    # required size reduction; compaction busts the prompt cache,
                         # so a weak selection must not ship
-DIGEST_DIR = os.path.expanduser("~/.claude/jev-compact")
 STATS_LOG = os.path.expanduser("~/.claude/jev-compact-log.jsonl")
-PROJECTS = os.path.expanduser("~/.claude/projects")
-TAIL_LINES = 5000  # transcript read window; a bound, not a target
-DIGEST_TTL = 600   # a pending digest is applied only to the /clear it was made for
-REPLACED_TTL = 120  # `rows` leaves a marker for the SessionStart compact hook that
-                    # follows within seconds; older markers are from a crashed run
-CONTEXT_CHARS = 9500  # additionalContext over 10,000 chars becomes a file path plus
-                      # a 2,000-char preview (hooks reference, "Add context for
-                      # Claude"); the digest must stay a digest
+TAIL_LINES = 5000  # transcript read window for `judge`; a bound, not a target
 ROWS_HEADER = ("This session's history was compacted by Jev. Every message below "
                "was judged still needed and kept verbatim, or as a head with an "
                "elision note; everything else was dropped. Continue the last task "
                "without asking the user to repeat anything.")
 # Fixed text, not generated: the first message must be a user turn, and the
-# validator refuses an empty result. Same header the SessionStart path uses.
+# validator refuses an empty result.
 
 # Fallback only: the harness now flags its own injections (see `injected`),
 # but transcripts written before it did have nothing but the tag to go on.
@@ -462,10 +436,6 @@ def rows_out(blocks: list[dict], kept: list[dict]) -> list[dict]:
     return out
 
 
-def replaced_marker(session_id: str) -> str:
-    return os.path.join(DIGEST_DIR, re.sub(r"[^A-Za-z0-9-]", "_", session_id) + ".replaced")
-
-
 def rows(stdin) -> int:
     """`session.compact` bridge: {trigger, cwd, session_id, messages} in,
     {messages} or {fallback} out. `fallback` tells the module to call
@@ -505,14 +475,6 @@ def rows(stdin) -> int:
     stats["rows_out"] = len(out)
     stats["passed_through"] = sum(1 for r in out if r.get("handle"))
     log_stats({"session_id": event.get("session_id"), "source": "rows"}, stats)
-    sid = event.get("session_id")
-    if sid:
-        try:
-            os.makedirs(DIGEST_DIR, exist_ok=True)
-            with open(replaced_marker(sid), "w") as f:
-                f.write(str(time.time()))
-        except OSError:
-            pass
     print(json.dumps({"messages": out, "stats": {
         "kept": stats["kept"], "truncated": stats["truncated"],
         "reduction": stats["reduction"], "ms": stats["ms"]}}))
@@ -533,142 +495,16 @@ def log_stats(event: dict, stats: dict) -> None:
         pass
 
 
-def digest_path(cwd: str) -> str:
-    # Keyed by cwd, not session id — /clear hands the digest to a new session.
-    return os.path.join(DIGEST_DIR, hashlib.sha1(cwd.encode()).hexdigest()[:16] + ".md")
-
-
-def latest_transcript(cwd: str) -> str | None:
-    """This session's transcript, or None.
-
-    Claude Code exports CLAUDE_CODE_SESSION_ID into the tool environment and
-    names each transcript after it, so the exact file is one lookup. There is
-    no guess-by-mtime fallback on purpose: a `claude -p` subprocess writes its
-    own transcript into the same project directory and is often the newest
-    file there, so guessing compacts the wrong conversation.
-    """
-    sid = os.environ.get("CLAUDE_CODE_SESSION_ID")
-    if not sid:
-        return None
-    slug = re.sub(r"[^A-Za-z0-9]", "-", cwd)
-    exact = os.path.join(PROJECTS, slug, f"{sid}.jsonl")
-    return exact if os.path.exists(exact) else None
-
-
-def prepare(cwd: str, transcript_path: str | None) -> int:
-    transcript_path = transcript_path or latest_transcript(cwd)
-    if not transcript_path:
-        print("jev-compact: no transcript for CLAUDE_CODE_SESSION_ID in this "
-              "directory — run it from the session you mean to compact",
-              file=sys.stderr)
-        return 2
-    kept, stats = judge(transcript_path, cwd)
-    if not kept:
-        # kept is empty only when the transcript yielded no usable blocks —
-        # there is nothing to select from, not a selection to apply.
-        print("jev-compact: nothing to compact — no usable blocks in the transcript")
-        return 0
-    if stats.get("reduction", 0) < MIN_REDUCTION:
-        # Compaction replaces the prompt prefix — every later request re-reads
-        # the digest uncached. A weak selection does not pay for that.
-        log_stats({"session_id": os.path.basename(transcript_path)},
-                  {**stats, "gated": True})
-        print(f"jev-compact: only {stats['reduction']:.0%} smaller — not worth "
-              "rebuilding the context uncached. Skipping; let the session "
-              "continue, or use the built-in /compact.")
-        return 0
-    os.makedirs(DIGEST_DIR, exist_ok=True)
-    with open(digest_path(cwd), "w", encoding="utf-8") as f:
-        f.write("\n\n---\n\n".join(kept))
-    log_stats({"session_id": os.path.basename(transcript_path)}, stats)
-    trunc = f", {stats['truncated']} truncated" if stats.get("truncated") else ""
-    print(f"jev-compact: kept {stats['kept']}/{stats['judged'] + stats.get('pinned', 0)} blocks"
-          f"{trunc} ({stats['reduction']:.0%} smaller, ~{stats['est_tokens_after']} "
-          f"uncached tokens, {stats['ms']}ms). Run /clear to apply — "
-          f"the kept context is injected on session start.")
-    return 0
-
-
-def emit_context(text: str) -> None:
-    if len(text) > CONTEXT_CHARS:
-        text = cut_text(text, CONTEXT_CHARS - 80) + "\n[… digest cut at the context limit]"
-    json.dump({
-        "hookSpecificOutput": {
-            "hookEventName": "SessionStart",
-            "additionalContext": text,
-        }
-    }, sys.stdout)
-    sys.stdout.write("\n")
-
-
-def sweep_old_digests() -> None:
-    try:
-        for name in os.listdir(DIGEST_DIR):
-            p = os.path.join(DIGEST_DIR, name)
-            try:
-                if time.time() - os.path.getmtime(p) > DIGEST_TTL:
-                    os.remove(p)
-            except OSError:
-                pass
-    except OSError:
-        pass
-
-
-def hook(event: dict) -> None:
-    source = event.get("source")
-    if source == "clear":
-        sweep_old_digests()
-        path = digest_path(event.get("cwd") or "")
-        try:
-            if time.time() - os.path.getmtime(path) > DIGEST_TTL:
-                return
-            with open(path, encoding="utf-8") as f:
-                digest = f.read().strip()
-            os.remove(path)
-        except OSError:
-            return
-        if digest:
-            emit_context("This session continues work whose history Jev compacted "
-                         "— every block below was judged still needed and kept "
-                         "verbatim; the rest was dropped entirely.\n\n"
-                         "# Jev-compacted context\n\n" + digest)
-    elif source == "compact":
-        marker = replaced_marker(event.get("session_id") or "")
-        try:
-            fresh = time.time() - os.path.getmtime(marker) < REPLACED_TTL
-            os.remove(marker)
-            if fresh:
-                return  # the hooks module already chose this context
-        except OSError:
-            pass
-        kept, stats = judge(event.get("transcript_path") or "", event.get("cwd"))
-        weak = stats.get("reduction", 0) < MIN_REDUCTION
-        log_stats(event, {**stats, "gated": weak})
-        if kept and not weak:
-            # The built-in summary already busted the cache for this turn;
-            # only append Jev's selection when it earned the extra tokens.
-            emit_context("# Context Jev kept from before compaction\n\n"
-                         + "\n\n---\n\n".join(kept))
-
-
 def main() -> int:
-    try:
-        if len(sys.argv) > 1 and sys.argv[1] == "rows":
+    if len(sys.argv) > 1 and sys.argv[1] == "rows":
+        try:
             return rows(sys.stdin)
-        if len(sys.argv) > 1 and sys.argv[1] == "prepare":
-            tp = sys.argv[2] if len(sys.argv) > 2 else None
-            return prepare(os.getcwd(), tp)
-        event = json.load(sys.stdin)
-        if event.get("hook_event_name") == "SessionStart":
-            hook(event)
-    except jev.JevError as e:
-        if len(sys.argv) > 1:  # prepare: tell the user; hook: stay silent
-            print(f"jev-compact: {e}", file=sys.stderr)
-            return 2
-    except Exception:
-        if len(sys.argv) > 1:
-            raise
-    return 0
+        except Exception as e:  # the module falls through on any non-{messages} answer
+            print(json.dumps({"fallback": f"compactor.py: {e}"}))
+            return 0
+    print("usage: compactor.py rows  (reads a session.compact event on stdin)",
+          file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":
