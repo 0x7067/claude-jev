@@ -171,6 +171,13 @@ rules ("read the owning module first", "run the checks") that a hunk can
 never satisfy. In a live session those had blocked the agent's own repair
 edits.
 
+Both sets of numbers above predate the vendored corpus. They were measured
+against private repos this repo never contained, so a clone cannot reproduce
+them. `eval/rules_stress.py` now generates its cases from
+`eval/rules_corpus.jsonl` and the committed fixtures under `eval/fixtures/`.
+That corpus is easier than the one these numbers came from, so both stay here
+until one set can be measured end to end and published together.
+
 Live, with the plugin loaded via `--plugin-dir` in throwaway worktrees of
 two of those repos: a leaf `kustomization.yaml` given a `namespace:` was
 blocked at 0.92 and a `status === 'pending'` helper at 0.83, each citing the
