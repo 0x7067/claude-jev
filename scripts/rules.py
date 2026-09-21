@@ -4,7 +4,7 @@ and Stop for turn-level rules.
 
 Rules come straight from the instruction files a person already keeps:
 CLAUDE.md, AGENTS.md (nested ones scoped to their directory), .claude/rules/*,
-.cursor/rules/*, ~/.claude/CLAUDE.md and ~/.claude/jev-rules.md. There is
+.cursor/rules/* and ~/.claude/CLAUDE.md. There is
 nothing to compile and nothing extra to commit. Each bullet or paragraph is
 classified once by Jev in a single batched request — is this an instruction
 about the code a coding agent writes, or a fact, description, pointer or
@@ -58,8 +58,7 @@ BLOCK_DIR = os.path.expanduser("~/.claude/jev-rule-blocks")
 
 RULE_FILES = ("CLAUDE.md", "AGENTS.md")
 RULE_DIRS = (".claude/rules", ".cursor/rules")
-GLOBAL_RULE_FILES = (os.path.expanduser("~/.claude/CLAUDE.md"),
-                     os.path.expanduser("~/.claude/jev-rules.md"))
+GLOBAL_RULE_FILES = (os.path.expanduser("~/.claude/CLAUDE.md"),)
 MAX_ITEM_CHARS = 600
 
 EXCLUDED = re.compile(r"(^|/)(node_modules|\.git|dist|build|\.next|coverage|"

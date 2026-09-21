@@ -22,7 +22,7 @@ The no-tools hint is gated harder: it fires only on a near-certain yes/no answer
 
 ### Rules
 
-Rules are the instruction files you already keep (`CLAUDE.md`, nested `AGENTS.md`, `.claude/rules/*`, `.cursor/rules/*`, `~/.claude/CLAUDE.md`, `~/.claude/jev-rules.md`). Nothing to compile, nothing extra to commit.
+Rules are the instruction files you already keep (`CLAUDE.md`, nested `AGENTS.md`, `.claude/rules/*`, `.cursor/rules/*`, `~/.claude/CLAUDE.md`). Nothing to compile, nothing extra to commit.
 
 Each file is classified once per hash and cached under `~/.claude`: instruction about written code vs. fact/pointer/process rule, and per-edit vs. whole-turn. Each edit is one batched call, one yes/no question per rule in your own wording, scored as probability broken. Jev sees the old→new hunk plus your last prompt. At most 40 questions per edit, path-scoped rules first with files taking turns.
 
