@@ -357,6 +357,12 @@ def relative(path: str, cwd: str) -> str:
         return path
 
 
+def outside(rel: str) -> bool:
+    """A path that climbs out of cwd. The project's rules describe the project,
+    so a scratch file in /tmp is not theirs to judge."""
+    return rel.startswith(os.pardir + os.sep) or rel == os.pardir
+
+
 def last_user_prompt(transcript_path: str | None) -> str:
     """What the user last asked for — rules like "don't touch generated
     files" only mean something against the task."""
@@ -592,7 +598,7 @@ def handle_edit(event: dict) -> dict:
     cwd = event.get("cwd") or os.getcwd()
     file_path = inp.get("file_path") or ""
     rel = relative(file_path, cwd)
-    if EXCLUDED.search(rel):
+    if EXCLUDED.search(rel) or outside(rel):
         return {}
     rules = load_rules(cwd)
     if not rules:
