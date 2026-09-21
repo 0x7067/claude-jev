@@ -1,8 +1,12 @@
 # claude-jev
 
-A Claude Code plugin that hands the small judgments in a session to
-[TypeSafe's Jev](https://docs.typesafe.ai/introduction), a System One model
-that returns typed judgments instead of generating text.
+Before an agent does any work it decides things: what you're asking for, how
+big it is, whether it needs to open a file, which rule in your `CLAUDE.md`
+this edit might break. Those decisions get made with the same expensive model
+that writes the code.
+
+This plugin hands them to [TypeSafe's Jev](https://docs.typesafe.ai/introduction)
+instead — a System One model that returns typed judgments, not text.
 
 Per prompt it asks four questions: what kind of request is this, how big is
 it, does it need tools, which model tier does it deserve. On compaction it
@@ -20,6 +24,10 @@ code. It makes the small judgments cheaper.
 | `Stop` | Judge the whole turn against the rules that need it |
 | `SessionStart` (`compact`, `clear`) | Re-inject the blocks Jev kept |
 
+All five fail open. Any error, missing key or timeout produces no output and
+never blocks a prompt. Slash commands, `#` lines and prompts under 3
+characters are skipped locally, before anything leaves the machine.
+
 ### Routing
 
 One API call per prompt: intent, scope, needs-tools, model tier. The previous
@@ -35,9 +43,11 @@ the counterfactual below, where it cost eight sessions real work.
 The tier answer is advisory. A hook can't change the model a session runs on,
 so on a confident mismatch with the model the transcript last recorded you get
 a `systemMessage`: "looks like haiku work; you're on opus". The agent never
-sees it. The one place the tier answer acts is subagent spawning, where
-`updatedInput` sets `model` on the call before it happens. A model the caller
-set explicitly always wins.
+sees it.
+
+The one place the tier answer acts is subagent spawning, where `updatedInput`
+sets `model` on the call before it happens. A model the caller set explicitly
+always wins.
 
 ### Rules
 
@@ -84,12 +94,28 @@ built-in summary.
 Either way no generated summary enters the loop, and a block Jev couldn't
 score is kept — dropping by mistake is the costly failure.
 
-Two limits bound it. The digest is capped at 40k chars, so the kept set can't
-grow without bound across a long session. And compaction replaces the prompt
-prefix, which means every later request re-reads that context uncached. So the
-plugin never compacts proactively, and applies nothing when the selection
-shrinks the transcript by less than 25%. A weak selection would buy a freshly
-uncached prompt for no gain.
+The selection keeps bytes, not prose. Sidechains, slash-command echoes and
+one-word acks are filtered before Jev sees anything. Each remaining block gets
+two judgments: still needed at all, and needed verbatim. A no on the second
+keeps a truncated head plus a re-read pointer, because most of the bulk is
+tool output the agent can fetch again, while exact errors and constraints stay
+whole. A kept `tool_result` pulls its `tool_use` in with it.
+
+Two limits bound it. The digest is capped at 40k chars, and the cap is
+enforced by downgrading the lowest-confidence keeps first, so the kept set
+can't grow without bound across a long session. And compaction replaces the
+prompt prefix, which means every later request re-reads that context uncached.
+So the plugin never compacts proactively, and applies nothing when the
+selection shrinks the transcript by less than 25%. A weak selection would buy
+a freshly uncached prompt for no gain.
+
+The manual path has to compose `/clear` because there is no other way in.
+`/compact` is excluded from the Skill tool and `PreCompact`/`PostCompact`
+output is discarded, so `SessionStart` is the only post-compaction event that
+can inject context. Hence: select, `/clear` to drop everything, and the
+`clear`-matched hook restores the selection. Digests are keyed by working
+directory with a 10-minute TTL, so one can only ever land in the session it
+was made for.
 
 ## Setup
 
@@ -98,9 +124,9 @@ claude plugin marketplace add 0x7067/claude-jev
 claude plugin install claude-jev@claude-jev
 ```
 
-Set `TYPESAFE_API_KEY` (or `TYPESAFE_AI_KEY`). It is the only environment
-variable and it is required — without it the hooks disable silently. Every
-other parameter is a constant in the source. Needs `python3`, stdlib only.
+Set `TYPESAFE_API_KEY`. It is the only environment variable and it is
+required — without it the hooks disable silently. Every other parameter is a
+constant in the source. Needs `python3`, stdlib only.
 
 ## Does it work?
 
@@ -151,12 +177,23 @@ against what the agent did next. On 1,613 real prompts:
 A harmful hint is one that told the agent to skip work it then needed: "no
 tools", followed by five or more tool calls.
 
+That table is also the argument for the taxonomy. A coarser one scores higher
+and helps less: collapsing to talk/read/act reaches 58.8% accuracy, but always
+guessing "act" reaches 64.7%. The shipped taxonomy is the one with the widest
+margin over its own best constant guess, not the one with the best number.
+
 Read 34.6% as a floor, not a score. The labels come from transcripts rather
 than hand annotation, and they are noisy. On a blind sample of 120
 hand-labeled prompts the derived labels agreed with the humans 52.5% of the
 time; the shipped router scored 48.8% against the hand labels and 22.0%
 against the derived ones. The hand labels live in `eval/audit_labels.json`,
 keyed by record id — override any of them and re-score.
+
+What decides a label is `scripts/observed.py`. It reads a past turn and calls
+it read, edit, ops or nothing, and both the eval harness and
+`/claude-jev:stats` score against it. Change that file and every number here
+moves. Routing logic is in `scripts/prompt_router.py`, question definitions in
+`scripts/jev.py::intent_bundle`.
 
 ### Default Claude Code vs claude-jev
 
@@ -193,35 +230,3 @@ matters: 13 of those calls were small lookups the hint saves, and 138 sat in 8
 sessions that genuinely needed the tools. The gate saves lookups and
 occasionally costs a session real work, which is why it stays
 near-certain-only.
-
-## Design notes
-
-**Fail open.** Any error, missing key or timeout produces no output and never
-blocks a prompt. Slash commands, `#` lines and prompts under 3 characters are
-skipped locally, before anything leaves the machine.
-
-**The taxonomy is sized for lift, not accuracy.** A coarser one scores
-higher and helps less: collapsing to talk/read/act reaches 58.8% accuracy,
-but always guessing "act" reaches 64.7%. The shipped taxonomy is the one with
-the widest margin over its own best constant guess.
-
-**`scripts/observed.py` is the scorer.** It decides what a past turn actually
-did — read, edit, ops, nothing — and both the eval harness and
-`/claude-jev:stats` score against it. Change it and every number above moves.
-Routing logic is in `scripts/prompt_router.py`, question definitions in
-`scripts/jev.py::intent_bundle`.
-
-**Why the manual path composes `/clear`.** `/compact` is excluded from the
-Skill tool and `PreCompact`/`PostCompact` output is discarded, so
-`SessionStart` is the only post-compaction event that can inject context.
-Hence: select, `/clear` to drop everything, and the `clear`-matched hook
-restores the selection. Digests are keyed by working directory with a
-10-minute TTL, so one can only ever land in the session it was made for.
-
-**Selection keeps bytes, not prose.** Sidechains, slash-command echoes and
-one-word acks are filtered before Jev sees anything. Each remaining block gets
-two judgments: still needed at all, and needed verbatim. A no on the second
-keeps a truncated head plus a re-read pointer, because most of the bulk is
-tool output the agent can fetch again, while exact errors and constraints stay
-whole. A kept `tool_result` pulls its `tool_use` in with it. The 40k cap is
-enforced by downgrading the lowest-confidence keeps first.
