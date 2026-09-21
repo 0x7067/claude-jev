@@ -1,6 +1,6 @@
 {
   "name": "claude-jev",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "Classifies each prompt with TypeSafe's Jev and injects a one-line routing hint, shaped by an eval over 1,613 real prompts. On compaction, Jev picks which transcript blocks still matter and re-injects them verbatim.",
   "author": {
     "name": "0x7067"
