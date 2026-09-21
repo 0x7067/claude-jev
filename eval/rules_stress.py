@@ -57,23 +57,40 @@ HEADER = ("# Engineering rules\n\n"
 def load_corpus(path: str) -> dict[str, list[dict]]:
     """Rows grouped by language, in file order."""
     by_lang: dict[str, list[dict]] = {}
+    rows: list[dict] = []
     with open(path) as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
-            row = json.loads(line)
-            required = {"id", "lang", "rule"}
-            if row.get("kind") != "distractor":
-                required |= {"expect", "bad", "good", "task"}
-            missing = required - row.keys()
-            if missing:
-                raise SystemExit(f"{row.get('id', '?')}: missing {sorted(missing)}")
-            if row.get("kind") != "distractor" and row["expect"].lower() not in row["rule"].lower():
-                # expected_fired() matches `expect` against the cited rule's
-                # text, so a row whose expect isn't in its rule can never score.
-                raise SystemExit(f"{row['id']}: expect {row['expect']!r} not in rule")
-            by_lang.setdefault(row["lang"], []).append(row)
+            rows.append(json.loads(line))
+
+    # A row may point at another row's rule instead of declaring its own, so
+    # one rule can carry several needles of different subtlety. The reference
+    # resolves to the same text and the same `expect`, and emits no extra
+    # bullet -- a rule stated twice would be two rules to the judge.
+    declared = {r["id"]: r for r in rows if "rule" in r}
+    for row in rows:
+        ref = row.get("rule_ref")
+        if ref is None:
+            continue
+        if ref not in declared:
+            raise SystemExit(f"{row['id']}: rule_ref {ref!r} matches no row")
+        row["rule"] = declared[ref]["rule"]
+        row.setdefault("expect", declared[ref]["expect"])
+
+    for row in rows:
+        required = {"id", "lang", "rule"}
+        if row.get("kind") != "distractor":
+            required |= {"expect", "bad", "good", "task"}
+        missing = required - row.keys()
+        if missing:
+            raise SystemExit(f"{row.get('id', '?')}: missing {sorted(missing)}")
+        if row.get("kind") != "distractor" and row["expect"].lower() not in row["rule"].lower():
+            # expected_fired() matches `expect` against the cited rule's
+            # text, so a row whose expect isn't in its rule can never score.
+            raise SystemExit(f"{row['id']}: expect {row['expect']!r} not in rule")
+        by_lang.setdefault(row["lang"], []).append(row)
     return by_lang
 
 
@@ -83,7 +100,8 @@ def write_rules_file(fixture: str, rows: list[dict]) -> str:
     with open(path, "w") as f:
         f.write(HEADER)
         for row in rows:
-            f.write(f"- {row['rule']}\n")
+            if "rule_ref" not in row:
+                f.write(f"- {row['rule']}\n")
     return path
 
 
