@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import concurrent.futures
 import datetime
-import glob
 import hashlib
 import json
 import os
@@ -369,19 +368,28 @@ def digest_path(cwd: str) -> str:
 
 
 def latest_transcript(cwd: str) -> str | None:
-    """The active session's transcript: newest .jsonl in this project's dir,
-    falling back to newest anywhere (the prompt that invoked us was just
-    logged, so current is almost always newest)."""
+    """This session's transcript, or None.
+
+    Claude Code exports CLAUDE_CODE_SESSION_ID into the tool environment and
+    names each transcript after it, so the exact file is one lookup. There is
+    no guess-by-mtime fallback on purpose: a `claude -p` subprocess writes its
+    own transcript into the same project directory and is often the newest
+    file there, so guessing compacts the wrong conversation.
+    """
+    sid = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if not sid:
+        return None
     slug = re.sub(r"[^A-Za-z0-9]", "-", cwd)
-    candidates = glob.glob(os.path.join(PROJECTS, slug, "*.jsonl")) \
-        or glob.glob(os.path.join(PROJECTS, "*", "*.jsonl"))
-    return max(candidates, key=os.path.getmtime) if candidates else None
+    exact = os.path.join(PROJECTS, slug, f"{sid}.jsonl")
+    return exact if os.path.exists(exact) else None
 
 
 def prepare(cwd: str, transcript_path: str | None) -> int:
     transcript_path = transcript_path or latest_transcript(cwd)
     if not transcript_path:
-        print("jev-compact: no transcript found", file=sys.stderr)
+        print("jev-compact: no transcript for CLAUDE_CODE_SESSION_ID in this "
+              "directory — run it from the session you mean to compact",
+              file=sys.stderr)
         return 2
     kept, stats = judge(transcript_path, cwd)
     if not kept:
