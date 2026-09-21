@@ -7,6 +7,10 @@ not built, in priority order. `AGENTS.md` lists the invariants; none of the
 proposals below relaxes them. In particular nothing here generates prose:
 every kept byte is a transcript byte or a truncated head of one.
 
+For what the harness itself offers around compaction (hook events, the
+10,000-character context limit, and the gated `session.compact` hook), see
+`docs/claude-code-compaction-research.md`.
+
 ## Current state
 
 ### Pipeline
