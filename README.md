@@ -1,6 +1,6 @@
 # claude-jev
 
-Agents burn the expensive model on small judgments: what is this prompt, how big is it, does it need tools, which rule does this edit break. This plugin hands those to [TypeSafe's Jev](https://docs.typesafe.ai/introduction) — a System One model that returns typed judgments, not text. It doesn't write code.
+Agents burn the expensive model on small judgments: what is this prompt, how big is it, does it need tools, which rule does this edit break, which turns still matter when the context fills up. This plugin hands those to [TypeSafe's Jev](https://docs.typesafe.ai/introduction) — a System One model that returns typed judgments, not text. It doesn't write code.
 
 ## What it does
 
@@ -36,6 +36,8 @@ Bytes, not prose: harness rows (slash-command wrappers, caveats) and one-word ac
 
 Limits: newest 150 rows judged, kept text capped at 8k chars (lowest-confidence keeps downgraded first), nothing replaced under a 25% shrink — a weak selection falls through to the built-in summary. So does a missing key, a Jev outage, or any error in the bridge.
 
+To see which path ran, start Claude Code with `-d` and read `~/.claude/debug/<session-id>.txt` after a compaction: `a hook's N messages stand (hooked by claude-jev); core never ran` means Jev's rows replaced the summary; `jev-compact: ... built-in summary runs` names why it fell through.
+
 ## Setup
 
 ```bash
@@ -43,7 +45,9 @@ claude plugin marketplace add 0x7067/claude-jev
 claude plugin install claude-jev@claude-jev
 ```
 
-Set `TYPESAFE_API_KEY` — the only variable, required; without it hooks disable silently. Needs `python3`, stdlib only.
+Set `TYPESAFE_API_KEY` — the plugin's only variable, required; without it hooks disable silently. Needs `python3`, stdlib only.
+
+Compaction additionally needs Claude Code 2.1.278 or later started with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`. That is Claude Code's own switch for its experimental function hooks, off by default; the four other hooks work without it. Function-hook modules also load only in a trusted workspace, and not for subagents.
 
 ## Does it work?
 
@@ -65,4 +69,6 @@ python3 eval/rules_eval.py report
 
 ### Jev selection vs. default summary
 
-`eval/compare.py` replays pre-compaction blocks at each `compact_boundary` (12 real, 60 synthetic): 1.8–2.0k tok injected vs. 2.4–5.0k, ~0.9s vs. ~117s to compact. Of 710 artifacts the agent re-fetched post-compaction, the summary mentioned 72–91% and the digest held 60–71% verbatim — a mention isn't the content. The rest fell outside the judgment window or below the keep floor.
+`eval/compare.py` replays the pre-compaction blocks at each `compact_boundary` in recorded transcripts (12 real, 60 synthetic) through the same selection the hook runs: 1.8–2.0k tok of kept context vs. the 2.4–5.0k tok summary it replaces, ~0.9s vs. ~117s to compact. Of 710 artifacts the agent re-fetched post-compaction, the summary mentioned 72–91% and the kept blocks held 60–71% verbatim — a mention isn't the content. The rest fell outside the judgment window or below the keep floor.
+
+Live, through the `session.compact` hook on Claude Code 2.1.278 (one session each, not a sweep): a 15-row session compacted in 0.7s with 7 rows kept, and a 5-row session fell through to the built-in summary at 0% reduction, as the gate intends. The selection is the same code the eval measures; the eval numbers are the ones to trust.
