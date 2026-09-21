@@ -68,5 +68,8 @@
         ]
       }
     ]
-  }
+  },
+  "modules": [
+    "./register.ts"
+  ]
 }

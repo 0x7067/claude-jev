@@ -9,7 +9,13 @@ description: >
 
 # Jev compaction
 
-Run:
+If the session runs with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` on Claude Code
+2.1.278 or later, tell the user to run the built-in `/compact` instead: the
+plugin's hooks module replaces the summary with Jev's selection there, in one
+step and with no `/clear`. You cannot tell from inside the session whether the
+flag is on, so say that in one line and let the user choose.
+
+Otherwise, run:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/scripts/compactor.py prepare
