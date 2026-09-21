@@ -118,14 +118,6 @@ anything the hook blocks is a block it would have imposed on you wrongly.
 On a 250-edit sample, 248 judged: **3 blocked (1.2%)**, 38 flagged (15.3%),
 median 0.70s per edit at a median of 10 questions.
 
-That number was 2.8% until this corpus found the bug behind it. Thirty-one
-percent of sampled edits were files outside their repo — scratch files under
-`/private/tmp` written during a session — and the hook was judging them
-against that repo's rules. One blocked at 0.94 for breaking a TypeScript style
-rule, in a file that had nothing to do with the project. `outside()` in
-`scripts/rules.py` now rejects any path that climbs out of the working
-directory.
-
 **Hand-written cases.** Violations of the real rules in real repos, each
 paired with a compliant near-miss: 12 of 19 violations blocked, all by the
 rule the case targets, and **0 of 13 near-misses falsely blocked**.
