@@ -6,7 +6,7 @@ Used by the prompt-router hook and callable directly by the agent
 instead of reasoning through them with generated text.
 
 Env:
-  TYPESAFE_API_KEY or TYPESAFE_AI_KEY   API key (required)
+  TYPESAFE_API_KEY   API key (required)
 """
 
 from __future__ import annotations
@@ -28,9 +28,9 @@ class JevError(Exception):
 
 
 def api_key() -> str:
-    key = os.environ.get("TYPESAFE_API_KEY") or os.environ.get("TYPESAFE_AI_KEY")
+    key = os.environ.get("TYPESAFE_API_KEY")
     if not key:
-        raise JevError("set TYPESAFE_API_KEY (or TYPESAFE_AI_KEY)")
+        raise JevError("set TYPESAFE_API_KEY")
     return key
 
 

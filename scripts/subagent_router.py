@@ -11,7 +11,7 @@ Always exits 0 and prints nothing on any failure — routing must never block
 a spawn.
 
 Env:
-  TYPESAFE_API_KEY / TYPESAFE_AI_KEY   required (else silently disabled)
+  TYPESAFE_API_KEY   required (else silently disabled)
 """
 
 import datetime

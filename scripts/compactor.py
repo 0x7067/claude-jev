@@ -22,7 +22,7 @@ Hook mode always exits 0 and prints nothing on any failure — a hook must
 never block or corrupt a session. `prepare` prints errors for the user.
 
 Env:
-  TYPESAFE_API_KEY / TYPESAFE_AI_KEY   required (hook disables silently without it)
+  TYPESAFE_API_KEY   required (hook disables silently without it)
 """
 
 from __future__ import annotations

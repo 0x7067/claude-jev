@@ -27,7 +27,7 @@ Always exits 0 and prints nothing on any failure — enforcement must never
 corrupt a session.
 
 Env:
-  TYPESAFE_API_KEY / TYPESAFE_AI_KEY   required (else silently disabled)
+  TYPESAFE_API_KEY   required (else silently disabled)
 """
 
 import datetime
