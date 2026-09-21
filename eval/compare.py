@@ -196,8 +196,25 @@ def boundaries(lines) -> list[dict]:
     return out
 
 
-def load_compact_cache() -> dict:
-    cache = {}
+def selection_sig() -> str:
+    """Fingerprint of everything that can change a selection.
+
+    The compactor's own source, which carries its constants as literals. A
+    cache keyed on the transcript alone silently replays the previous run's
+    numbers after MAX_BLOCKS, TARGET_CHARS or any filter changes, which is
+    exactly when you are re-running to see what moved.
+    """
+    with open(compactor.__file__, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()[:16]
+
+
+def load_compact_cache() -> tuple[dict, dict]:
+    """(judgments keyed by transcript+selection, summaries keyed by transcript).
+
+    Split because the default side is a `claude -p` call that our constants do
+    not affect: changing the compactor must re-judge, never re-summarize.
+    """
+    judged, summaries = {}, {}
     if os.path.exists(COMPACT_CACHE):
         with open(COMPACT_CACHE, errors="replace") as f:
             for line in f:
@@ -205,18 +222,24 @@ def load_compact_cache() -> dict:
                     d = json.loads(line)
                 except ValueError:
                     continue
-                cache[d["key"]] = d
-    return cache
+                if d.get("sig"):
+                    judged[(d["key"], d["sig"])] = d
+                if d.get("summary") is not None:
+                    summaries[d["key"]] = d["summary"]
+    return judged, summaries
 
 
-def replay(pre_lines, cache: dict, cache_f, gen=None) -> tuple[list[str], dict, str | None]:
+def replay(pre_lines, cache: dict, summaries: dict, cache_f,
+           gen=None) -> tuple[list[str], dict, str | None]:
     """Replay Jev's selection on the exact lines a boundary compacted. `gen`
-    is a thunk producing the default-side summary — called only on a cache
-    miss and stored with the judgment so re-runs skip both APIs."""
+    is a thunk producing the default-side summary — called only when no
+    summary is cached for these lines, so re-judging never re-summarizes."""
     key = hashlib.sha256("".join(pre_lines).encode()).hexdigest()
-    if key in cache:
-        d = cache[key]
-        return d["kept"], d["stats"], d.get("summary")
+    sig = selection_sig()
+    summary = summaries.get(key)
+    if (key, sig) in cache:
+        d = cache[(key, sig)]
+        return d["kept"], d["stats"], summary
     with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as tf:
         tf.writelines(pre_lines)
         tmp = tf.name
@@ -224,11 +247,15 @@ def replay(pre_lines, cache: dict, cache_f, gen=None) -> tuple[list[str], dict, 
         kept, stats = compactor.judge(tmp, None)
     finally:
         os.unlink(tmp)
-    summary = gen() if gen else None
+    if summary is None and gen:
+        summary = gen()
+        summaries[key] = summary
     if stats.get("judged"):
-        cache[key] = {"key": key, "kept": kept, "stats": stats, "summary": summary}
+        d = {"key": key, "sig": sig, "kept": kept, "stats": stats,
+             "summary": summary}
+        cache[(key, sig)] = d
         if cache_f:
-            cache_f.write(json.dumps(cache[key]) + "\n")
+            cache_f.write(json.dumps(d) + "\n")
             cache_f.flush()
     return kept, stats, summary
 
@@ -316,7 +343,7 @@ def cmd_compact(args) -> int:
         (os.path.join(dp, fn) for dp, _dn, fns in os.walk(PROJECTS) for fn in fns)
         if f.endswith(".jsonl")
     )
-    cache = load_compact_cache()
+    cache, summaries = load_compact_cache()
     cache_f = open(COMPACT_CACHE, "a")
     real, synth, skipped = [], [], []
     real_todo = []
@@ -329,7 +356,7 @@ def cmd_compact(args) -> int:
         reads = refetches(pre, post)
         summary = None
         if kind == "real":
-            kept, stats, _ = replay(lines[:i], cache, cache_f)
+            kept, stats, _ = replay(lines[:i], cache, summaries, cache_f)
             default_ctx = ev["summary"] + "\n" + ev["preserved"]
             meta = ev["meta"]
             # Same basis as the jev digest: injected content, not the whole
@@ -340,7 +367,7 @@ def cmd_compact(args) -> int:
             trigger = meta.get("trigger")
         else:
             gen = lambda: gen_summary(flatten(lines, i), args.model)
-            kept, stats, summary = replay(lines[:i], cache, cache_f, gen)
+            kept, stats, summary = replay(lines[:i], cache, summaries, cache_f, gen)
             default_ctx = (summary or "") + "\n" + tail_text(lines, i)
             post_tokens = len(default_ctx) // 4
             duration_s = None

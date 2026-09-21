@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "claude-jev",
-  "description": "Routing and snap decisions for Claude Code, answered by TypeSafe's Jev System One model",
+  "description": "Routing, rule checks and compaction for Claude Code, answered by TypeSafe's Jev System One model",
   "owner": {
     "name": "0x7067"
   },
@@ -9,9 +9,18 @@
     {
       "name": "claude-jev",
       "source": "./",
-      "description": "Classifies each prompt in one API call and injects a one-line routing hint, plus a CLI and skill for offloading snap decisions — and on compaction, a batched keep-or-drop judgment per transcript block that survives verbatim. Shaped by an eval over 1,613 real prompts; see eval/.",
+      "description": "Five hooks, one batched API call each. Classifies every prompt into a one-line routing hint; sets the model tier a subagent spawns on; judges each edit against the rules already in your CLAUDE.md, AGENTS.md and .claude/rules, citing the one it breaks; and on compaction judges 150 transcript blocks keep-or-drop so the survivors carry over verbatim instead of through a generated summary. Fails open everywhere. Shaped by evals over 1,613 real prompts and 250 real edits; see eval/.",
       "category": "productivity",
-      "tags": ["typesafe", "jev", "system-one", "routing", "intent", "compaction", "token-savings"]
+      "tags": [
+        "typesafe",
+        "jev",
+        "system-one",
+        "routing",
+        "intent",
+        "rules",
+        "compaction",
+        "token-savings"
+      ]
     }
   ]
 }

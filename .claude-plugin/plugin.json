@@ -1,7 +1,7 @@
 {
   "name": "claude-jev",
   "version": "0.9.0",
-  "description": "Classifies each prompt with TypeSafe's Jev and injects a one-line routing hint, shaped by an eval over 1,613 real prompts. On compaction, Jev picks which transcript blocks still matter and re-injects them verbatim.",
+  "description": "Hands the small judgments in a session to TypeSafe's Jev, a System One model that returns typed answers instead of generating text: what kind of request each prompt is, which model tier a subagent needs, whether an edit breaks a rule already written in your CLAUDE.md or AGENTS.md, and which transcript blocks survive compaction. Kept blocks carry over verbatim — no LLM writes a summary.",
   "author": {
     "name": "0x7067"
   },
@@ -11,6 +11,7 @@
     "system-one",
     "routing",
     "intent",
+    "rules",
     "compaction",
     "token-savings"
   ],
