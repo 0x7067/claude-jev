@@ -1,0 +1,29 @@
+README.md
+  s_f70ed0d7c23c98::t_d39475c872f0ac 4-11,86-90,99-100,122-134,137-144,154-182,185-188,220,222-224,226-227,240-242,251-253,255-256
+  s_f70ed0d7c23c98::t_2240786849cc6d 17-25,47-49,263
+  s_f70ed0d7c23c98::t_47f216ce7ccd1f 26-46,63-83,270-275,283-292
+  s_f70ed0d7c23c98::t_533011d8a614ff 16,52-53,56-59,61-62,262,265-269,277-278
+  s_f70ed0d7c23c98::t_75b4e840abdaee 221,225,254
+  s_f70ed0d7c23c98::t_80bee627a31d0a 3,84-85,135-136,189-191,209-210,212,244,248,257,279-281
+  s_f70ed0d7c23c98::t_45a6626f36c90c 15,101-102,120-121,183,237-239
+  s_f70ed0d7c23c98::t_e214517fdd1977 184
+  s_f70ed0d7c23c98::t_5df7eb9c8e01eb 51,54-55,264,276
+  s_f70ed0d7c23c98::t_ababee8e553a77 119,243,245-247
+  s_f70ed0d7c23c98::t_68a9302563b588 282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bc11fec103f00a81aafdacdbda9ab89393497a50",
+  "prompts": {},
+  "sessions": {
+    "s_f70ed0d7c23c98": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0c22d-2682-77cb-9026-a78a58d9201c",
+        "model": "deepseek-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
