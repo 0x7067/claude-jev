@@ -1,0 +1,23 @@
+scripts/compactor.py
+  s_951b9bb55d2f3b::t_1a454b5178eb1e 50-52
+  s_951b9bb55d2f3b::t_f3c138985884d9 43-46,49,186-196,199-200,204-205,208-209,237-242,244-250,255,259-266,332
+  s_951b9bb55d2f3b::t_49e2e5aa101efe 57-60
+.claude-plugin/plugin.json
+  s_951b9bb55d2f3b::t_3eeeac6fe6fd14 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7a4e0ec63ee2418aab273ea4da36350c17a7a84a",
+  "prompts": {},
+  "sessions": {
+    "s_951b9bb55d2f3b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6cc4b3d3-229d-47d5-8d86-cf79a477ddbc",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
