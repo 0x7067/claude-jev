@@ -94,17 +94,22 @@ built-in summary.
 Either way no generated summary enters the loop, and a block Jev couldn't
 score is kept — dropping by mistake is the costly failure.
 
-The selection keeps bytes, not prose. Sidechains, slash-command echoes and
-one-word acks are filtered before Jev sees anything. Each remaining block gets
-two judgments: still needed at all, and needed verbatim. A no on the second
+The selection keeps bytes, not prose. Sidechains, one-word acks and anything
+Claude Code injected itself — skill bodies, command caveats, task
+notifications, the turn that ran the compaction — are filtered before Jev sees
+anything, because the next session gets all of that back for free. Each
+remaining block gets two judgments: still needed at all, and needed verbatim. A no on the second
 keeps a truncated head plus a re-read pointer, because most of the bulk is
 tool output the agent can fetch again, while exact errors and constraints stay
 whole. A kept `tool_result` pulls its `tool_use` in with it.
 
-Two limits bound it. The digest is capped at 40k chars, and the cap is
-enforced by downgrading the lowest-confidence keeps first, so the kept set
-can't grow without bound across a long session. And compaction replaces the
-prompt prefix, which means every later request re-reads that context uncached.
+Two limits bound it. Jev judges the newest 150 blocks, and the digest is
+capped at 8k chars, enforced by downgrading the lowest-confidence keeps first.
+The window is wide so the selection has something to choose from; the cap is
+tight so a wider window doesn't just mean a wider digest. Each request carries
+only its own chunk of blocks, so judging 150 of them costs less in bytes and
+less in wall time than judging 45 did. And compaction replaces the prompt
+prefix, which means every later request re-reads that context uncached.
 So the plugin never compacts proactively, and applies nothing when the
 selection shrinks the transcript by less than 25%. A weak selection would buy
 a freshly uncached prompt for no gain.
@@ -204,24 +209,24 @@ what Jev would have injected instead. `--synth N` grows the sample past the
 handful of real boundaries by cutting long sessions at comparable points and
 generating the default-side summary with `claude -p`.
 
-Across 77 compaction points, 6 real and 71 synthetic:
+Across 72 compaction points, 12 real and 60 synthetic:
 
 | | default: summary + tail | jev: selection digest |
 |---|---|---|
-| context injected per event | ~4.2k tok | ~0.8–1.8k tok |
-| time to compact | ~2 min | ~1 s |
-| re-fetch coverage | ~59–91% mentioned | ~60–82% verbatim |
+| context injected per event | 2.4–5.0k tok | 1.8–2.0k tok |
+| time to compact | ~117 s | ~0.9 s |
+| re-fetch coverage | 72–91% mentioned | 60–71% verbatim |
 
-After each point the agent re-fetched 818 files, searches and URLs it had
-already fetched. Under the six real compactions the default summary still
+After each point the agent re-fetched 710 files, searches and URLs it had
+already fetched. Under the twelve real compactions the default summary still
 mentioned 91% of those paths and the re-reads happened anyway, because a
-mention is not the content.
+mention is not the content. The digest held 71% of them as bytes.
 
-On the larger synthetic set both sides land near 60% coverage. The kinds
-differ. A summary holds a pointer; the digest holds the bytes. The gap is the
-honest part — about 40% of re-fetched artifacts fall outside Jev's 45-block
-judgment window or below its keep floor, and a selection drops what scored
-low.
+The synthetic set is the harder half and the gap narrows there: 72% mentioned
+against 60% verbatim. The kinds differ. A summary holds a pointer; the digest
+holds the bytes. The remaining 40% is the honest part — artifacts that fall
+outside Jev's judgment window or below its keep floor, and a selection drops
+what scored low.
 
 The router's one measurable counterfactual is the no-tools gate. On the 70
 prompts Jev would have steered to "answer directly", default Claude made 151
