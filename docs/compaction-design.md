@@ -7,9 +7,12 @@ not built, in priority order. `AGENTS.md` lists the invariants; none of the
 proposals below relaxes them. In particular nothing here generates prose:
 every kept byte is a transcript byte or a truncated head of one.
 
-For what the harness itself offers around compaction (hook events, the
-10,000-character context limit, and the gated `session.compact` hook), see
-`docs/claude-code-compaction-research.md`.
+Since 0.10.0 the selection runs inside Claude Code's `session.compact`
+function hook (`hooks/register.ts` -> `compactor.py rows`) and replaces the
+summary outright; `prepare`, the digest file, and the `SessionStart` hooks
+are gone. Where this document says "digest" read "the rows handed back", and
+where it says `prepare` read the `jev-compact:` line in the debug log. The
+harness side is in `docs/claude-code-compaction-research.md`.
 
 ## Current state
 

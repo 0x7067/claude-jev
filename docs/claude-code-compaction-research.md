@@ -15,6 +15,11 @@ runs `prepare`, then the user must type `/clear` within ten minutes so that a
 `SessionStart` hook re-injects the digest. Auto-compaction cannot use that
 path at all; it gets Jev's blocks appended on top of the built-in summary.
 
+**Status, later the same day:** the plugin took option 3 below and removed
+its classic compaction hooks (`prepare`, the `/claude-jev:compact` skill, and
+the `SessionStart` `compact`/`clear` re-inject). Sections 1 to 3 remain as
+reference for the documented surface; 5.1 to 5.3 describe the path not taken.
+
 ## The short version
 
 1. **Move the judgment to `PreCompact`.** Both `/compact` and auto-compaction
@@ -333,7 +338,7 @@ a transport problem; the transport delivered exactly what was selected.
 Ranked by value over effort. Items 1 to 3 use documented features plus one
 binary-verified nicety that degrades to nothing if it disappears.
 
-### 5.1 Judge at PreCompact, inject at SessionStart
+### 5.1 Judge at PreCompact, inject at SessionStart (not taken)
 
 Register a `PreCompact` hook (no matcher, so `manual` and `auto` both fire):
 
@@ -416,9 +421,8 @@ same two Jev questions, pin, cap, and `MIN_REDUCTION` gate, and emits:
 3. everything else kept as a text row: tool calls and results rendered,
    truncated blocks with their elision note.
 
-It also leaves a per-session marker so the `SessionStart` `compact` hook
-stays silent for a compaction the module already handled. Nothing in the
-module judges; the Python-only invariant in AGENTS.md is kept in spirit and
+The classic compaction hooks were removed with it: without the flag the
+plugin no longer touches compaction at all. Nothing in the module judges; the Python-only invariant in AGENTS.md is kept in spirit and
 noted there. Untested so far: an `auto` trigger (it takes the same path as
 `manual` in the binary), and interactive sessions; every run above was
 `-p --resume`.
