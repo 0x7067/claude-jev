@@ -44,6 +44,7 @@ KEEP_THRESHOLD = 0.5    # noul floor to keep a block
 MAX_BLOCKS = 45         # oldest blocks beyond the cap are dropped unjudged
 PIN_TAIL = 4            # newest blocks always kept verbatim — the live working context
 CHUNK = 20              # questions per API call; chunks run in parallel
+MAX_WORKERS = 16        # socket bound; a long session fans out in waves instead
 BLOCK_CHARS = 1200      # chars of each block shown to Jev
 KEEP_CHARS = 1500       # chars of each kept block in the digest
 HEAD_CHARS = 400        # head retained on a truncated block
@@ -56,7 +57,13 @@ PROJECTS = os.path.expanduser("~/.claude/projects")
 TAIL_LINES = 5000  # transcript read window; a bound, not a target
 DIGEST_TTL = 600   # a pending digest is applied only to the /clear it was made for
 
-META_PREFIXES = ("<command-", "<local-command", "<system-reminder", "<caveat", "<bash-")
+# Fallback only: the harness now flags its own injections (see `injected`),
+# but transcripts written before it did have nothing but the tag to go on.
+META_PREFIXES = ("<command-", "<local-command", "<system-reminder", "<caveat",
+                 "<bash-", "<task-notification")
+# promptSource values that mean a person drove this turn. Anything else on a
+# user line is the harness speaking through the user channel.
+SOURCE_OK = ("typed", "queued", "suggestion_accepted")
 
 
 def block_text(content) -> str:
@@ -80,14 +87,51 @@ def block_text(content) -> str:
     return "\n".join(parts)
 
 
-def visible_text(d: dict) -> str | None:
+def injected(d: dict, strict_source: bool) -> bool:
+    """True when Claude Code wrote this line rather than the user or the model.
+
+    The harness marks its own writes so they stay out of the "the user said"
+    channel: `isMeta` on skill bodies and command caveats, a non-human
+    `promptSource` on task notifications and SDK turns. Keeping any of it in a
+    digest is double-paying, because the harness re-injects it next session
+    anyway. Reading the flag beats matching tags: a new kind of injected text
+    arrives already flagged, while a prefix list has to learn each new tag.
+    """
+    if d.get("isMeta"):
+        return True
+    if strict_source and d.get("type") == "user":
+        src = d.get("promptSource")
+        if src is not None and src not in SOURCE_OK:
+            return True
+    return False
+
+
+def compaction_marker(d: dict, text: str) -> bool:
+    """The start of the turn that ran /claude-jev:compact.
+
+    That turn is the skill body, the `prepare` call and its relay line — all
+    of it about compacting, none of it about the work being compacted. It is
+    also the newest thing in the transcript, so PIN_TAIL would otherwise
+    guarantee it survives.
+    """
+    if d.get("isMeta") and text.startswith("Base directory for this skill:"):
+        return text.split("\n", 1)[0].rstrip().rstrip("/").endswith("skills/compact")
+    return text.startswith("<command-") and "claude-jev:compact" in text[:200]
+
+
+def visible_text(d: dict, text: str | None = None,
+                 strict_source: bool = False) -> str | None:
     """The judge-visible text of one transcript line, or None. Sidechains,
-    non-message lines, meta wrappers, and trivial acks are invisible."""
+    non-message lines, harness injections, meta wrappers, and trivial acks are
+    invisible. `text` is the already-flattened content, when the caller has it."""
     if d.get("isSidechain") or d.get("type") not in ("user", "assistant"):
+        return None
+    if injected(d, strict_source):
         return None
     msg = d.get("message") or {}
     role = msg.get("role") or d["type"]
-    text = block_text(msg.get("content")).strip()
+    if text is None:
+        text = block_text(msg.get("content")).strip()
     if not text or text.startswith(META_PREFIXES):
         return None
     if role == "user" and re.fullmatch(r"(ok|yes|no|thanks|continue)\.?", text, re.I):
@@ -104,20 +148,30 @@ def transcript_blocks(transcript_path: str) -> list[dict]:
             lines = f.readlines()[-TAIL_LINES:]
     except OSError:
         return []
-    blocks = []
+    parsed = []
     for line in lines:
         if len(line) > 2_000_000:
             continue
         try:
-            d = json.loads(line)
+            parsed.append(json.loads(line))
         except ValueError:
             continue
-        text = visible_text(d)
+    # An SDK-driven session has no `typed` line at all, and applying the
+    # promptSource rule there would drop every user turn it has.
+    strict_source = any(d.get("promptSource") == "typed" for d in parsed)
+    blocks = []
+    cut_at = None
+    for d in parsed:
+        msg = d.get("message") or {}
+        raw = block_text(msg.get("content")).strip()
+        if raw and compaction_marker(d, raw):
+            cut_at = len(blocks)
+            continue
+        text = visible_text(d, raw, strict_source)
         if text is None:
             continue
-        msg = d.get("message") or {}
         blocks.append({"role": msg.get("role") or d["type"], "text": text})
-    return blocks
+    return blocks if cut_at is None else blocks[:cut_at]
 
 
 def compact_state(blocks: list[dict], cwd: str | None) -> str:
@@ -168,10 +222,22 @@ def ask_chunked(state: str, n: int) -> dict:
               for i in range(0, len(keys), CHUNK)]
     if len(chunks) == 1:
         return jev.ask(state, chunks[0])
+    def one(q: dict) -> dict:
+        # A chunk that fails scores nothing, and unscored blocks are kept —
+        # `ex.map` re-raises on iteration, so without this a single timeout
+        # would throw away the whole selection.
+        try:
+            return jev.ask(state, q)
+        except jev.JevError:
+            return {}
+
     answers: dict = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(chunks)) as ex:
-        for part in ex.map(lambda q: jev.ask(state, q), chunks):
+    workers = min(len(chunks), MAX_WORKERS)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+        for part in ex.map(one, chunks):
             answers.update(part)
+    if not answers:
+        raise jev.JevError("every chunk failed")
     return answers
 
 
