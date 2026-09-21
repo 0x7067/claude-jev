@@ -1,0 +1,23 @@
+eval/compare.py
+  s_951b9bb55d2f3b::t_920203b1d46233 199-217,225-229,232-233,235-236,238-242,250-252,254-256,258,346,359,370
+.claude-plugin/marketplace.json
+  s_951b9bb55d2f3b::t_39a954263f3123 4,12,14-23
+.claude-plugin/plugin.json
+  s_951b9bb55d2f3b::t_39a954263f3123 4,14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "540c85a25480fcb9ef364e20a79c87d094ebd23d",
+  "prompts": {},
+  "sessions": {
+    "s_951b9bb55d2f3b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6cc4b3d3-229d-47d5-8d86-cf79a477ddbc",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
