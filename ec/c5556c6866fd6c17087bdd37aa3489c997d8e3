@@ -1,0 +1,55 @@
+eval/fixtures/py/requests/cookies.py
+  s_773de635b6a909::t_c53ef234a7ccde 1-625
+eval/fixtures/py/requests/auth.py
+  s_773de635b6a909::t_c53ef234a7ccde 1-354
+eval/fixtures/py/requests/structures.py
+  s_773de635b6a909::t_c53ef234a7ccde 1-130
+eval/fixtures/py/requests/api.py
+  s_773de635b6a909::t_c53ef234a7ccde 1-180
+eval/fixtures/README.md
+  s_773de635b6a909::t_09b3150537721b 18-24
+eval/fixtures/py/requests/_internal_utils.py
+  s_773de635b6a909::t_c53ef234a7ccde 1-51
+eval/.gitignore
+  s_773de635b6a909::t_d21ff7382a553e 3
+eval/README.md
+  s_773de635b6a909::t_f85cb438ef1c45 26-42
+  s_773de635b6a909::t_5e924d511f3fa5 1-25,43-88
+eval/fixtures/py/LICENSE.upstream
+  s_773de635b6a909::t_c53ef234a7ccde 1-175
+eval/rules_corpus.jsonl
+  s_773de635b6a909::t_d37114ecfc11c0 3,13
+  s_773de635b6a909::t_faeba743524a63 46-48,50-54
+  s_773de635b6a909::t_d115c7fea75c4c 6,25,40-41,43,49,55
+  s_773de635b6a909::t_c86c9ba5499567 39,42,44-45
+eval/fixtures/py/requests/compat.py
+  s_773de635b6a909::t_c53ef234a7ccde 1-115
+eval/rules_eval.py
+  s_773de635b6a909::t_b152948741201d 276-280,337-342,345-347
+  s_773de635b6a909::t_c5caee0e1adbe7 159-160
+  s_773de635b6a909::t_d21ff7382a553e 46-50,184-189
+  s_773de635b6a909::t_2254320c9c7a17 343-344
+  s_773de635b6a909::t_1a94747edace3a 348
+eval/rules_stress.py
+  s_773de635b6a909::t_63af29d3a435ca 129-130,132-135,144-145,147-149,178,197-199
+  s_773de635b6a909::t_efb83ceb5c3fae 4-18,24
+  s_773de635b6a909::t_c5caee0e1adbe7 156-157,180
+  s_773de635b6a909::t_2254320c9c7a17 56-57,109-110,177,179,181
+  s_773de635b6a909::t_b51a73aa7deee4 201-206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ecc5556c6866fd6c17087bdd37aa3489c997d8e3",
+  "prompts": {},
+  "sessions": {
+    "s_773de635b6a909": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7c4cdae-369e-4a49-9e26-a8a7806fcaeb",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
