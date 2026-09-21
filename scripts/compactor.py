@@ -40,14 +40,24 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import jev  # noqa: E402
 
 KEEP_THRESHOLD = 0.5    # noul floor to keep a block
-MAX_BLOCKS = 45         # oldest blocks beyond the cap are dropped unjudged
+MAX_BLOCKS = 150        # oldest blocks beyond the cap are dropped unjudged.
+                        # Sessions long enough to compact run to a median of
+                        # 116 blocks, so 45 judged 39% of the median one. 150
+                        # covers it whole and still fits one parallel wave.
 PIN_TAIL = 4            # newest blocks always kept verbatim — the live working context
 CHUNK = 20              # questions per API call; chunks run in parallel
+BLOCKS_PER_CHUNK = CHUNK // 2   # two questions per block
+HEADER_CHARS = 1500     # session goals, repeated in every chunk's state — the
+                        # length compact_state already used for them, and the
+                        # repetition is now the main per-request overhead
 MAX_WORKERS = 16        # socket bound; a long session fans out in waves instead
 BLOCK_CHARS = 1200      # chars of each block shown to Jev
 KEEP_CHARS = 1500       # chars of each kept block in the digest
 HEAD_CHARS = 400        # head retained on a truncated block
-TARGET_CHARS = 40000    # hard cap on digest size — the kept set can never grow without bound
+TARGET_CHARS = 8000     # hard cap on digest size. Sized against the default
+                        # summarizer: 40k let a 150-block window inject ~5.4k
+                        # tokens, losing to the ~2.4k default it replaces.
+                        # A wider window is for choosing better, not keeping more.
 MIN_REDUCTION = 0.25    # required size reduction; compaction busts the prompt cache,
                         # so a weak selection must not ship
 DIGEST_DIR = os.path.expanduser("~/.claude/jev-compact")
@@ -173,18 +183,30 @@ def transcript_blocks(transcript_path: str) -> list[dict]:
     return blocks if cut_at is None else blocks[:cut_at]
 
 
-def compact_state(blocks: list[dict], cwd: str | None) -> str:
+def compact_state(blocks: list[dict], cwd: str | None,
+                  lo: int = 0, hi: int | None = None) -> str:
+    """The state for one chunk: the session's goals, then only the blocks that
+    chunk judges, labeled by their position in the whole transcript.
+
+    The goals are repeated per chunk because the keep question needs them. The
+    blocks are not: sending every block to every chunk makes each request grow
+    with the session, so the total cost grows as blocks x chunks. Chunk-local
+    bodies make it linear, which is what lets MAX_BLOCKS be 150.
+    """
+    hi = len(blocks) if hi is None else hi
     header = [
         "Transcript of an AI coding-assistant session being compacted.",
-        "Blocks are numbered [0]..[N], oldest first.",
+        f"Blocks are numbered by position in the session, oldest first. "
+        f"This request shows blocks [{lo}]..[{hi - 1}].",
     ]
     if cwd:
         header.append(f"Working directory: {cwd}")
-    goal = "\n".join(b["text"][:300] for b in blocks if b["role"] == "user")[-1500:]
+    goal = "\n".join(b["text"][:300] for b in blocks
+                     if b["role"] == "user")[-HEADER_CHARS:]
     if goal.strip():
         header.append(f"Most recent user requests:\n{goal}")
-    body = "\n\n".join(f"[{i}] [{b['role']}] {b['text'][:BLOCK_CHARS]}"
-                       for i, b in enumerate(blocks))
+    body = "\n\n".join(f"[{i}] [{blocks[i]['role']}] {blocks[i]['text'][:BLOCK_CHARS]}"
+                       for i in range(lo, hi))
     return "\n".join(header) + "\n\n" + body
 
 
@@ -212,29 +234,36 @@ def keep_questions(n: int) -> dict:
     return questions
 
 
-def ask_chunked(state: str, n: int) -> dict:
-    """One batched ask per CHUNK questions, chunks in parallel — each chunk's
-    questions score in one request, so wall time stays ~1 round trip."""
+def ask_chunked(blocks: list[dict], cwd: str | None, n: int) -> dict:
+    """Judge the first `n` blocks, one request per BLOCKS_PER_CHUNK of them.
+
+    Each request carries only its own blocks, so wall time stays ~1 round trip
+    and request size stays flat however long the session is.
+    """
     questions = keep_questions(n)
-    keys = list(questions)
-    chunks = [dict((k, questions[k]) for k in keys[i:i + CHUNK])
-              for i in range(0, len(keys), CHUNK)]
-    if len(chunks) == 1:
-        return jev.ask(state, chunks[0])
-    def one(q: dict) -> dict:
+    ranges = [(i, min(i + BLOCKS_PER_CHUNK, n))
+              for i in range(0, n, BLOCKS_PER_CHUNK)]
+
+    def one(r: tuple[int, int]) -> dict:
+        lo, hi = r
+        q = {k: questions[k] for i in range(lo, hi)
+             for k in (f"keep_{i}", f"full_{i}")}
         # A chunk that fails scores nothing, and unscored blocks are kept —
         # `ex.map` re-raises on iteration, so without this a single timeout
         # would throw away the whole selection.
         try:
-            return jev.ask(state, q)
+            return jev.ask(compact_state(blocks, cwd, lo, hi), q)
         except jev.JevError:
             return {}
 
-    answers: dict = {}
-    workers = min(len(chunks), MAX_WORKERS)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
-        for part in ex.map(one, chunks):
-            answers.update(part)
+    if len(ranges) == 1:
+        answers = one(ranges[0])
+    else:
+        answers = {}
+        with concurrent.futures.ThreadPoolExecutor(
+                max_workers=min(len(ranges), MAX_WORKERS)) as ex:
+            for part in ex.map(one, ranges):
+                answers.update(part)
     if not answers:
         raise jev.JevError("every chunk failed")
     return answers
@@ -300,7 +329,7 @@ def judge(transcript_path: str, cwd: str | None) -> tuple[list[str], dict]:
         return [], {"judged": 0}
     n_judged = max(0, len(blocks) - PIN_TAIL)
     t0 = time.monotonic()
-    answers = ask_chunked(compact_state(blocks, cwd), n_judged) if n_judged else {}
+    answers = ask_chunked(blocks, cwd, n_judged) if n_judged else {}
     ms = int((time.monotonic() - t0) * 1000)
     kept: list[dict] = []
     for i, b in enumerate(blocks):
