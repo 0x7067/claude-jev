@@ -208,32 +208,10 @@ near-certain-only.
 blocks a prompt. Slash commands, `#` lines and prompts under 3 characters are
 skipped locally, before anything leaves the machine.
 
-**The taxonomy is what survived measurement.** The question bundle dropped
-`refactor`, `unclear` and `needs_repo`. The first two never reached usable
-precision, and a hardcoded "yes" beat `needs_repo` by 18 points. Collapsing to
-talk/read/act reaches 58.8% accuracy — but always guessing "act" reaches
-64.7%. A smaller taxonomy scores higher and helps less. The model is reliable
-exactly where the default assumption already is, which is why the shipped
-taxonomy is the awkward middle-sized one.
-
-**There is no compiled rubric, and there used to be.** An earlier version
-shipped a `/rules-compile` command that turned your instruction files into a
-committed `.claude/jev-rubric.json` — a typed question per rule, a phase, and
-a `lint` bucket for rules a real linter could own. Run against one repo it
-produced 336 rules from 13 instruction files: 137 filed under `lint`, 71 left
-for the judge, the rest deferred or unenforceable. It asked fewer questions
-per edit and produced no false blocks on the near-misses. Detection on the
-needles fell from 156 to 48 of 168. Every drop traced to a rule the rubric had
-filed under `lint`: magic strings, `as any`, bare TODOs, a migration moved
-into `start.sh`. In that repo, 81 of the 137 lint rules named an ESLint rule,
-ast-grep pattern or grep that nothing was configured to run — so neither the
-linter nor the judge enforced them.
-
-The one thing the rubric held that markdown parsing couldn't recover was the
-phase: which rules judge a hunk and which need the whole change. Jev answers
-that itself now, in the same cached classification call that already asks
-whether the item is an instruction. Everything else the rubric did was either
-the markdown path's job already, or a person's.
+**The taxonomy is sized for lift, not accuracy.** A coarser one scores
+higher and helps less: collapsing to talk/read/act reaches 58.8% accuracy,
+but always guessing "act" reaches 64.7%. The shipped taxonomy is the one with
+the widest margin over its own best constant guess.
 
 **`scripts/observed.py` is the scorer.** It decides what a past turn actually
 did — read, edit, ops, nothing — and both the eval harness and
