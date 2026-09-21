@@ -1,0 +1,16 @@
+README.md
+  h_29be57c0addd47 25
+scripts/rules.py
+  h_29be57c0addd47 7,61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2b9f409f29b3b01cc3bc6a6e600f37ed0de567c6",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
