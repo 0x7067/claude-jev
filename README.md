@@ -32,41 +32,37 @@ small judgments cheaper.
   permission rules still evaluate against the rewritten input. Below the
   confidence floor the spawn goes through untouched.
 - **`PostToolUse` hook (`Edit|Write|MultiEdit|NotebookEdit`)** enforces
-  the rules a linter can't express. Rules come from a compiled rubric
-  (`.claude/jev-rubric.json`, written by `/jev:rules-compile`) when one
-  exists. Otherwise they come from `CLAUDE.md`, `AGENTS.md` (nested ones
-  scoped to their directory), `.claude/rules/*`, `~/.claude/CLAUDE.md` and
-  `~/.claude/jev-rules.md`. Each bullet or paragraph in those files is
-  judged once by Jev: is this an instruction to the agent, or a fact or a
-  pointer to another document? The verdict is cached by file hash, so only
-  instructions become questions. Every edit is judged in one batched Jev
-  call. Each rule is a typed question (boolean, choice or score) whose
-  answer maps to a violation probability. Only `model`-typed rules are
-  judged. `lint` rules name what a real linter owns and are never run or
-  sent to the model. The state Jev sees is the old→new hunk plus your last
-  prompt, so "don't touch generated files" means something. At most 40
-  questions go out per edit, chosen after scope filtering: rules written
-  for the edited path first, then the repo's own, then global ones, with
-  rule files taking turns so one long file can't use up every slot.
-  Verdicts are banded. At 0.80 or above the edit is blocked and the rule is
-  cited by id and line ("Repair `logout.ts` now, then continue"). Between
-  0.50 and 0.80 you get a notice and the agent gets nothing. Below that,
-  silence. A rule can block the same file at most twice per session; after
-  that it only flags, because a repair that can't land is a loop.
-  Vendored and generated paths are never judged. No rules, no judgment.
-- **`Stop` hook** runs the rules that need the whole change. `when:
-  "turn"` rubric rules judge the session's accumulated hunks together,
-  which is where scope creep or an abstraction with a single caller becomes
-  visible. Same bands, same loop guard (2 blocks per session, and
-  `stop_hook_active` prevents re-blocks).
-- **`/jev:rules-compile`** turns your instruction files into the rubric.
-  The agent reads `AGENTS.md`/`CLAUDE.md` (root and nested), rules files,
-  and `CONTRIBUTING.md`, extracts every statement that instructs, and
-  classifies each as `model`, `lint`, `deferred` or `unenforceable`. It
-  writes a typed question per model rule and picks `when` per rule. Then
-  `scripts/rubric.py --validate` fills source hashes and prints the bucket
-  table. The result is a committed, hand-editable file. Editing a source
-  afterwards makes the rubric stale, and the hook says so.
+  the rules a linter can't express. Rules come from the instruction files
+  you already keep: `CLAUDE.md`, `AGENTS.md` (nested ones scoped to their
+  directory), `.claude/rules/*`, `.cursor/rules/*`, `~/.claude/CLAUDE.md`
+  and `~/.claude/jev-rules.md`. There is nothing to compile and nothing
+  extra to commit. The first time the hook meets a file, Jev classifies
+  every bullet and paragraph in one batched call: is this an instruction
+  about the code the agent writes, or a fact, a pointer, a process rule?
+  And if it is an instruction, can a single edit break it, or does judging
+  it need the whole change? The verdicts are cached under `~/.claude` by
+  file hash, so a file is classified once until it changes, and only
+  instructions become questions. Every edit is then judged in one batched
+  Jev call, one yes/no question per rule in your own wording, whose answer
+  is the probability the rule is broken. The state Jev sees is the old→new
+  hunk plus your last prompt, so "don't touch generated files" means
+  something. At most 40 questions go out per edit, chosen after scope
+  filtering: rules written for the edited path first, then the repo's own,
+  then global ones, with rule files taking turns so one long file can't
+  use up every slot. Verdicts are banded. At 0.80 or above the edit is
+  blocked and the rule is cited by file and line ("Repair `logout.ts` now,
+  then continue"). Between 0.50 and 0.80 you get a notice and the agent
+  gets nothing. Below that, silence. A rule can block the same file at
+  most twice per session; after that it only flags, because a repair that
+  can't land is a loop. Vendored and generated paths are never judged. No
+  rules, no judgment.
+- **`Stop` hook** runs the rules that need the whole change. The rules Jev
+  classified as whole-turn ("keep changes minimal", "no abstraction with a
+  single caller", "don't refactor unrelated code") are skipped per edit,
+  where they have no answer yet, and judge the session's accumulated hunks
+  together at Stop, which is where scope creep becomes visible. Same
+  bands, same loop guard (2 blocks per session, and `stop_hook_active`
+  prevents re-blocks).
 - **`jev` skill** offloads snap decisions to the bundled CLI: `choose`
   between options, `noul` for yes/no gates, `score` on a rubric, `ask`
   for batched raw questions.
@@ -76,8 +72,8 @@ small judgments cheaper.
   also reports the predicted model-tier distribution, how many mismatch
   hints were shown, and a per-rule calibration table: each rule's checks,
   median/min/max probability, fire count, and a verdict (decisive, weak or
-  noisy), so an underperforming rule can be rewritten or `status`-disabled
-  in the rubric instead of deleted.
+  noisy), so an underperforming rule can be reworded in the instruction
+  file it came from. The next edit picks the new wording up.
 
 Compaction has two entry points and one mechanism. `/jev:compact` is the
 manual one: Jev judges every transcript block keep / truncate / drop in a
@@ -182,24 +178,35 @@ right rule; a memory-limit bump passed. Two other requested violations never
 reached the hook because the agent refused them itself, citing the same
 files. The hook is for the cases the agent doesn't notice.
 
-**Markdown fallback vs a compiled rubric.** The same corpus was run against
-a rubric compiled from one of those repos with `/jev:rules-compile`: 336
-rules from 13 instruction files, 137 of them filed under `lint`, 71 left
-for the judge (44 per edit, 27 at Stop), the rest deferred or
-unenforceable. The judge asked fewer questions per edit (22–33 instead of
-the 40 cap) and produced no false blocks on the hand-written near-misses.
-Detection on the needles fell from 156 to 48 of 168, and every drop traced
-to a rule the rubric had filed under `lint`: magic strings, `as any`, bare
-TODOs, a migration moved into `start.sh`. That is the design working: the
-judge does not redo the linter's job. It also names the one thing the
-plugin cannot check for you. **A `lint` rule is enforced only if that
-repo's linter actually runs it.** In that repo, 81 of the 137 lint rules
-named an ESLint rule, ast-grep pattern, or grep that nothing was configured
-to run. So, with the rubric in place, neither the linter nor the judge
-enforced them. Wiring the linter is the repo owner's job; so is deciding,
-per rule, to leave it in `model` until then (`status` and `check.type` are
-hand-editable). The engine takes no position: it never runs a lint rule, in
-any repo, and never rewrites a rubric.
+**Why there is no compiled rubric.** An earlier version shipped a
+`/jev:rules-compile` command that had the agent compile the instruction
+files into a committed `.claude/jev-rubric.json`: a typed question per
+rule, a per-edit or whole-turn phase, and a `lint` bucket for rules a
+linter could own. The same corpus was run against a rubric compiled from
+one of those repos: 336 rules from 13 instruction files, 137 of them filed
+under `lint`, 71 left for the judge (44 per edit, 27 at Stop), the rest
+deferred or unenforceable. The judge asked fewer questions per edit (22–33
+instead of the 40 cap) and produced no false blocks on the hand-written
+near-misses. Detection on the needles fell from 156 to 48 of 168, and
+every drop traced to a rule the rubric had filed under `lint`: magic
+strings, `as any`, bare TODOs, a migration moved into `start.sh`. In that
+repo, 81 of the 137 lint rules named an ESLint rule, ast-grep pattern, or
+grep that nothing was configured to run, so with the rubric in place
+neither the linter nor the judge enforced them. Deciding which is which
+needs a person, and the rubric asked for one: a command to run, a file to
+review and commit, and a recompile whenever an instruction changed.
+
+The one thing the rubric held that plain markdown parsing could not
+recover was the phase: which rules judge a hunk, and which need the whole
+change. Jev can answer that itself, so the hook now asks it, per item, in
+the same cached classification call that already asks whether the item is
+an instruction at all. Everything else the rubric did is either the
+markdown path's job already (ids, line citations, scope, dedupe) or was
+the person's (the `lint` bucket, hand-tuned questions, `status` flags).
+The engine judges every instruction it finds and never files one away.
+The phase question has not been through the eval yet. The numbers above
+were measured with every rule judged per edit; until the Stop-time rules
+are scored the same way, treat them as the unmeasured part.
 
 ```bash
 python3 eval/rules_eval.py extract    # your transcripts -> real edits

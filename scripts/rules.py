@@ -2,24 +2,26 @@
 """Rule enforcement hooks: PostToolUse on Edit|Write|MultiEdit|NotebookEdit,
 and Stop for turn-level rules.
 
-Rules come from a compiled rubric (`.claude/jev-rubric.json`, written by the
-/jev:rules-compile command) when one exists, and otherwise from CLAUDE.md,
-AGENTS.md, .claude/rules/*, ~/.claude/CLAUDE.md and ~/.claude/jev-rules.md:
-each bullet or paragraph is judged once by Jev — is this an instruction to
-the agent, or a fact, description or pointer? — and the verdict is cached by
-file hash, so the per-edit request carries only real instructions.
-Only `model` rules are judged — `lint` rules name what a real linter owns and
-are never run or sent to Jev; `deferred` and `unenforceable` are recorded for
-the report and skipped. Scope globs (`paths:` front matter, `(scope: glob)`
-tails, or the rubric's `scope` field) keep out-of-scope rules out of the
-request entirely.
+Rules come straight from the instruction files a person already keeps:
+CLAUDE.md, AGENTS.md (nested ones scoped to their directory), .claude/rules/*,
+.cursor/rules/*, ~/.claude/CLAUDE.md and ~/.claude/jev-rules.md. There is
+nothing to compile and nothing extra to commit. Each bullet or paragraph is
+classified once by Jev in a single batched request — is this an instruction
+about the code a coding agent writes, or a fact, description, pointer or
+process rule? and, if it is, can one edit hunk break it, or does judging it
+need every change from the task? — and the verdicts are cached by file hash
+under ~/.claude, so the per-edit request carries only real instructions and
+a changed instruction file is reclassified on its next use. Scope globs
+(`paths:` front matter, `(scope: glob)` tails, a nested file's directory)
+keep out-of-scope rules out of the request entirely.
 
-`when: "edit"` rules judge each edit hunk; `when: "turn"` rules judge the
-whole session's changes at Stop. Verdicts are banded: at or above ACT the
-hook blocks and the agent sees the cited rule; between FLAG and ACT the
-uncertainty goes to the user as a notice; below stays silent. One rule may
-block the same file at most twice per session — past that it only flags,
-because a repair that can't land is a loop, not enforcement.
+Per-edit rules judge each edit hunk; whole-turn rules (scope creep, an
+abstraction with a single caller, total size) judge the session's changes
+together at Stop. Verdicts are banded: at or above ACT the hook blocks and
+the agent sees the cited rule; between FLAG and ACT the uncertainty goes to
+the user as a notice; below stays silent. One rule may block the same file
+at most twice per session — past that it only flags, because a repair that
+can't land is a loop, not enforcement.
 
 Always exits 0 and prints nothing on any failure — enforcement must never
 corrupt a session.
@@ -38,7 +40,6 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import jev  # noqa: E402
-import rubric  # noqa: E402
 
 # Bands, not a single cut at 0.5: act above, flag the middle, ignore below.
 ACT = 0.80
@@ -175,44 +176,67 @@ INSTRUCTION_Q = ("Is item [{i}] a rule about the code or files a coding agent wr
                  "such that a reviewer looking at one diff could tell whether it was "
                  "followed? Facts, descriptions and pointers are not. Neither are "
                  "process rules about how to work — what to read first, which "
-                 "commands or tools to run, how to communicate, keeping changes "
-                 "small — because no single diff can show compliance.")
-INSTRUCTION_CACHE = os.path.expanduser("~/.claude/jev-rules-cache.json")
+                 "commands or tools to run, how to communicate — because no single "
+                 "diff can show compliance.")
+# Which phase judges the rule. A per-edit rule can be broken by one hunk on
+# its own; a whole-turn rule is about the change as a whole and has no
+# answer after edit 1 of 12. Misfiling a per-edit rule as whole-turn only
+# delays the catch to Stop, where the accumulated hunks still show it;
+# misfiling a whole-turn rule as per-edit blocks the agent mid-task on a
+# question nobody could answer yet. So the gate leans towards whole-turn.
+TURN_Q = ("Does judging item [{i}] need every change the agent made for the task, "
+          "not just one edit hunk — because it is about the change as a whole: "
+          "its total size, scope creep, edits outside what was asked, an "
+          "abstraction with a single caller, or the same code repeated across "
+          "files? Answer no for a rule a single hunk can break on its own.")
+CLASSIFY_CACHE = os.path.expanduser("~/.claude/jev-rules-cache.json")
 INSTRUCTION_MIN = 0.5
-ITEMS_PER_REQUEST = 60
+TURN_MIN = 0.5
+ITEMS_PER_REQUEST = 30  # two questions per item; 60 questions per request
 
 
-def instruction_lines(path: str, lines: list[str],
-                      items: list[tuple[int, str]]) -> set[int]:
-    """Line numbers of the items Jev judges to be instructions. One batched
+def classify_items(lines: list[str],
+                   items: list[tuple[int, str]]) -> dict[int, str]:
+    """Line number -> "edit" | "turn" for the items Jev judges to be
+    instructions; items that are not instructions are left out. One batched
     request per file, cached by content hash — the file changes rarely, the
-    hook runs on every edit."""
-    digest = hashlib.sha256((INSTRUCTION_Q + "".join(lines)).encode()).hexdigest()
+    hook runs on every edit, and a changed file misses the cache and is
+    reclassified. This is the whole of what a compiled rubric used to hold
+    that markdown parsing couldn't recover: it happens on first use, in
+    ~/.claude, with nothing for the user to run or commit."""
+    digest = hashlib.sha256(
+        (INSTRUCTION_Q + TURN_Q + "".join(lines)).encode()).hexdigest()
     try:
-        with open(INSTRUCTION_CACHE) as f:
+        with open(CLASSIFY_CACHE) as f:
             cache = json.load(f)
     except (OSError, ValueError):
         cache = {}
-    if cache.get(digest) is not None:
-        return set(cache[digest])
-    keep: set[int] = set()
+    hit = cache.get(digest)
+    if isinstance(hit, dict):
+        return {int(k): v for k, v in hit.items() if v in ("edit", "turn")}
+    phases: dict[int, str] = {}
     for start in range(0, len(items), ITEMS_PER_REQUEST):
         chunk = items[start:start + ITEMS_PER_REQUEST]
         state = "\n\n".join(f"[{i}] {text}" for i, (_ln, text) in enumerate(chunk))
-        questions = {f"q{i}": {"type": "noul", "instructions": INSTRUCTION_Q.format(i=i)}
-                     for i in range(len(chunk))}
+        questions = {}
+        for i in range(len(chunk)):
+            questions[f"q{i}"] = {"type": "noul", "instructions": INSTRUCTION_Q.format(i=i)}
+            questions[f"t{i}"] = {"type": "noul", "instructions": TURN_Q.format(i=i)}
         answers = jev.ask(state, questions)
         for i, (ln, _text) in enumerate(chunk):
             p = (answers.get(f"q{i}") or {}).get("noul")
-            if isinstance(p, (int, float)) and p >= INSTRUCTION_MIN:
-                keep.add(ln)
-    cache[digest] = sorted(keep)
+            if not (isinstance(p, (int, float)) and p >= INSTRUCTION_MIN):
+                continue
+            t = (answers.get(f"t{i}") or {}).get("noul")
+            turn = isinstance(t, (int, float)) and t >= TURN_MIN
+            phases[ln] = "turn" if turn else "edit"
+    cache[digest] = {str(k): v for k, v in phases.items()}
     try:
-        with open(INSTRUCTION_CACHE, "w") as f:
+        with open(CLASSIFY_CACHE, "w") as f:
             json.dump(cache, f)
     except OSError:
         pass
-    return keep
+    return phases
 
 
 def parse_rules(path: str, base_label: str | None = None,
@@ -228,9 +252,9 @@ def parse_rules(path: str, base_label: str | None = None,
     base = base_label or os.path.basename(path)
     scope0 = list(file_scope or []) + frontmatter_paths(lines)
     items = [(ln, t.strip()) for ln, t in markdown_items(lines) if len(t.strip()) >= 20]
-    keep = instruction_lines(path, lines, items)
+    phases = classify_items(lines, items)
     for line_no, text in items:
-        if line_no not in keep:
+        if line_no not in phases:
             continue
         if len(text) > MAX_ITEM_CHARS:
             cut = text.rfind(". ", 0, MAX_ITEM_CHARS)
@@ -246,8 +270,7 @@ def parse_rules(path: str, base_label: str | None = None,
             name, text = nm.group(1), nm.group(2).strip() or text
         rules.append({"id": name or slug(text), "text": text,
                       "file": base, "line": line_no, "scope": scope,
-                      "when": "edit", "check": {"type": "model"},
-                      "status": "active"})
+                      "when": phases[line_no]})
     return rules
 
 
@@ -292,31 +315,27 @@ def dedupe(rules: list[dict]) -> list[dict]:
     return out
 
 
-def load_rules(cwd: str) -> tuple[list[dict], dict]:
-    """Rubric where one exists, markdown elsewhere; rubric project rules win
-    an id clash against the global rubric, and markdown only fills the domain
-    a rubric doesn't cover."""
-    meta = rubric.load(cwd)
-    rules = list(meta["rules"])
-    if not meta["has_project"]:
-        for name in RULE_FILES:
-            rules += parse_rules(os.path.join(cwd, name))
-        for d in RULE_DIRS:
-            path = os.path.join(cwd, d)
-            if os.path.isdir(path):
-                for fn in sorted(os.listdir(path)):
-                    if fn.endswith((".md", ".mdc")):
-                        rules += parse_rules(os.path.join(path, fn),
-                                             base_label=f"{d}/{fn}")
-        for path, scope in nested_files(cwd):
-            rules += parse_rules(path,
-                                 base_label=os.path.relpath(path, cwd),
-                                 file_scope=[scope])
-    if not meta["has_global"]:
-        for path in GLOBAL_RULE_FILES:
-            rules += parse_rules(path, base_label="~/" + os.path.relpath(
-                path, os.path.expanduser("~")))
-    return dedupe(rules), meta
+def load_rules(cwd: str) -> list[dict]:
+    """Every instruction in the project's and the user's instruction files,
+    classified and cached on the way in."""
+    rules = []
+    for name in RULE_FILES:
+        rules += parse_rules(os.path.join(cwd, name))
+    for d in RULE_DIRS:
+        path = os.path.join(cwd, d)
+        if os.path.isdir(path):
+            for fn in sorted(os.listdir(path)):
+                if fn.endswith((".md", ".mdc")):
+                    rules += parse_rules(os.path.join(path, fn),
+                                         base_label=f"{d}/{fn}")
+    for path, scope in nested_files(cwd):
+        rules += parse_rules(path,
+                             base_label=os.path.relpath(path, cwd),
+                             file_scope=[scope])
+    for path in GLOBAL_RULE_FILES:
+        rules += parse_rules(path, base_label="~/" + os.path.relpath(
+            path, os.path.expanduser("~")))
+    return dedupe(rules)
 
 
 def relative(path: str, cwd: str) -> str:
@@ -403,23 +422,19 @@ def edit_hunks(inp: dict, cwd: str | None = None) -> str:
     return content
 
 
-def rule_question(rule: dict) -> dict | None:
-    """A rubric model rule carries its own question; a markdown-derived rule
-    gets the generic one."""
-    q = rubric.jev_question(rule)
-    if q is not None:
-        return q
+def rule_question(rule: dict) -> dict:
+    """One yes/no question per rule, in the user's own words. The answer is
+    the probability the rule is broken."""
+    what = ("Does this edit" if rule.get("when") == "edit"
+            else "Do these changes")
     return {"type": "noul",
-            "instructions": "Does this edit violate the repository rule: "
+            "instructions": f"{what} violate the repository rule: "
                             f"\"{rule['text']}\"?"}
 
 
-def verdict(rule: dict, answer: dict | None) -> tuple[float, str | None]:
-    """(violation probability, picked-label) whatever the question shape."""
-    if (rule["check"] or {}).get("question"):
-        return rubric.violation_probability(rule, answer)
+def verdict(answer: dict | None) -> float:
     p = (answer or {}).get("noul")
-    return (p if isinstance(p, (int, float)) else 0.0), None
+    return min(1.0, max(0.0, p)) if isinstance(p, (int, float)) else 0.0
 
 
 # --- per-session state: block counts, accumulated hunks, turn bookkeeping ---
@@ -435,7 +450,7 @@ def session_state(session_id: str) -> dict:
             data = json.load(f)
     except (OSError, ValueError):
         return {"blocks": {}, "hunks": [], "files": [], "stop_blocks": 0}
-    if "blocks" not in data:  # pre-rubric format was a bare counts dict
+    if "blocks" not in data:  # the first format was a bare counts dict
         return {"blocks": data, "hunks": [], "files": [], "stop_blocks": 0}
     return data
 
@@ -486,9 +501,8 @@ def cite(v: dict) -> str:
     if len(text) > 220:
         text = text[:217] + "..."
     where = f"{v['file']} line {v['line']}" if v.get("line") else v["file"]
-    judged = f" Judged: {v['label']}." if v.get("label") else ""
     return (f"- Rule \"{v['rule']}\" from {where}: "
-            f"\"{text}\" ({v['prob']:.2f}){judged}")
+            f"\"{text}\" ({v['prob']:.2f})")
 
 
 def ask_rules(state_text: str, rules: list[dict]) -> dict:
@@ -513,30 +527,22 @@ def collect_verdicts(rules: list[dict], answers: dict,
     """(hits at or above flag, every rule's probability for calibration)."""
     hits, probs = [], {}
     for r in rules:
-        p, label = verdict(r, answers.get(r.get("_qkey") or r["id"]))
+        p = verdict(answers.get(r.get("_qkey") or r["id"]))
         probs[r["id"]] = round(p, 3)
         if p >= flag:
             hits.append({"rule": r["id"], "text": r["text"],
                          "file": r["file"], "line": r.get("line", 0),
                          "prob": round(p, 2),
-                         "band": "act" if p >= act else "flag",
-                         "label": label})
+                         "band": "act" if p >= act else "flag"})
     return hits, probs
 
 
-def model_rules(rules: list[dict], phase: str) -> list[dict]:
-    """Only the judge's share: active model rules for this phase. Lint,
-    deferred and unenforceable rules are never sent to the model."""
-    return [r for r in rules if r["status"] == "active"
-            and r["check"]["type"] == "model" and r.get("when") == phase]
-
-
 def scoped_rules(rules: list[dict], phase: str, files: list[str]) -> list[dict]:
-    """The questions one request carries: model rules for the phase whose
-    scope covers a changed file, capped after scoping so a scoped rule is
-    never crowded out by unscoped ones loaded before it."""
-    hit = [r for r in model_rules(rules, phase)
-           if not r["scope"] or any(glob_match(f, r["scope"]) for f in files)]
+    """The questions one request carries: rules for the phase whose scope
+    covers a changed file, capped after scoping so a scoped rule is never
+    crowded out by unscoped ones loaded before it."""
+    hit = [r for r in rules if r.get("when") == phase
+           and (not r["scope"] or any(glob_match(f, r["scope"]) for f in files))]
     # A rule written for this path outranks a repo-wide one, and the repo's
     # own rules outrank the user's global ones. Within a tier the files take
     # turns, so one long rules file can't crowd out the others.
@@ -569,14 +575,6 @@ def judge_edit(rel: str, hunk: str, task: str, in_scope: list[dict],
     return hits, probs, answers
 
 
-def stale_notice(meta: dict, state: dict) -> str | None:
-    if meta.get("stale") and not state.get("stale_warned"):
-        state["stale_warned"] = True
-        return ("rubric is stale (an instruction file changed since it was "
-                "compiled) — run /jev:rules-compile")
-    return None
-
-
 def handle_edit(event: dict) -> dict:
     inp = event.get("tool_input") or {}
     cwd = event.get("cwd") or os.getcwd()
@@ -584,7 +582,7 @@ def handle_edit(event: dict) -> dict:
     rel = relative(file_path, cwd)
     if EXCLUDED.search(rel):
         return {}
-    rules, meta = load_rules(cwd)
+    rules = load_rules(cwd)
     if not rules:
         return {}
     in_scope = scoped_rules(rules, "edit", [rel])
@@ -594,20 +592,12 @@ def handle_edit(event: dict) -> dict:
     sid = event.get("session_id") or "unknown"
     sstate = session_state(sid)
     record_hunk(sstate, rel, state)
-    out = {}
-    note = stale_notice(meta, sstate)
-    if note:
-        out["systemMessage"] = f"[jev rules] {note}"
     if not in_scope:
         save_state(sid, sstate)
-        if out:
-            return out
         return {}
 
     task = last_user_prompt(event.get("transcript_path"))
-    t = meta["thresholds"] or {}
-    act, flag = t.get("act", ACT), t.get("flag", FLAG)
-    hits, probs, answers = judge_edit(rel, state, task, in_scope, act, flag)
+    hits, probs, answers = judge_edit(rel, state, task, in_scope)
     acting, flagged = [], []
     for v in hits:
         key = f"{v['rule']}|{rel}"
@@ -622,12 +612,11 @@ def handle_edit(event: dict) -> dict:
                   for v in hits],
                  len(rules), len(rules) - len(in_scope), "edit")
 
+    out = {}
     if flagged:
         listed = ", ".join(f"{v['rule']} {v['prob']:.2f}" for v in flagged)
-        flag_msg = (f"[jev rules] uncertain about {listed} on "
-                    f"{rel} — not sent to the agent")
-        out["systemMessage"] = (out["systemMessage"] + "  " + flag_msg
-                                if out.get("systemMessage") else flag_msg)
+        out["systemMessage"] = (f"[jev rules] uncertain about {listed} on "
+                                f"{rel} — not sent to the agent")
     if acting:
         lines = ["This edit appears to break a rule from this "
                  "repository's instructions."]
@@ -647,7 +636,7 @@ def handle_stop(event: dict) -> dict:
     if not sstate["hunks"]:
         return {}
     cwd = event.get("cwd") or os.getcwd()
-    rules, meta = load_rules(cwd)
+    rules = load_rules(cwd)
     turn_rules = scoped_rules(rules, "turn", sstate["files"])
     if not turn_rules:
         return {}
@@ -660,9 +649,7 @@ def handle_stop(event: dict) -> dict:
     parts.append(f"The changes:\n{diff[:MAX_TURN_CHARS]}")
     answers = ask_rules("\n\n".join(parts), turn_rules)
 
-    t = meta["thresholds"] or {}
-    act, flag = t.get("act", ACT), t.get("flag", FLAG)
-    hits, probs = collect_verdicts(turn_rules, answers, act, flag)
+    hits, probs = collect_verdicts(turn_rules, answers, ACT, FLAG)
     already = bool(event.get("stop_hook_active"))
     acting, flagged = [], []
     for v in hits:
