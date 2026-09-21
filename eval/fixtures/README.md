@@ -15,6 +15,13 @@ Upstream license text is kept at `ts/LICENSE.upstream`. Files are unmodified;
 they are chosen to span the three size buckets the report cuts on (< 3000,
 3000-8000, > 8000 characters).
 
+## py/
+
+Vendored from [requests](https://github.com/psf/requests) at `main`, Apache-2.0
+licensed. Upstream license text is at `py/LICENSE.upstream`. Files are
+unmodified. This repo's own scripts would have worked as hosts except that none
+of them is under 3000 characters, so the small bucket had no member.
+
 ## yaml/
 
 Kubernetes manifests written for this repo. No upstream, no license question.

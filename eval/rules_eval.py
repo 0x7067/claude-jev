@@ -43,7 +43,11 @@ from observed import prompt_text  # noqa: E402
 
 DATA = os.path.join(HERE, "data")
 EDITS = os.path.join(DATA, "rules_edits.jsonl")
-CASES = os.path.join(HERE, "rules_cases.jsonl")
+# The hand-written cases judge edits inside real repos: `cwd` has to be a
+# checkout with its own instruction files. They are not in the repo and are
+# not reproducible from a clone, so they live under eval/private/, which is
+# gitignored. Absent, `run` just judges whatever else was asked for.
+CASES = os.path.join(HERE, "private", "rules_cases.jsonl")
 PRED = os.path.join(DATA, "rules_pred.jsonl")
 CACHE = os.path.join(DATA, "rules_cache.jsonl")
 PROJECTS = os.path.expanduser("~/.claude/projects")
@@ -152,6 +156,8 @@ def judge(rec: dict, rule_cache: dict) -> dict:
             rule_cache[cwd] = rules.load_rules(cwd)
     all_rules = rule_cache[cwd]
     in_scope = rules.scoped_rules(all_rules, "edit", [rel])
+    if rec.get("only_rule"):
+        in_scope = [r for r in in_scope if r["text"] == rec["only_rule"]]
     hunk = case_hunk(rec, cwd, rel).strip()
     out.update(n_rules=len(all_rules), n_scope=len(in_scope), hunk_chars=len(hunk))
     if not hunk:
@@ -175,7 +181,12 @@ def cmd_run(args) -> int:
     os.makedirs(DATA, exist_ok=True)
     recs = []
     if not args.edits_only:
-        recs += load_jsonl(args.cases)
+        if os.path.exists(args.cases):
+            recs += load_jsonl(args.cases)
+        elif args.cases == CASES:
+            print(f"no private cases at {args.cases}; skipping them")
+        else:
+            raise SystemExit(f"no cases file at {args.cases}")
     if not args.cases_only:
         real = load_jsonl(EDITS)
         if args.sample and len(real) > args.sample:
@@ -262,7 +273,11 @@ def cmd_report(args) -> int:
     viol = [c for c in cases if c.get("violates")]
     clean = [c for c in cases if not c.get("violates")]
     if cases:
-        print(f"\nHand-written cases against real repo rules: {len(viol)} violations, "
+        fixtures = os.path.join(HERE, "fixtures")
+        generated = all(str(c.get("cwd", "")).startswith(fixtures) for c in cases)
+        what = ("Generated cases against the fixture rules" if generated
+                else "Hand-written cases against real repo rules")
+        print(f"\n{what}: {len(viol)} violations, "
               f"{len(clean)} compliant near-misses")
         det_act = sum(1 for c in viol if band(c) == "act")
         det_flag = sum(1 for c in viol if band(c) != "quiet")
@@ -318,6 +333,18 @@ def cmd_report(args) -> int:
                       f"\"{' '.join(h['text'].split())[:110]}\"")
                 if r.get("task"):
                     print(f"      task: {' '.join(r['task'].split())[:110]}")
+
+    twin_blocks = collections.Counter()
+    for c in clean:
+        for h in c.get("hits") or []:
+            if h["band"] == "act":
+                twin_blocks[(((c.get("tags") or {}).get("needle") or c["id"]), h["rule"])] += 1
+    if twin_blocks:
+        # A twin tripped by a rule other than its own pair is a corpus defect.
+        print("\nBenign twins blocked, by the rule that fired:")
+        print(f"  {'twin':<26}{'blocked by':<42}{'n':>4}")
+        for (needle, rid), n in twin_blocks.most_common(20):
+            print(f"  {needle[:26]:<26}{rid[:42]:<42}{n:>4}")
 
     per_rule = collections.defaultdict(list)
     for r in judged:

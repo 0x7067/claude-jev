@@ -1,37 +1,27 @@
 #!/usr/bin/env python3
 """Adversarial corpus for the rule hook, generated from eval/rules_corpus.jsonl.
 
-A rule and a violation of it are the same fact written twice, so the corpus
-holds both: each row carries the rule text, a violating snippet, a benign twin
-of similar size, and the prompt that asks for the violation. This file turns
-those rows into cases and writes the fixture repo the judge reads them in --
-the instruction file is generated from the `rule` fields, so a rule can never
-drift from the needle that is supposed to trip it.
+Each corpus row carries a rule, a violating snippet, a benign twin of similar
+size, and the prompt that asks for the violation. The fixture's instruction
+file is generated from the rule texts, so a rule cannot drift from the needle
+meant to trip it.
 
-For each host file in a fixture, the violating snippet is inserted at the
-start, middle or end, and the same edit is expressed two ways: as an Edit (the
-hook sees only the hunk) and as a Write (the hook sees the whole file,
-truncated at rules.MAX_STATE_CHARS). Each violation has a benign twin inserted
-the same way, so the fire rate on twins is the false-positive rate at the same
-position and size. The user's prompt *asks for* the violation, which is the
-hard case: the judge must hold the rule against the task.
+Each needle is inserted at the start, middle and end of every host file, as an
+Edit (the hook sees the hunk) and as a Write (it sees the file, truncated at
+rules.MAX_STATE_CHARS). The twin goes in the same way, so the fire rate on
+twins is the false-positive rate at the same position and size.
 
-Rows with `"kind": "distractor"` carry a rule and no needle. They go into the
-instruction file but generate no cases, so the judge has to weigh rules that
-nothing in the edit violates. Without them every rule in scope has a matching
-needle, the judge never has to choose, and the false-block rate reads as zero
-for reasons that have nothing to do with the judge.
+Distractor rows carry a rule and no needle, so rules that nothing violates
+still compete for the judgment.
 
-Adding a language is adding rows with a new `lang` and host files under
-eval/fixtures/<lang>/; nothing here is per-language except the file extensions.
+Adding a language: rows with a new `lang`, host files under
+eval/fixtures/<lang>/, and an EXTENSIONS entry.
 
   python3 eval/rules_stress.py            -> eval/data/rules_stress.jsonl
   python3 eval/rules_eval.py run --cases eval/data/rules_stress.jsonl --cases-only --out eval/data/rules_stress_pred.jsonl
   python3 eval/rules_eval.py report --pred eval/data/rules_stress_pred.jsonl --by-tag
 
-Run both with HOME pointed at a scratch dir, or the user's own
-~/.claude/CLAUDE.md joins every fixture's rules and the numbers stop being
-reproducible across machines.
+Point HOME at a scratch dir; load_rules() also reads ~/.claude/CLAUDE.md.
 """
 
 from __future__ import annotations
@@ -45,8 +35,6 @@ CORPUS = os.path.join(HERE, "rules_corpus.jsonl")
 FIXTURES = os.path.join(HERE, "fixtures")
 OUT = os.path.join(HERE, "data", "rules_stress.jsonl")
 
-# Host files are real source of that language; the snippet has to look like it
-# belongs. Everything else in this file is language-agnostic.
 EXTENSIONS = {"ts": (".ts", ".tsx"), "yaml": (".yaml", ".yml"), "py": (".py",)}
 SKIP_DIRS = {"node_modules", ".git", "dist", "__pycache__"}
 HEADER = ("# Engineering rules\n\n"
@@ -65,10 +53,8 @@ def load_corpus(path: str) -> dict[str, list[dict]]:
                 continue
             rows.append(json.loads(line))
 
-    # A row may point at another row's rule instead of declaring its own, so
-    # one rule can carry several needles of different subtlety. The reference
-    # resolves to the same text and the same `expect`, and emits no extra
-    # bullet -- a rule stated twice would be two rules to the judge.
+    # `rule_ref` hangs another needle off an existing rule. It emits no extra
+    # bullet: a rule stated twice would be two rules to the judge.
     declared = {r["id"]: r for r in rows if "rule" in r}
     for row in rows:
         ref = row.get("rule_ref")
@@ -120,9 +106,8 @@ def host_files(fixture: str, lang: str) -> list[str]:
 
 
 def insert(lines: list[str], needle: str, where: str) -> tuple[list[str], str]:
-    """-> (new lines, anchor line the Edit form attaches to). The anchor is the
-    nearest non-blank line: an empty old_string is not an edit the hook would
-    ever see, and it hides the position the case is meant to test."""
+    """-> (new lines, anchor line the Edit form attaches to). The anchor skips
+    blank lines: an empty old_string is not an edit the hook would ever see."""
     n = len(lines)
     idx = {"start": min(3, n - 1), "middle": n // 2, "end": n - 1}[where]
     for step in range(n):
@@ -141,9 +126,13 @@ def size_bucket(size: int) -> str:
     return "small" if size < 3000 else "large" if size < 8000 else "over-cap"
 
 
-def cases_for(fixture: str, lang: str, rows: list[dict]) -> list[dict]:
+def cases_for(fixture: str, lang: str, rows: list[dict], isolated: bool = False,
+              needles: set[str] | None = None, twins_only: bool = False) -> list[dict]:
     cases = []
-    for path in host_files(fixture, lang):
+    hosts = host_files(fixture, lang)
+    if twins_only:
+        hosts = hosts[:1]
+    for path in hosts:
         with open(path, errors="replace") as f:
             lines = f.read().split("\n")
         rel = os.path.relpath(path, fixture)
@@ -152,14 +141,20 @@ def cases_for(fixture: str, lang: str, rows: list[dict]) -> list[dict]:
         for row in rows:
             if row.get("kind") == "distractor":
                 continue
+            if needles and row["id"] not in needles:
+                continue
             for where in ("start", "middle", "end"):
-                for label, needle in (("V", row["bad"]), ("C", row["good"])):
+                halves = (("C", row["good"]),) if twins_only \
+                    else (("V", row["bad"]), ("C", row["good"]))
+                for label, needle in halves:
                     new_lines, anchor = insert(lines, needle, where)
                     tags = {"needle": row["id"], "where": where,
                             "size": size_bucket(size), "repo": lang}
                     base = {"kind": "case", "cwd": fixture, "task": row["task"],
                             "violates": label == "V",
                             "expect": row["expect"] if label == "V" else None}
+                    if isolated:
+                        base["only_rule"] = row["rule"]
                     fid = f"{lang}-{stem}"
                     cases.append({**base, "id": f"{fid}/{row['id']}/{where}/edit-{label}",
                                   "file_path": path, "tool_name": "Edit",
@@ -179,6 +174,11 @@ def main() -> int:
     ap.add_argument("--lang", action="append",
                     help="only this language (repeatable); default every one in the corpus")
     ap.add_argument("--out", default=OUT)
+    ap.add_argument("--needle", action="append", help="only this needle id (repeatable)")
+    ap.add_argument("--twins", action="store_true",
+                    help="benign halves only, one host file per language")
+    ap.add_argument("--isolated", action="store_true",
+                    help="judge each pair against its own rule only")
     args = ap.parse_args()
 
     by_lang = load_corpus(CORPUS)
@@ -194,12 +194,16 @@ def main() -> int:
         if not os.path.isdir(fixture):
             raise SystemExit(f"missing fixture dir {fixture}")
         write_rules_file(fixture, rows)
-        got = cases_for(fixture, lang, rows)
-        if not got:
+        got = cases_for(fixture, lang, rows, args.isolated,
+                        set(args.needle or []), args.twins)
+        if not got and not args.needle:
             raise SystemExit(f"no host files for lang {lang!r} under {fixture}")
-        needles = [r for r in rows if r.get("kind") != "distractor"]
-        print(f"{lang}: {len(host_files(fixture, lang))} files x {len(needles)} needles "
-              f"({len(rows) - len(needles)} distractor rules) -> {len(got)} cases")
+        selected = [r for r in rows if r.get("kind") != "distractor"
+                    and not (args.needle and r["id"] not in args.needle)]
+        distractors = sum(1 for r in rows if r.get("kind") == "distractor")
+        hosts = len(host_files(fixture, lang))
+        print(f"{lang}: {1 if args.twins else hosts} files x {len(selected)} needles "
+              f"({distractors} distractor rules) -> {len(got)} cases")
         cases += got
 
     with open(args.out, "w") as f:
