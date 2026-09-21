@@ -59,7 +59,7 @@ _lock = threading.RLock()  # load_rules may call the cached ask while held
 
 def cmd_extract(args) -> int:
     os.makedirs(DATA, exist_ok=True)
-    n = 0
+    n = gone = excluded = 0
     with open(EDITS, "w") as out:
         for fp in sorted(glob.glob(os.path.join(PROJECTS, "*", "*.jsonl"))):
             task = ""
@@ -87,6 +87,16 @@ def cmd_extract(args) -> int:
                     cwd = d.get("cwd")
                     if not cwd or not inp.get("file_path"):
                         continue
+                    # An edit the judge cannot reach is not a sample: a gone
+                    # repo has no rules to load, and an excluded path is never
+                    # judged. Both would otherwise land in the sample and skip.
+                    if not os.path.isdir(cwd):
+                        gone += 1
+                        continue
+                    rel = rules.relative(inp["file_path"], cwd)
+                    if rules.EXCLUDED.search(rel) or rules.outside(rel):
+                        excluded += 1
+                        continue
                     n += 1
                     out.write(json.dumps({
                         "id": f"{os.path.basename(fp)[:8]}#{n}", "kind": "real",
@@ -94,7 +104,8 @@ def cmd_extract(args) -> int:
                         "tool_name": b["name"], "tool_input": inp, "task": task,
                         "ts": d.get("timestamp"),
                     }) + "\n")
-    print(f"{n} real edits -> {EDITS}")
+    print(f"{n} real edits -> {EDITS}"
+          f"   (pruned {gone} in repos that are gone, {excluded} on excluded paths)")
     return 0
 
 
@@ -149,7 +160,7 @@ def judge(rec: dict, rule_cache: dict) -> dict:
     out = {k: rec.get(k) for k in ("id", "kind", "cwd", "task", "violates", "expect",
                                    "expect_band", "note", "tags")}
     out["rel"] = rel
-    if rules.EXCLUDED.search(rel):
+    if rules.EXCLUDED.search(rel) or rules.outside(rel):
         out["skipped"] = "excluded path"
         return out
     with _lock:
