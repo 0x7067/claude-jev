@@ -250,7 +250,7 @@ def keep_questions(n: int, directive: str | None = None) -> dict:
         questions[f"keep_{i}"] = {
             "type": "noul",
             "instructions": f"If this session's history were compacted, would block [{i}] "
-                            "(marked [{i}] in the state) still be needed to continue the work — "
+                            f"(marked [{i}] in the state) still be needed to continue the work — "
                             "a decision, constraint, file path, error cause, or open task the "
                             "agent would otherwise lose? Answer yes only for lasting information "
                             "value, not for politeness or because it is recent." + asked,
