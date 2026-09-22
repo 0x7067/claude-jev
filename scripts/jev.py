@@ -189,12 +189,15 @@ def intent_bundle() -> dict:
 
 
 TIER_CRITERIA = {
-    "haiku": "Mechanical, bounded work — search, fetch, summarize, "
-             "count, check; shallow reasoning over clear instructions",
-    "sonnet": "Ordinary coding work — focused edits, standard "
-              "features, debugging with a clear signal",
-    "opus": "Hardest reasoning — ambiguous multi-file work, "
-            "architecture, subtle bugs",
+    "haiku": "Bounded, mechanical work with a clear stop condition: search, "
+             "fetch, count, summarize, list callers, run a command and report "
+             "its output",
+    "sonnet": "Ordinary implementation from a complete brief: focused edits, "
+              "a standard feature in known files, a bug with a clear signal, "
+              "mechanical changes across files",
+    "opus": "Work that needs judgment the brief cannot pin down: ambiguous "
+            "multi-file changes, subtle bugs, design inside a module, a "
+            "review that must find what is wrong",
 }
 
 BRIEF_CHECKS = {
