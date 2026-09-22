@@ -29,7 +29,8 @@ Usage: control-jev <command> [args]
   save <relpath> -    Write stdin to evidence/<relpath> (creates parents)
 
 Environment:
-  JE_VERIFY_RUN_ID     Force the run id on launch (default: timestamp-pid)
+  JE_VERIFY_RUN_ID     Force the run id on launch (default: timestamp-pid);
+                       must match [A-Za-z0-9._-]+
   JE_VERIFY_EVIDENCE   Override evidence root (default: skill artifacts/)
   TYPESAFE_API_KEY     Optional; without it hooks fail open and jev exits 2
 
@@ -40,6 +41,15 @@ EOF
 
 die() { echo "control-jev: $*" >&2; exit 1; }
 
+validate_run_id() {
+  local id="$1"
+  [[ -n "$id" ]] || die "empty RUN_ID"
+  [[ "$id" =~ ^[A-Za-z0-9._-]+$ ]] || die "RUN_ID must match [A-Za-z0-9._-]+ (got: $id)"
+  # Charset allows '.', but consecutive dots must not form a '..' path segment
+  # if a future change ever joined RUN_ID into a multi-component path.
+  [[ "$id" != *..* ]] || die "RUN_ID must not contain .. (got: $id)"
+}
+
 # Run a command with the disposable home as HOME for that process only.
 with_verify_home() {
   env HOME="$VERIFY_HOME" CLAUDE_PLUGIN_ROOT="$ROOT" "$@"
@@ -47,6 +57,7 @@ with_verify_home() {
 
 require_active() {
   if [[ -n "${RUN_ID:-}" && -n "${VERIFY_HOME:-}" && -d "$VERIFY_HOME" && -n "${EVIDENCE_DIR:-}" ]]; then
+    validate_run_id "$RUN_ID"
     return 0
   fi
   if [[ -f "$STATE_FILE" ]]; then
@@ -54,18 +65,43 @@ require_active() {
     source "$STATE_FILE"
   fi
   [[ -n "${RUN_ID:-}" ]] || die "no active run; run: control-jev launch"
+  validate_run_id "$RUN_ID"
   [[ -n "${VERIFY_HOME:-}" && -d "$VERIFY_HOME" ]] || die "VERIFY_HOME missing for RUN_ID=$RUN_ID; re-launch"
   [[ -n "${EVIDENCE_DIR:-}" ]] || die "EVIDENCE_DIR missing for RUN_ID=$RUN_ID; re-launch"
 }
 
 write_state() {
   mkdir -p "$STATE_DIR" "$EVIDENCE_DIR"
-  cat >"$STATE_FILE" <<EOF
-RUN_ID='$RUN_ID'
-VERIFY_HOME='$VERIFY_HOME'
-CLAUDE_PLUGIN_ROOT='$ROOT'
-EVIDENCE_DIR='$EVIDENCE_DIR'
-EOF
+  {
+    printf 'RUN_ID=%q\n' "$RUN_ID"
+    printf 'VERIFY_HOME=%q\n' "$VERIFY_HOME"
+    printf 'CLAUDE_PLUGIN_ROOT=%q\n' "$ROOT"
+    printf 'EVIDENCE_DIR=%q\n' "$EVIDENCE_DIR"
+  } >"$STATE_FILE"
+}
+
+# True when resolved path $1 is exactly $2 or a file under it.
+path_under() {
+  local resolved="$1"
+  local base="$2"
+  [[ "$resolved" == "$base" || "$resolved" == "$base"/* ]]
+}
+
+# Refuse absolute paths and any .. path component; require dest under base.
+evidence_dest() {
+  local base="$1"
+  local rel="$2"
+  [[ -n "$rel" ]] || die "relative evidence path required"
+  [[ "$rel" != /* ]] || die "evidence path must be relative (got absolute: $rel)"
+  case "/$rel/" in
+    */../*) die "evidence path must not contain .. (got: $rel)" ;;
+  esac
+  local dest="$base/$rel"
+  local resolved base_resolved
+  resolved="$(realpath -m "$dest")"
+  base_resolved="$(realpath -m "$base")"
+  path_under "$resolved" "$base_resolved" || die "evidence path escapes $base (got: $rel)"
+  printf '%s\n' "$dest"
 }
 
 cmd_launch() {
@@ -74,9 +110,11 @@ cmd_launch() {
   if [[ "${1:-}" == "--reuse" && -f "$STATE_FILE" ]]; then
     # shellcheck disable=SC1090
     source "$STATE_FILE"
+    validate_run_id "$RUN_ID"
     mkdir -p "$VERIFY_HOME" "$EVIDENCE_DIR"
   else
     RUN_ID="${JE_VERIFY_RUN_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
+    validate_run_id "$RUN_ID"
     VERIFY_HOME="/tmp/jev-verify-$RUN_ID"
     EVIDENCE_DIR="$ARTIFACTS_ROOT/$RUN_ID"
     mkdir -p "$VERIFY_HOME" "$EVIDENCE_DIR"
@@ -152,11 +190,17 @@ cmd_cleanup() {
   local home_to_remove="$VERIFY_HOME"
   local run="$RUN_ID"
   local evidence="$EVIDENCE_DIR"
-  if [[ "$home_to_remove" == /tmp/jev-verify-* ]]; then
-    rm -rf "$home_to_remove"
-  else
-    die "refusing to remove unexpected VERIFY_HOME=$home_to_remove"
-  fi
+  validate_run_id "$run"
+  # Literal path must be exactly the disposable tree for this id — no .. segments.
+  local expected="/tmp/jev-verify-$run"
+  [[ "$home_to_remove" == "$expected" ]] || die "VERIFY_HOME must be $expected (got: $home_to_remove)"
+  [[ "$home_to_remove" != *..* ]] || die "VERIFY_HOME must not contain .. (got: $home_to_remove)"
+  local resolved expected_resolved
+  resolved="$(realpath -m "$home_to_remove")"
+  expected_resolved="$(realpath -m "$expected")"
+  [[ "$resolved" == "$expected_resolved" ]] || die "resolved VERIFY_HOME $resolved != $expected_resolved"
+  path_under "$resolved" "$expected_resolved" || die "resolved VERIFY_HOME escapes disposable tree"
+  rm -rf -- "$home_to_remove"
   rm -f "$STATE_FILE"
   cat <<EOF
 cleaned_home=$home_to_remove
@@ -181,7 +225,11 @@ cmd_hook() {
   require_active
   local name="${1:-}"
   shift || true
-  [[ -n "$name" ]] || die "hook name required (prompt_router|subagent_router|rules)"
+  case "$name" in
+    prompt_router|subagent_router|rules) ;;
+    "") die "hook name required (prompt_router|subagent_router|rules)" ;;
+    *) die "hook name must be prompt_router|subagent_router|rules (got: $name)" ;;
+  esac
   local script="$ROOT/scripts/${name}.py"
   [[ -f "$script" ]] || die "unknown hook script: $script"
   if [[ $# -gt 0 ]]; then
@@ -215,8 +263,7 @@ cmd_stats() {
 cmd_evidence() {
   require_active
   local rel="${1:-}"
-  [[ -n "$rel" ]] || die "relative evidence path required"
-  echo "$EVIDENCE_DIR/$rel"
+  evidence_dest "$EVIDENCE_DIR" "$rel"
 }
 
 cmd_save() {
@@ -224,7 +271,8 @@ cmd_save() {
   local rel="${1:-}"
   local dash="${2:-}"
   [[ -n "$rel" && "$dash" == "-" ]] || die "usage: control-jev save <relpath> -"
-  local dest="$EVIDENCE_DIR/$rel"
+  local dest
+  dest="$(evidence_dest "$EVIDENCE_DIR" "$rel")"
   mkdir -p "$(dirname "$dest")"
   cat >"$dest"
   echo "saved=$dest"

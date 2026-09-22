@@ -31,7 +31,8 @@ export PATH="$PWD/.cursor/skills/verify-claude-jev/bin:$PATH"
 control-jev launch
 # prints run_id=... home=/tmp/jev-verify-... evidence_dir=... ready=1
 # subsequent control-jev commands read the active run from the control state file
-# force a specific id with JE_VERIFY_RUN_ID=...; reuse the last home with launch --reuse
+# force a specific id with JE_VERIFY_RUN_ID=... (must match [A-Za-z0-9._-]+,
+# no `..`); reuse the last home with launch --reuse
 ```
 
 Teardown is `control-jev cleanup` (see Cleanup). Never drive an instance whose
