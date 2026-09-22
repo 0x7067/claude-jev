@@ -136,13 +136,29 @@ def same_file(a, b) -> bool:
     return a == b or os.path.basename(a) == os.path.basename(b)
 
 
+def touches_text(inp: dict, head: str) -> bool:
+    """Does a later edit remove or rewrite the text a block cited? Matched
+    on the first line of the added text, which survives re-indentation and
+    partial rewrites better than the whole head does."""
+    first = next((ln.strip() for ln in head.splitlines() if ln.strip()), "")
+    if len(first) < 8:
+        return False
+    olds = [inp.get("old_string") or ""]
+    olds += [(x or {}).get("old_string") or "" for x in inp.get("edits") or []
+             if isinstance(x, dict)]
+    return any(first in o for o in olds)
+
+
 def rule_outcomes(entries: list[dict]) -> list[dict]:
     """What the session did to a file after a rule blocked an edit to it.
 
     `abandoned` means no later edit; `retried identical` means the same edit
     came back unchanged, which reads as a false positive the agent worked
-    around; `repaired` means a different edit landed. Entries logged before
-    `blocked` existed are skipped, not counted as anything.
+    around; `repaired` means a later edit rewrote the blocked text; `ignored`
+    means later edits to the file left it alone, which live has been the
+    common case: the block lands after the write, so an agent that disagrees
+    just says so and moves on. Entries logged before `blocked` existed are
+    skipped, not counted as anything.
     """
     out = []
     for e in entries:
@@ -156,16 +172,22 @@ def rule_outcomes(entries: list[dict]) -> list[dict]:
         if not path or not target or ts is None:
             out.append({"rules": blocked, "outcome": "unknown"})
             continue
-        nxt = next((t for t in tool_events(path)
-                    if t["name"] in observed.EDIT_TOOLS
-                    and t["ts"] is not None and t["ts"] > ts
-                    and same_file(t["input"].get("file_path"), target)), None)
-        if nxt is None:
+        later = [t for t in tool_events(path)
+                 if t["name"] in observed.EDIT_TOOLS
+                 and t["ts"] is not None and t["ts"] > ts
+                 and same_file(t["input"].get("file_path"), target)]
+        head = (e.get("added_head") or "").strip()
+        if not later:
             outcome = "abandoned"
-        elif e.get("input_hash") and input_hash(nxt["input"]) == e["input_hash"]:
+        elif e.get("input_hash") and any(
+                input_hash(t["input"]) == e["input_hash"] for t in later):
             outcome = "retried identical"
-        else:
+        elif head and any(touches_text(t["input"], head) for t in later):
             outcome = "repaired"
+        elif head:
+            outcome = "ignored"
+        else:
+            outcome = "repaired"  # pre-`added_head` entry: any later edit counts
         out.append({"rules": blocked, "outcome": outcome})
     return out
 
@@ -258,11 +280,11 @@ def print_rule_outcomes(entries: list[dict]) -> None:
         for o in outcomes:
             for rid in o["rules"]:
                 per_rule[str(rid)][o["outcome"]] += 1
-        print(f"  {'rule':<34}{'repaired':>9}{'retried':>9}"
+        print(f"  {'rule':<34}{'repaired':>9}{'retried':>9}{'ignored':>9}"
               f"{'abandoned':>11}{'unknown':>9}")
         for rid, c in sorted(per_rule.items()):
             print(f"  {rid:<34}{c['repaired']:>9}{c['retried identical']:>9}"
-                  f"{c['abandoned']:>11}{c['unknown']:>9}")
+                  f"{c['ignored']:>9}{c['abandoned']:>11}{c['unknown']:>9}")
     flagged = collections.Counter()
     for e in entries:
         if e.get("kind") != "rules":
