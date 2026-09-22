@@ -175,8 +175,11 @@ INSTRUCTION_Q = ("Is item [{i}] a rule about the code or files a coding agent wr
                  "such that a reviewer looking at one diff could tell whether it was "
                  "followed? Facts, descriptions and pointers are not. Neither are "
                  "process rules about how to work — what to read first, which "
-                 "commands or tools to run, how to communicate — because no single "
-                 "diff can show compliance.")
+                 "commands or tools to run, how to communicate, when to delegate "
+                 "— because no single diff can show compliance. The section "
+                 "heading before each item says what the section is about; an "
+                 "item under a heading about workflow, sessions, tools or "
+                 "delegation is a process rule even when it mentions code size.")
 # Which phase judges the rule. A per-edit rule can be broken by one hunk on
 # its own; a whole-turn rule is about the change as a whole and has no
 # answer after edit 1 of 12. Misfiling a per-edit rule as whole-turn only
@@ -204,6 +207,22 @@ TURN_MIN = 0.5
 ITEMS_PER_REQUEST = 30  # two questions per item; 60 questions per request
 
 
+def section_headings(lines: list[str],
+                     items: list[tuple[int, str]]) -> dict[int, str]:
+    """Item line -> text of the nearest heading above it."""
+    out: dict[int, str] = {}
+    current = "no heading"
+    pos = 0
+    ordered = sorted(items)
+    for i, raw in enumerate(lines, 1):
+        if HEADING.match(raw):
+            current = HEADING.sub("", raw).strip()
+        while pos < len(ordered) and ordered[pos][0] == i:
+            out[i] = current
+            pos += 1
+    return out
+
+
 def classify_items(lines: list[str],
                    items: list[tuple[int, str]]) -> dict[int, str]:
     """Line number -> "edit" | "turn" for the items Jev judges to be
@@ -224,10 +243,16 @@ def classify_items(lines: list[str],
     hit = cache.get(digest)
     if isinstance(hit, dict):
         return {int(k): v for k, v in hit.items() if v in ("edit", "turn")}
+    # Nearest heading above each item. A bullet read alone can pass for a
+    # code rule when its section is about something else: "the change is
+    # small (<=30 lines)" under a delegation policy was classified as a
+    # whole-turn code rule and flagged 7 of 52 live edits.
+    headings = section_headings(lines, items)
     phases: dict[int, str] = {}
     for start in range(0, len(items), ITEMS_PER_REQUEST):
         chunk = items[start:start + ITEMS_PER_REQUEST]
-        state = "\n\n".join(f"[{i}] {text}" for i, (_ln, text) in enumerate(chunk))
+        state = "\n\n".join(f"[{i}] ({headings.get(ln, 'no heading')}) {text}"
+                             for i, (ln, text) in enumerate(chunk))
         questions = {}
         for i in range(len(chunk)):
             questions[f"q{i}"] = {"type": "noul", "instructions": INSTRUCTION_Q.format(i=i)}

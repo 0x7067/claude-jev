@@ -55,7 +55,7 @@ Compaction additionally needs Claude Code 2.1.278 or later started with `CLAUDE_
 
 Judged inside real repos against those repos' own rules, on corpora that aren't committed (they need the repos). `eval/rules_eval.py extract` pulls reachable Edits/Writes from `~/.claude/projects`; those were accepted at the time, so any block is a measured false positive.
 
-250-edit sample, 248 judged: **3 blocked (1.2%)**, 38 flagged, median 0.70s at median 10 questions. Hand-written violations of real rules: 12 of 19 blocked, all by the targeted rule; **0 of 13 near-misses blocked**. The misses cluster under the bar (0.52–0.76) plus rules buried in dense prose `AGENTS.md`, which classifies poorly.
+250-edit sample, 248 judged: **3 blocked (1.2%)**, 38 flagged, median 0.70s at median 10 questions. Hand-written violations of real rules: 14 of 19 blocked, all by the targeted rule; **0 of 13 near-misses blocked**. Two of those catches came from rewriting prose `AGENTS.md` paragraphs as bullets, not from tuning: a rule at the tail of a 600-character paragraph is truncated before Jev sees it. The remaining misses cluster under the bar (0.56–0.78) or target rules no instruction file states.
 
 ```bash
 python3 eval/rules_eval.py extract
