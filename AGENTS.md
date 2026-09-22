@@ -96,9 +96,9 @@ python3 eval/replay.py run --variant v7_no_unclear --sample 250
 python3 eval/rules_eval.py run --sample 250
 ```
 
-The rules eval judges each repo at the commit in `eval/private/pins.json`
-(`rules_eval.py pin`). Move a pin only when a rule-file change in that repo
-is the thing being measured.
+The rules eval judges each record at its `sha`, and reads
+`eval/global_CLAUDE.md` in place of `~/.claude/CLAUDE.md`. Change a case's
+sha only when a rule-file change in that repo is the thing being measured.
 
 These call `api.typesafe.ai` with real past prompts and cost money. Ask before
 running a full sweep.

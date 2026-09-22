@@ -14,10 +14,10 @@
   report    detection on violations (at the block and flag bands, and
             whether the *expected* rule is the one that fired), false blocks
             on compliant cases and real edits, per-rule calibration.
-  pin       record each repo's HEAD in eval/private/pins.json. `run` then
-            judges against a detached worktree at that commit, so a rule
-            file edited in the live checkout does not move the numbers
-            until the pin is moved on purpose.
+
+A record with a `sha` is judged at that commit (a detached worktree under
+eval/data/at/), not the live checkout, so editing a repo's rules does not
+move old numbers. `extract` stamps the repo's HEAD on every edit.
 
 The judge sees exactly what the hook would send: file path, the user's
 request, and the old->new hunk. Nothing is applied to any repo.
@@ -33,7 +33,6 @@ import hashlib
 import json
 import os
 import random
-import shutil
 import statistics
 import subprocess
 import sys
@@ -55,17 +54,11 @@ EDITS = os.path.join(DATA, "rules_edits.jsonl")
 # gitignored. Absent, `run` just judges whatever else was asked for.
 CASES = os.path.join(HERE, "private", "rules_cases.jsonl")
 PRED = os.path.join(DATA, "rules_pred.jsonl")
-# cwd -> commit sha. Pinned repos are judged from a detached worktree under
-# eval/data/pinned/, not the live checkout, so that editing a repo's rules
-# mid-experiment does not change what an old run would have measured.
-PINS = os.path.join(HERE, "private", "pins.json")
-PINNED = os.path.join(DATA, "pinned")
-# ~/.claude/CLAUDE.md is outside any repo, so it cannot be pinned to a
-# commit. `pin` snapshots it here instead, and `run` reads the snapshot in
-# place of the live file. It is committed: the cases that target its rules
-# are meaningless without the wording they were written against.
+AT = os.path.join(DATA, "at")  # one detached worktree per (repo, sha)
+# ~/.claude/CLAUDE.md is outside any repo and has no sha. This committed
+# copy stands in for it: the cases that target its rules are meaningless
+# without the wording they were written against.
 GLOBAL = os.path.join(HERE, "global_CLAUDE.md")
-LIVE_GLOBAL = os.path.expanduser("~/.claude/CLAUDE.md")
 CACHE = os.path.join(DATA, "rules_cache.jsonl")
 PROJECTS = os.path.expanduser("~/.claude/projects")
 
@@ -117,7 +110,7 @@ def cmd_extract(args) -> int:
                     n += 1
                     out.write(json.dumps({
                         "id": f"{os.path.basename(fp)[:8]}#{n}", "kind": "real",
-                        "cwd": cwd, "file_path": inp["file_path"],
+                        "cwd": cwd, "file_path": inp["file_path"], "sha": head_sha(cwd),
                         "tool_name": b["name"], "tool_input": inp, "task": task,
                         "ts": d.get("timestamp"),
                     }) + "\n")
@@ -179,56 +172,47 @@ def git_out(cwd: str, *args: str) -> str | None:
     return r.stdout.strip() if r.returncode == 0 else None
 
 
-_tops: dict[str, str | None] = {}
+_git: dict[tuple, str | None] = {}
 
 
 def repo_root(cwd: str) -> str | None:
-    """Pins are keyed by repo root: several corpus cwds are subdirectories
-    of one checkout, and one commit covers them all."""
-    if cwd not in _tops:
-        _tops[cwd] = git_out(cwd, "rev-parse", "--show-toplevel") if os.path.isdir(cwd) else None
-    return _tops[cwd]
+    if ("top", cwd) not in _git:
+        _git[("top", cwd)] = git_out(cwd, "rev-parse", "--show-toplevel") if os.path.isdir(cwd) else None
+    return _git[("top", cwd)]
 
 
-def load_pins() -> dict[str, str]:
-    try:
-        with open(PINS) as f:
-            pins = json.load(f)
-    except (OSError, ValueError):
-        return {}
-    return {k: v for k, v in pins.items() if isinstance(v, str) and len(v) >= 7}
-
-
-def pinned_cwd(cwd: str, pins: dict[str, str]) -> tuple[str, str | None]:
-    """(directory to judge `cwd` from, sha): the same relative place inside
-    a detached worktree of the pinned commit, created on first use, or
-    (`cwd`, None) when its repo is unpinned. Worktrees are per sha, so
-    moving a pin materialises a new one; the old stays as a record of what
-    earlier runs saw."""
+def head_sha(cwd: str) -> str | None:
     top = repo_root(cwd)
-    sha = pins.get(top) if top else None
-    if not sha:
-        return cwd, None
-    dest = os.path.join(PINNED, f"{os.path.basename(top)}-{sha[:12]}")
+    if top and ("head", top) not in _git:
+        _git[("head", top)] = git_out(top, "rev-parse", "HEAD")
+    return _git[("head", top)] if top else None
+
+
+def at_commit(cwd: str, sha: str) -> str:
+    """`cwd` as it was at `sha`: the same relative place inside a detached
+    worktree of that commit, created on first use. Several corpus cwds are
+    subdirectories of one repo, so the worktree is per repo root."""
+    top = repo_root(cwd)
+    if not top:
+        raise SystemExit(f"{cwd} is not in a git repo; drop its sha")
+    dest = os.path.join(AT, f"{os.path.basename(top)}-{sha[:12]}")
     if not os.path.exists(os.path.join(dest, ".git")):
-        os.makedirs(PINNED, exist_ok=True)
+        os.makedirs(AT, exist_ok=True)
         r = subprocess.run(["git", "worktree", "add", "--detach", dest, sha], cwd=top,
                            capture_output=True, text=True, timeout=120)
         if r.returncode != 0:
-            raise SystemExit(f"cannot pin {top} at {sha[:12]}: {r.stderr.strip()}")
-    return os.path.normpath(os.path.join(dest, os.path.relpath(cwd, top))), sha
+            raise SystemExit(f"cannot check out {top} at {sha[:12]}: {r.stderr.strip()}")
+    return os.path.normpath(os.path.join(dest, os.path.relpath(cwd, top)))
 
 
-def judge(rec: dict, rule_cache: dict, pins: dict[str, str] | None = None) -> dict:
+def judge(rec: dict, rule_cache: dict) -> dict:
     cwd = rec["cwd"]
     rel = rules.relative(rec["file_path"], cwd)
-    out = {k: rec.get(k) for k in ("id", "kind", "cwd", "task", "violates", "expect", "note", "tags")}
+    out = {k: rec.get(k) for k in ("id", "kind", "cwd", "sha", "task", "violates", "expect", "note", "tags")}
     out["rel"] = rel
-    if pins:
+    if rec.get("sha"):
         with _lock:
-            cwd, sha = pinned_cwd(cwd, pins)
-        if sha:
-            out["sha"] = sha[:12]
+            cwd = at_commit(cwd, rec["sha"])
     if rules.EXCLUDED.search(rel) or rules.outside(rel):
         out["skipped"] = "excluded path"
         return out
@@ -277,22 +261,17 @@ def cmd_run(args) -> int:
     jev.ask = cached_ask(cache, cache_f)
     rules.jev.ask = jev.ask
     rule_cache: dict = {}
-    pins = load_pins()
-    if os.path.isfile(GLOBAL):
-        rules.GLOBAL_RULE_FILES = (GLOBAL,)
-    else:
-        print(f"  no {os.path.relpath(GLOBAL, HERE)}; reading the live ~/.claude/CLAUDE.md",
+    rules.GLOBAL_RULE_FILES = (GLOBAL,)
+    live = sum(1 for r in recs if not r.get("sha"))
+    if live:
+        print(f"  {live}/{len(recs)} records have no sha; judged at the live checkout",
               file=sys.stderr)
-    repos = {repo_root(r["cwd"]) or r["cwd"] for r in recs}
-    print(f"  {len(repos & set(pins))}/{len(repos)} repos pinned"
-          + ("" if pins else f" (no {os.path.relpath(PINS, HERE)}; run `pin`)"),
-          file=sys.stderr)
     done = 0
     results = []
 
     def work(rec):
         nonlocal done
-        r = judge(rec, rule_cache, pins)
+        r = judge(rec, rule_cache)
         with _lock:
             results.append(r)
             done += 1
@@ -435,43 +414,6 @@ def cmd_report(args) -> int:
     return 0
 
 
-def cmd_pin(args) -> int:
-    """HEAD of every repo the corpora reference. A repo already pinned keeps
-    its sha unless --move names it (or --move-all)."""
-    recs = load_jsonl(args.cases) + load_jsonl(EDITS)
-    pins = load_pins()
-    for cwd in sorted({r["cwd"] for r in recs}):
-        top = repo_root(cwd)
-        if not top:
-            print(f"  skip  (not a git repo)  {cwd}")
-            continue
-        if top != cwd:
-            continue  # covered by its root, listed on its own line
-        if top in pins and not (args.move_all or top in args.move):
-            print(f"  keep  {pins[top][:12]}  {top}")
-            continue
-        sha = git_out(top, "rev-parse", "HEAD")
-        if not sha:
-            print(f"  skip  (no commits)  {top}")
-            continue
-        dirty = git_out(top, "status", "--porcelain")
-        print(f"  {'move' if top in pins else 'pin '}  {sha[:12]}  {top}"
-              + ("  (working tree dirty; uncommitted rules are not pinned)" if dirty else ""))
-        pins[top] = sha
-    if os.path.isfile(LIVE_GLOBAL) and (
-            not os.path.isfile(GLOBAL) or args.move_all or "global" in args.move):
-        shutil.copyfile(LIVE_GLOBAL, GLOBAL)
-        print(f"  snap  ~/.claude/CLAUDE.md -> {os.path.relpath(GLOBAL, HERE)}")
-    else:
-        print(f"  keep  {os.path.relpath(GLOBAL, HERE)}")
-    os.makedirs(os.path.dirname(PINS), exist_ok=True)
-    with open(PINS, "w") as f:
-        json.dump(pins, f, indent=2, sort_keys=True)
-        f.write("\n")
-    print(f"{len(pins)} pins -> {PINS}")
-    return 0
-
-
 def main() -> int:
     p = argparse.ArgumentParser(prog="rules_eval", description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -493,13 +435,6 @@ def main() -> int:
     rp.add_argument("--by-tag", action="store_true",
                     help="breakdown per tag; the case list shows only misses and false blocks")
     rp.set_defaults(fn=cmd_report)
-    pn = sub.add_parser("pin", help="record repo HEADs so runs judge a fixed commit")
-    pn.add_argument("--cases", default=CASES)
-    pn.add_argument("--move", nargs="*", default=[], metavar="CWD",
-                    help="re-pin these repos at their current HEAD; "
-                         "`global` re-snapshots ~/.claude/CLAUDE.md")
-    pn.add_argument("--move-all", action="store_true")
-    pn.set_defaults(fn=cmd_pin)
     args = p.parse_args()
     return args.fn(args)
 
