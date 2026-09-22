@@ -71,6 +71,21 @@ python3 -m compileall -q scripts eval
 echo '{"prompt":"hi","transcript_path":""}' | python3 scripts/prompt_router.py; echo "exit=$?"
 ```
 
+For a scripted launch → doctor → drive → evidence → cleanup loop (isolated
+`HOME`, feature map under `.cursor/skills/verify-claude-jev/features/`), use
+the project-local Cursor skill:
+
+```bash
+.cursor/skills/verify-claude-jev/bin/control-jev launch
+.cursor/skills/verify-claude-jev/bin/control-jev doctor
+# then drive one feature from features/; evidence under
+# .cursor/skills/verify-claude-jev/artifacts/<RUN_ID>/
+.cursor/skills/verify-claude-jev/bin/control-jev cleanup
+```
+
+See `.cursor/skills/verify-claude-jev/SKILL.md`. Keep the map honest with
+`/maintain-verification-skill` when hooks or skills change.
+
 `python3 scripts/comparators.py which` prints the ast-grep the rule hook
 would run, or `(none)`; `fetch` downloads the pinned one. The hook must exit
 0 within its budget either way — check with the binary renamed away.

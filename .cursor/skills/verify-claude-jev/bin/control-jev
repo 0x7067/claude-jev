@@ -1,0 +1,243 @@
+#!/usr/bin/env bash
+# Harness for project-local verification of claude-jev.
+# Isolates every run under HOME=/tmp/jev-verify-$RUN_ID so live ~/.claude
+# logs and caches are never touched. Evidence lives under the skill's
+# artifacts/ tree and must survive cleanup.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
+SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ARTIFACTS_ROOT="${JE_VERIFY_EVIDENCE:-$SKILL_DIR/artifacts}"
+STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/jev-verify-control"
+STATE_FILE="$STATE_DIR/active-run"
+
+usage() {
+  cat <<'EOF'
+Usage: control-jev <command> [args]
+
+  launch [--reuse]    Create an isolated HOME and record the run id
+  doctor              Read-only health check for the active run
+  cleanup             Tear down the disposable HOME; keep evidence
+  status              Print the active RUN_ID, HOME, and evidence dir
+  hook <name> [json]  Drive one hook with a JSON event on stdin or as arg
+  rows [json-file]    Drive compactor.py rows (stdin or file)
+  jev -- <args...>    Run scripts/jev.py with the isolated env
+  stats [-- args...]  Run scripts/stats.py with the isolated env
+  evidence <relpath>  Print the absolute evidence path for this run
+  save <relpath> -    Write stdin to evidence/<relpath> (creates parents)
+
+Environment:
+  JE_VERIFY_RUN_ID     Force the run id on launch (default: timestamp-pid)
+  JE_VERIFY_EVIDENCE   Override evidence root (default: skill artifacts/)
+  TYPESAFE_API_KEY     Optional; without it hooks fail open and jev exits 2
+EOF
+}
+
+die() { echo "control-jev: $*" >&2; exit 1; }
+
+require_active() {
+  if [[ -n "${RUN_ID:-}" && -n "${HOME:-}" && -d "$HOME" ]]; then
+    return 0
+  fi
+  if [[ -f "$STATE_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$STATE_FILE"
+  fi
+  [[ -n "${RUN_ID:-}" ]] || die "no active run; run: control-jev launch"
+  [[ -d "${HOME:-}" ]] || die "HOME missing for RUN_ID=$RUN_ID; re-launch"
+}
+
+write_state() {
+  mkdir -p "$STATE_DIR" "$EVIDENCE_DIR"
+  cat >"$STATE_FILE" <<EOF
+export RUN_ID='$RUN_ID'
+export HOME='$HOME'
+export CLAUDE_PLUGIN_ROOT='$ROOT'
+export EVIDENCE_DIR='$EVIDENCE_DIR'
+export PATH='$SKILL_DIR/bin:$PATH'
+EOF
+}
+
+cmd_launch() {
+  # Always mint a new run unless JE_VERIFY_RUN_ID is set explicitly.
+  # Do not reuse a leftover RUN_ID from the caller's shell.
+  if [[ "${1:-}" == "--reuse" && -f "$STATE_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$STATE_FILE"
+    mkdir -p "$HOME" "$EVIDENCE_DIR"
+  else
+    RUN_ID="${JE_VERIFY_RUN_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
+    HOME="/tmp/jev-verify-$RUN_ID"
+    EVIDENCE_DIR="$ARTIFACTS_ROOT/$RUN_ID"
+    mkdir -p "$HOME" "$EVIDENCE_DIR"
+  fi
+  export RUN_ID HOME CLAUDE_PLUGIN_ROOT="$ROOT" EVIDENCE_DIR
+  export PATH="$SKILL_DIR/bin:$PATH"
+  write_state
+  cat <<EOF
+run_id=$RUN_ID
+home=$HOME
+plugin_root=$ROOT
+evidence_dir=$EVIDENCE_DIR
+ready=1
+EOF
+}
+
+cmd_doctor() {
+  require_active
+  export HOME CLAUDE_PLUGIN_ROOT="$ROOT"
+  local ok=1
+  local report="$EVIDENCE_DIR/doctor.txt"
+  mkdir -p "$EVIDENCE_DIR"
+  {
+    echo "run_id=$RUN_ID"
+    echo "home=$HOME"
+    echo "plugin_root=$ROOT"
+    echo "python=$(python3 --version 2>&1)"
+    echo "typesafe_api_key=$([ -n "${TYPESAFE_API_KEY:-}" ] && echo set || echo unset)"
+  } >"$report"
+
+  if ! python3 -m compileall -q "$ROOT/scripts" "$ROOT/eval"; then
+    echo "compileall=fail" | tee -a "$report"
+    ok=0
+  else
+    echo "compileall=ok" | tee -a "$report"
+  fi
+
+  local exitc out
+  out="$(echo '' | python3 "$ROOT/scripts/prompt_router.py" 2>&1)" || true
+  exitc=$?
+  echo "prompt_router_empty_exit=$exitc" | tee -a "$report"
+  [[ "$exitc" -eq 0 && -z "$out" ]] || ok=0
+
+  out="$(echo '' | python3 "$ROOT/scripts/compactor.py" rows 2>&1)" || true
+  exitc=$?
+  echo "compactor_rows_empty_exit=$exitc" | tee -a "$report"
+  echo "compactor_rows_empty_out=$out" | tee -a "$report"
+  [[ "$exitc" -eq 0 && "$out" == *'"fallback"'* ]] || ok=0
+
+  out="$(python3 "$ROOT/scripts/comparators.py" which 2>&1)" || true
+  echo "comparators_which=$out" | tee -a "$report"
+
+  if [[ ! -d "$HOME" ]]; then
+    echo "home_missing=1" | tee -a "$report"
+    ok=0
+  else
+    echo "home_ok=1" | tee -a "$report"
+  fi
+
+  if [[ "$ok" -eq 1 ]]; then
+    echo "doctor=ok" | tee -a "$report"
+    return 0
+  fi
+  echo "doctor=fail" | tee -a "$report"
+  return 1
+}
+
+cmd_cleanup() {
+  require_active
+  local home_to_remove="$HOME"
+  local run="$RUN_ID"
+  local evidence="$EVIDENCE_DIR"
+  if [[ "$home_to_remove" == /tmp/jev-verify-* ]]; then
+    rm -rf "$home_to_remove"
+  else
+    die "refusing to remove unexpected HOME=$home_to_remove"
+  fi
+  rm -f "$STATE_FILE"
+  cat <<EOF
+cleaned_home=$home_to_remove
+run_id=$run
+evidence_dir=$evidence
+evidence_kept=$([ -d "$evidence" ] && echo 1 || echo 0)
+EOF
+}
+
+cmd_status() {
+  require_active
+  cat <<EOF
+run_id=$RUN_ID
+home=$HOME
+plugin_root=$ROOT
+evidence_dir=$EVIDENCE_DIR
+api_key=$([ -n "${TYPESAFE_API_KEY:-}" ] && echo set || echo unset)
+EOF
+}
+
+cmd_hook() {
+  require_active
+  export HOME CLAUDE_PLUGIN_ROOT="$ROOT"
+  local name="${1:-}"
+  shift || true
+  [[ -n "$name" ]] || die "hook name required (prompt_router|subagent_router|rules)"
+  local script="$ROOT/scripts/${name}.py"
+  [[ -f "$script" ]] || die "unknown hook script: $script"
+  if [[ $# -gt 0 ]]; then
+    printf '%s\n' "$1" | python3 "$script"
+  else
+    python3 "$script"
+  fi
+}
+
+cmd_rows() {
+  require_active
+  export HOME CLAUDE_PLUGIN_ROOT="$ROOT"
+  if [[ $# -gt 0 ]]; then
+    python3 "$ROOT/scripts/compactor.py" rows <"$1"
+  else
+    python3 "$ROOT/scripts/compactor.py" rows
+  fi
+}
+
+cmd_jev() {
+  require_active
+  export HOME CLAUDE_PLUGIN_ROOT="$ROOT"
+  if [[ "${1:-}" == "--" ]]; then shift; fi
+  python3 "$ROOT/scripts/jev.py" "$@"
+}
+
+cmd_stats() {
+  require_active
+  export HOME CLAUDE_PLUGIN_ROOT="$ROOT"
+  if [[ "${1:-}" == "--" ]]; then shift; fi
+  python3 "$ROOT/scripts/stats.py" "$@"
+}
+
+cmd_evidence() {
+  require_active
+  local rel="${1:-}"
+  [[ -n "$rel" ]] || die "relative evidence path required"
+  echo "$EVIDENCE_DIR/$rel"
+}
+
+cmd_save() {
+  require_active
+  local rel="${1:-}"
+  local dash="${2:-}"
+  [[ -n "$rel" && "$dash" == "-" ]] || die "usage: control-jev save <relpath> -"
+  local dest="$EVIDENCE_DIR/$rel"
+  mkdir -p "$(dirname "$dest")"
+  cat >"$dest"
+  echo "saved=$dest"
+}
+
+main() {
+  local cmd="${1:-}"
+  shift || true
+  case "$cmd" in
+    launch) cmd_launch "$@" ;;
+    doctor) cmd_doctor "$@" ;;
+    cleanup) cmd_cleanup "$@" ;;
+    status) cmd_status "$@" ;;
+    hook) cmd_hook "$@" ;;
+    rows) cmd_rows "$@" ;;
+    jev) cmd_jev "$@" ;;
+    stats) cmd_stats "$@" ;;
+    evidence) cmd_evidence "$@" ;;
+    save) cmd_save "$@" ;;
+    -h|--help|help|"") usage; [[ -n "$cmd" ]] || exit 2 ;;
+    *) die "unknown command: $cmd" ;;
+  esac
+}
+
+main "$@"
