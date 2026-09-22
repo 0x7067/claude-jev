@@ -1,0 +1,22 @@
+eval/planted.py
+  s_b8dc91cf249887::t_ba11e13f3a2b32 1-158
+eval/sweep.py
+  s_b8dc91cf249887::t_c00546f033a743 1-135,160-195,197-209
+  s_b8dc91cf249887::t_6078f56f616291 136-159,196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2195d89e52ef82ac84039d4e176c0b42c50eb7b7",
+  "prompts": {},
+  "sessions": {
+    "s_b8dc91cf249887": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b8dfccfa-6c0b-44e5-a756-31e4bf7b5595",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
