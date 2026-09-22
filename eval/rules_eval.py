@@ -231,15 +231,16 @@ def judge(rec: dict, rule_cache: dict) -> dict:
     abs_path = os.path.join(cwd, rel)
     context = rules.file_context(abs_path, rules.needle_of(rec["tool_input"]))
     siblings = rules.sibling_modules(abs_path)
+    block = rules.enclosing_block(abs_path, rules.needle_of(rec["tool_input"]))
     t0 = time.time()
     try:
-        hits, probs, _, skipped = rules.judge_edit(
-            rel, hunk, rec.get("task") or "", in_scope, context, siblings)
+        hits, probs, _, skipped, escalated = rules.judge_edit(
+            rel, hunk, rec.get("task") or "", in_scope, context, siblings, block)
         out.update(hits=[{k: h.get(k) for k in
                           ("rule", "prob", "band", "text", "file", "line",
                            "polarity", "subject")} for h in hits],
                    probs=probs, n_irrelevant=len(skipped),
-                   context_chars=len(context))
+                   context_chars=len(context), escalated=escalated)
     except Exception as e:  # the hook fails open; the eval records why
         out["error"] = str(e)[:300]
     out["latency"] = round(time.time() - t0, 3)
@@ -301,9 +302,27 @@ def cmd_run(args) -> int:
 
 # --- report ----------------------------------------------------------------
 
+CALIB: dict = {}  # per-rule act thresholds; empty means a flat rules.ACT
+
+
+def act_of(rule_id: str) -> float:
+    return rules.act_for({"id": rule_id}, calib=CALIB)
+
+
 def band(r: dict) -> str:
-    bands = {h["band"] for h in r.get("hits") or []}
-    return "act" if "act" in bands else "flag" if "flag" in bands else "quiet"
+    """The band the hook would land in. Recomputed from the stored
+    probabilities when a calibration is in play, so a threshold change can be
+    scored without re-judging anything."""
+    if not CALIB:
+        bands = {h["band"] for h in r.get("hits") or []}
+        return "act" if "act" in bands else "flag" if "flag" in bands else "quiet"
+    out = "quiet"
+    for rid, p in (r.get("probs") or {}).items():
+        if p >= act_of(rid):
+            return "act"
+        if p >= rules.FLAG:
+            out = "flag"
+    return out
 
 
 def expected_fired(r: dict, threshold_band: str) -> bool:
@@ -311,9 +330,24 @@ def expected_fired(r: dict, threshold_band: str) -> bool:
     if not exp:
         return False
     for h in r.get("hits") or []:
-        if exp in h["text"].lower() and (threshold_band == "flag" or h["band"] == "act"):
+        acted = h["prob"] >= act_of(h["rule"]) if CALIB else h["band"] == "act"
+        if exp in h["text"].lower() and (threshold_band == "flag" or acted):
             return True
     return False
+
+
+def write_calib(real: list[dict], path: str) -> None:
+    """Per-rule {median, n} over the real edits in this prediction file —
+    what `rules.act_for` reads to give a decisive rule a lower bar."""
+    per = collections.defaultdict(list)
+    for r in real:
+        for rid, p in (r.get("probs") or {}).items():
+            per[rid].append(p)
+    calib = {rid: {"median": round(statistics.median(ps), 3), "n": len(ps)}
+             for rid, ps in per.items()}
+    with open(path, "w") as f:
+        json.dump(calib, f, indent=1, sort_keys=True)
+    print(f"calibration for {len(calib)} rules -> {path}")
 
 
 def top_prob(r: dict) -> float | None:
@@ -376,7 +410,13 @@ def by_tag(cases: list[dict]) -> None:
 
 
 def cmd_report(args) -> int:
+    global CALIB
     preds = load_jsonl(args.pred)
+    if args.calib:
+        CALIB = json.load(open(args.calib))
+        print(f"per-rule thresholds from {args.calib} "
+              f"({len(CALIB)} rules; decisive {rules.ACT_DECISIVE}, "
+              f"noisy {rules.ACT_NOISY}, else {rules.ACT})")
     judged = [p for p in preds if not p.get("skipped") and not p.get("error")]
     cases = [p for p in judged if p["kind"] == "case"]
     real = [p for p in judged if p["kind"] == "real"]
@@ -458,6 +498,9 @@ def cmd_report(args) -> int:
     if args.sweep:
         sweep(viol, clean, real)
 
+    if args.write_calib:
+        write_calib(real, args.write_calib)
+
     per_rule = collections.defaultdict(list)
     for r in judged:
         for rid, p in (r.get("probs") or {}).items():
@@ -492,6 +535,11 @@ def main() -> int:
     rp.add_argument("--examples", type=int, default=8)
     rp.add_argument("--rules", type=int, default=25)
     rp.add_argument("--pred", default=PRED)
+    rp.add_argument("--calib", default=None,
+                    help="score with per-rule act thresholds from this file")
+    rp.add_argument("--write-calib", nargs="?", const=rules.CALIB_FILE,
+                    default=None, metavar="PATH",
+                    help="write per-rule medians for the hook to read")
     rp.add_argument("--sweep", action="store_true",
                     help="what each ACT from 0.60 to 0.95 would have blocked")
     rp.add_argument("--by-tag", action="store_true",
