@@ -4,6 +4,8 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+- Subagent spawns are checked for brief completeness: a brief that changes files but omits paths, acceptance criteria, a verification command, or a commit policy is denied once per session with the missing parts listed. Read-only briefs are exempt. Tier criteria are read from a `## Delegating to sub-agents` section in `~/.claude/CLAUDE.md` when present.
+
 ## [0.16.1] - 2026-09-22
 
 - The release skill and script moved out of the plugin into `.claude/skills/release`; `/claude-jev:release` no longer exists for plugin users.

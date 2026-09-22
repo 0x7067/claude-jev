@@ -188,26 +188,47 @@ def intent_bundle() -> dict:
     }
 
 
-def subagent_bundle() -> dict:
-    """The question PreToolUse asks before an Agent/Task spawn. Unlike the
+TIER_CRITERIA = {
+    "haiku": "Mechanical, bounded work — search, fetch, summarize, "
+             "count, check; shallow reasoning over clear instructions",
+    "sonnet": "Ordinary coding work — focused edits, standard "
+              "features, debugging with a clear signal",
+    "opus": "Hardest reasoning — ambiguous multi-file work, "
+            "architecture, subtle bugs",
+}
+
+BRIEF_CHECKS = {
+    "brief_writes": "Does this task ask the subagent to create, edit, or "
+                    "delete files, as opposed to only reading, searching, "
+                    "running commands, or reporting?",
+    "brief_paths": "Does the brief name the exact files or paths the "
+                   "subagent should work in?",
+    "brief_acceptance": "Does the brief state acceptance criteria — how "
+                        "the subagent can tell the work is done?",
+    "brief_verify": "Does the brief name a command or check the subagent "
+                    "must run to verify its work?",
+    "brief_commit": "Does the brief say whether the subagent may commit, "
+                    "or that it must not?",
+}
+
+
+def subagent_bundle(tiers: dict | None = None, ask_tier: bool = True) -> dict:
+    """The questions PreToolUse asks before an Agent/Task spawn. Unlike the
     prompt-level tier question this one decides the model outright, so the
-    phrasing is about delegated tasks, not user requests."""
-    return {
-        "model_tier": {
+    phrasing is about delegated tasks, not user requests. `tiers` replaces
+    the shipped criteria text with the user's own, read from their
+    instruction file; `ask_tier` is off when the caller already set a model
+    and only the brief checks apply."""
+    q = {k: {"type": "noul", "instructions": v} for k, v in BRIEF_CHECKS.items()}
+    if ask_tier:
+        q["model_tier"] = {
             "type": "choice",
             "instructions": "A coding assistant is delegating this task to a "
                             "subagent. What is the cheapest Claude model tier "
                             "the subagent needs to do it well?",
-            "criteria": {
-                "haiku": "Mechanical, bounded work — search, fetch, summarize, "
-                         "count, check; shallow reasoning over clear instructions",
-                "sonnet": "Ordinary coding work — focused edits, standard "
-                          "features, debugging with a clear signal",
-                "opus": "Hardest reasoning — ambiguous multi-file work, "
-                        "architecture, subtle bugs",
-            },
-        },
-    }
+            "criteria": {**TIER_CRITERIA, **(tiers or {})},
+        }
+    return q
 
 
 def main() -> int:
