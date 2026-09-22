@@ -9,22 +9,21 @@ every kept byte is a transcript byte or a truncated head of one.
 
 Since 0.10.0 the selection runs inside Claude Code's `session.compact`
 function hook (`hooks/register.ts` -> `compactor.py rows`) and replaces the
-summary outright; `prepare`, the digest file, and the `SessionStart` hooks
-are gone. Where this document says "digest" read "the rows handed back", and
-where it says `prepare` read the `jev-compact:` line in the debug log. The
-harness side is in `docs/claude-code-compaction-research.md`.
+summary outright. "Digest" below means the rows handed back. The harness side
+is in `docs/claude-code-compaction-research.md`.
 
 ## Current state
 
 ### Pipeline
 
-1. `transcript_blocks` reads the last `TAIL_LINES` of the session transcript
-   and keeps `user`/`assistant` lines that are not sidechains, not
-   harness-injected (`injected`: `isMeta`, or a `promptSource` outside
-   `SOURCE_OK` when the transcript has at least one typed line), not tagged by
-   `META_PREFIXES`, and not one-word acks. `compaction_marker` cuts the turn
-   that ran `/claude-jev:compact` itself.
-2. `judge` takes the newest `MAX_BLOCKS = 150` blocks. The newest `PIN_TAIL = 4`
+1. `rows` receives the conversation as `session.compact` rows and renders
+   each through `row_text`: the same `[tool_use`/`[tool_result]` markers as
+   a transcript line, and the same `judgeable` gate (not tagged by
+   `META_PREFIXES`, not a one-word ack; the engine already drops `isMeta`
+   rows). For the eval, `transcript_blocks` applies the same rules to a
+   recorded transcript, plus the harness-injection flags (`injected`) and
+   `compaction_marker`, which cuts the pre-0.10 `/claude-jev:compact` turn.
+2. `select_blocks` takes the newest `MAX_BLOCKS = 150` blocks. The newest `PIN_TAIL = 4`
    are kept unjudged. The rest are judged in chunks of `BLOCKS_PER_CHUNK = 10`,
    each request carrying a `HEADER_CHARS = 1500` goal header plus only its own
    blocks (`compact_state`), up to `MAX_WORKERS = 16` requests in flight.
@@ -33,8 +32,13 @@ harness side is in `docs/claude-code-compaction-research.md`.
    keeps a `HEAD_CHARS = 400` head plus a re-read pointer. Unscored blocks and
    failed chunks are kept whole.
 4. A kept `tool_result` pulls its `tool_use` in.
-5. `fit_kept` enforces `TARGET_CHARS = 8000`: downgrade lowest-confidence whole
-   keeps to heads, then drop the weakest heads. Pinned blocks are exempt.
+5. `fit_kept` enforces `TARGET_CHARS = 16000`: downgrade lowest-confidence
+   whole keeps to heads, then drop the weakest blocks. Pinned blocks are
+   exempt.
+6. `rows_out` passes a plain row whose text survived untouched back by
+   handle, so the engine restores the original message; tool rows and cut
+   blocks return as text rows. Under `MIN_REDUCTION` the bridge answers
+   `{"fallback": ...}` and the built-in summary runs.
 
 ### Measured baseline
 
@@ -43,9 +47,9 @@ keyed on transcript lines plus a hash of `compactor.py`:
 
 | | default: summary + tail | jev: selection digest |
 |---|---|---|
-| context injected per event | 2.4-5.0k tok | 1.8-2.0k tok |
-| time to compact | ~117 s | ~0.9 s (judging 896 ms) |
-| re-fetch coverage | 72-91% mentioned | 60-71% verbatim (61% overall) |
+| context injected per event | 2.4-5.0k tok | 3.2-3.9k tok |
+| time to compact | ~117 s | ~1.3-1.7 s |
+| re-fetch coverage | 73-91% mentioned | 76-81% verbatim |
 
 Coverage means: after the compaction point the agent re-fetched a file,
 grep, glob or URL it had already fetched; the path string is present in the
@@ -56,9 +60,9 @@ present in a non-truncated kept block (`refetch_jev_full`).
 
 Two facts drive everything below.
 
-- `TARGET_CHARS = 8000` binds on every long session. `KEEP_CHARS = 1500`
-  means five whole blocks fill the cap, and `PIN_TAIL = 4` whole blocks can
-  take 6,000 of the 8,000 chars before any judged block is placed. The
+- `TARGET_CHARS = 16000` binds on every long session. `KEEP_CHARS = 1500`
+  means ten whole blocks fill the cap, and `PIN_TAIL = 4` whole blocks can
+  take 6,000 of the 16,000 chars before any judged block is placed. The
   digest's content is therefore decided mostly by `fit_kept`'s ordering and
   by the pin, not by the keep threshold.
 - The two questions do not ask whether a block's content exists anywhere but
@@ -72,7 +76,7 @@ Two facts drive everything below.
 |---|---|---|---|
 | 1 | Question set: `kind` + `recoverable` for prose, `tool_value` for judged tool units, policy table | Decides the digest's content now that the cap binds | question text, ~40 lines in `judge` |
 | 2 | Tool units: merge `tool_use`+`tool_result`, classify read/edit tools locally, pointer lines | Halves unit count, removes ~60% of tool questions, raises path coverage cheaply | ~40 lines in `transcript_blocks`/`judge` |
-| 3 | `fit_kept` by kind priority, pin capped to heads | Makes the 8k cap spend on reasoning and open threads first | ~15 lines |
+| 3 | `fit_kept` by kind priority, pin capped to heads | Makes the 16k cap spend on reasoning and open threads first | ~15 lines |
 | 4 | Stratified `MAX_QUESTIONS`/`REGIONS` budget above `MAX_BLOCKS` | Fair chance for old blocks on sessions past ~350 blocks; bounds cost at any length | ~60 lines |
 
 Items 1-3 change what a bounded digest contains. Item 4 changes which blocks
@@ -219,7 +223,7 @@ separately as the honest "bytes survived" number (section 6).
 
 ## 3. `fit_kept` by kind, and the pin
 
-With `TARGET_CHARS = 8000` the cap binds on every session that reaches it,
+With `TARGET_CHARS = 16000` the cap binds on every session that reaches it,
 so the order in which `fit_kept` downgrades and drops is the selection.
 Today it downgrades by lowest `full` confidence and drops by lowest `keep`
 confidence, with age as the implicit tiebreak. Replace with a kind order.
@@ -240,16 +244,17 @@ or a `request`. Unscored units downgrade after group 4 and drop after
 `constraint`/`evidence`: they are unknowns, not proven keeps.
 
 The pin: `PIN_TAIL = 4` whole blocks at `KEEP_CHARS` can take 6,000 of the
-8,000 chars before a judged block is placed. That is the worst case, not the
-common one — measured over 1,130 real sessions the pinned tail takes a median
-of 24% of the budget, p90 31%, p99 40%, and never more than half, because
-blocks average well under `KEEP_CHARS`. Treat this as a tail risk on sessions
+16,000 chars before a judged block is placed. That is the worst case, not the
+common one — measured over 1,130 real sessions against the earlier 8k cap,
+the pinned tail took a median of 24% of the budget, p90 31%, p99 40%, and
+never more than half, because blocks average well under `KEEP_CHARS`; at 16k
+those shares halve. Treat this as a tail risk on sessions
 ending in long tool output, not a routine loss.
 
 If it is worth changing, `PIN_TAIL_TURNS = 1` keeps the last user prompt whole
 and the assistant text that answered it as a head. The compaction turn is
-already cut by `compaction_marker`, so this is the turn the user was mid-way
-through.
+no longer in the rows the engine hands over, so this is the turn the user
+was mid-way through.
 
 ## 4. Stratified budget above `MAX_BLOCKS`
 
@@ -279,8 +284,8 @@ transcript by region:
    units are dropped unjudged.
 
 Stratified rather than sampled: sampling is nondeterministic, so the eval
-cache (keyed on input lines and code) would stop reproducing a result, and a
-user re-running `prepare` would get a different digest.
+cache (keyed on input lines and code) would stop reproducing a result, and
+two compactions of the same rows would keep different things.
 
 Not hierarchical (judge regions, then units in winning regions): two round
 trips, and "is this 60-unit span important" is cross-block reasoning a
@@ -305,14 +310,14 @@ region. 30 requests, two waves, under 3 s.
 |---|---|---|---|
 | `MIN_CHOICE_CONF` | 0.5 | guess, eval | Same floor as `KEEP_THRESHOLD`; the router's choice fallbacks sit there too |
 | `KEEP_THRESHOLD` | 0.5 | reused | Becomes the `recoverable` cut. Meaning flips (yes = recoverable), value stays |
-| `MAX_POINTER_LINES` | 60 | guess, eval | ~4.5k chars of index at most; more than that crowds the 8k cap |
+| `MAX_POINTER_LINES` | 60 | guess, eval | ~4.5k chars of index at most; more than that crowds the 16k cap |
 | `PIN_TAIL` -> `PIN_TAIL_TURNS` | 1 | derived | The user's last real turn; the compaction turn is already cut |
 | `BLOCKS_PER_CHUNK` | derived from question mix | derived | Prose units cost 2 questions, tool units 1; pack by question count, not block count |
 | `MAX_QUESTIONS` | 600 | guess, eval | 30 requests; judges a 500-block session in full |
 | `REGIONS` | 8 | guess, eval | Keeps the first hour of a session in play; a region still holds a full exchange |
 | `MAX_BLOCKS` | removed with item 4 | derived | Replaced by `MAX_QUESTIONS`; until then 150 stands |
 | `TAIL_LINES` | 5000 -> 20000, or count only user/assistant lines | check | non-message lines outnumber messages ~2.4:1 (median, measured); an 832-message transcript lands near 2,800 lines, inside 5000 but not comfortably |
-| `TARGET_CHARS`, `KEEP_CHARS`, `HEAD_CHARS`, `BLOCK_CHARS`, `HEADER_CHARS`, `MAX_WORKERS`, `MIN_REDUCTION`, `DIGEST_TTL` | unchanged | | |
+| `TARGET_CHARS`, `KEEP_CHARS`, `HEAD_CHARS`, `BLOCK_CHARS`, `HEADER_CHARS`, `MAX_WORKERS`, `MIN_REDUCTION` | unchanged | | |
 
 Bump `version` in `.claude-plugin/plugin.json` for each shipped item.
 
@@ -324,10 +329,10 @@ when `compactor.py` changes, so each item costs one run. Ask before running.
 | Item | Column | Baseline | Expect |
 |---|---|---|---|
 | 1 question set | new `digest_kinds`: kept chars by kind | none | `decision`+`open` >= 10% of digest chars on sessions over 100 blocks (section 1.4) |
-| 1 question set | `refetch_jev_full` | 61% overall | Hold or rise. This is the verbatim number; a drop means the policy trades paths for reasoning, and the README must say so |
-| 1, 3 | `jev_tok` | 1.8-2.0k | Stay under the default's 2.4k floor |
-| 2 tool units | `refetch_jev_covered` | 60-71% | Rise toward 85-90% from pointers. Report as "path survived", not verbatim |
-| 2 tool units | `jev_ms` and a new `req_chars` column | 896 ms | Fall: fewer questions per session |
+| 1 question set | `refetch_jev_full` | 76-81% | Hold or rise. This is the verbatim number; a drop means the policy trades paths for reasoning, and the README must say so |
+| 1, 3 | `jev_tok` | 3.2-3.9k | Stay under the default's summary |
+| 2 tool units | `refetch_jev_covered` | at least the 76-81% verbatim | Rise toward 85-90% from pointers. Report as "path survived", not verbatim |
+| 2 tool units | `jev_ms` and a new `req_chars` column | ~1.3-1.7 s | Fall: fewer questions per session |
 | 3 fit_kept | `digest_kinds` share of `status` and pinned chars | none | Pinned under 25% of digest chars |
 | 4 budget | new `reach`: fraction of user prompts judged; fraction of judged units older than block 150 | 0% past 150 | 100% of user prompts at any length |
 | 4 budget | `jev_ms` on the p90+ synthetic cuts | | Under 3 s |
@@ -353,16 +358,17 @@ What each item can make worse:
   pointers in the drop order.
 - Item 4: the region allocation drops assistant text unjudged when over
   budget. On a 2,000-block session that is most of it. This is a bound, not
-  a selection; say so in the `prepare` output (`judged N of M units`).
+  a selection; say so in the `summary` line the bridge logs (`judged N of
+  M units`).
 
 API slow or down:
 
-- Hook mode is unchanged: `jev.JevError` and any exception exit 0 silently
-  and the built-in summary stands alone.
+- The bridge fails open: `jev.JevError` and any exception answer
+  `{"fallback": ...}` with exit 0, and the built-in summary runs.
 - `ask_chunked` already returns `{}` for a failed chunk and raises only when
   every chunk fails. Unscored units are kept whole, so partial failure grows
   the digest; `fit_kept` still caps it at `TARGET_CHARS`, and under item 3
-  unscored units downgrade after proven keeps. `prepare` should print how
-  many chunks failed.
+  unscored units downgrade after proven keeps. The `summary` line should
+  say how many chunks failed.
 - More requests per compaction (17 at 500 blocks under item 4) means more
   chances of one timeout. Each costs one chunk of judgment, not the run.
