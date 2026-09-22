@@ -37,8 +37,9 @@ is in `docs/claude-code-compaction-research.md`.
    exempt.
 6. `rows_out` passes a plain row whose text survived untouched back by
    handle, so the engine restores the original message; tool rows and cut
-   blocks return as text rows. Under `MIN_REDUCTION` the bridge answers
-   `{"fallback": ...}` and the built-in summary runs.
+   blocks return as text rows. The bridge answers `{"fallback": ...}` only
+   on an error, a missing key, or no judgeable rows; there is no minimum
+   shrink, so Jev's rows always replace the summary otherwise.
 
 ### Measured baseline
 
@@ -317,7 +318,7 @@ region. 30 requests, two waves, under 3 s.
 | `REGIONS` | 8 | guess, eval | Keeps the first hour of a session in play; a region still holds a full exchange |
 | `MAX_BLOCKS` | removed with item 4 | derived | Replaced by `MAX_QUESTIONS`; until then 150 stands |
 | `TAIL_LINES` | 5000 -> 20000, or count only user/assistant lines | check | non-message lines outnumber messages ~2.4:1 (median, measured); an 832-message transcript lands near 2,800 lines, inside 5000 but not comfortably |
-| `TARGET_CHARS`, `KEEP_CHARS`, `HEAD_CHARS`, `BLOCK_CHARS`, `HEADER_CHARS`, `MAX_WORKERS`, `MIN_REDUCTION` | unchanged | | |
+| `TARGET_CHARS`, `KEEP_CHARS`, `HEAD_CHARS`, `BLOCK_CHARS`, `HEADER_CHARS`, `MAX_WORKERS` | unchanged | | |
 
 Bump `version` in `.claude-plugin/plugin.json` for each shipped item.
 

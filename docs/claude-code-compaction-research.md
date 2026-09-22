@@ -382,9 +382,9 @@ The skill can stay as a thin explainer that tells the user to run `/compact`.
 
 What this buys: one built-in command or nothing at all; auto-compaction gets
 the same treatment as manual; `/rewind` summaries get it too; no race with a
-ten-minute TTL; no `CLAUDE_CODE_SESSION_ID` dependency; `MIN_REDUCTION`
-still applies (print nothing and write no digest when the selection is
-weak, and the built-in summary stands alone as before).
+ten-minute TTL; no `CLAUDE_CODE_SESSION_ID` dependency. (The `MIN_REDUCTION`
+shrink gate described here was later removed; Jev's rows now replace the
+summary regardless of how much they shrink.)
 
 What it costs: the built-in summary still runs, so the "no LLM summary in
 the loop" claim in README becomes "no LLM summary is needed for the kept
@@ -412,7 +412,7 @@ measurement, and it fails open like the others.
 `compactor.py rows` over stdin, and returns the rows Python hands back, or
 calls `next(e)` on any failure or a `fallback` answer. `compactor.py rows`
 renders each row the way `block_text` renders a transcript line, reuses the
-same two Jev questions, pin, cap, and `MIN_REDUCTION` gate, and emits:
+same two Jev questions, pin, and cap, and emits:
 
 1. a fixed user-role header (the validator needs a non-empty list and the
    API needs a user turn first),
