@@ -23,12 +23,13 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import jev
 import observed
 
-DEFAULT_LOG = os.path.expanduser("~/.claude/jev-router-log.jsonl")
-CALLS_LOG = os.path.expanduser("~/.claude/jev-calls.jsonl")
-COMPACT_LOG = os.path.expanduser("~/.claude/jev-compact-log.jsonl")
-PROJECTS = os.path.expanduser("~/.claude/projects")
+DEFAULT_LOG = os.path.join(jev.config_dir(), "jev-router-log.jsonl")
+CALLS_LOG = os.path.join(jev.config_dir(), "jev-calls.jsonl")
+COMPACT_LOG = os.path.join(jev.config_dir(), "jev-compact-log.jsonl")
+PROJECTS = os.path.join(jev.config_dir(), "projects")
 NEXT_TOOLS = 40
 
 CMD_CHARS = 40

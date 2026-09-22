@@ -23,7 +23,16 @@ import urllib.request
 API_URL = "https://api.typesafe.ai/v1/systemone"
 DEFAULT_MODEL = "jev-latest"
 DEFAULT_TIMEOUT = 8.0
-CALL_LOG = os.path.expanduser("~/.claude/jev-calls.jsonl")
+
+
+def config_dir() -> str:
+    """Claude Code's user config directory: `$CLAUDE_CONFIG_DIR` when the
+    host sets it, else `~/.claude`. Every file the plugin reads or writes
+    under the user's config goes through here."""
+    return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+
+
+CALL_LOG = os.path.join(config_dir(), "jev-calls.jsonl")
 
 _VERSION: str | None = None
 

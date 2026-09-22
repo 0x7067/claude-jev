@@ -42,6 +42,9 @@ explains what each hook decides and why. Read it before changing behavior.
   `summary` string Python sends. Keep it that way.
 - **One environment variable:** `TYPESAFE_API_KEY`. Do not add another, and
   do not add a fallback name. Every other tunable is a module-level constant.
+  `CLAUDE_CONFIG_DIR` is Claude Code's own variable, not a plugin tunable:
+  `jev.config_dir()` honors it and every path under the user's config
+  directory goes through that helper, never through a literal `~/.claude`.
 - **No code comments.** Line, block, and JSDoc comments are banned in
   `scripts/`, `eval/`, and `hooks/` source (`.py`, `.ts`, `.js`). Shebangs
   and LICENSE text stay. Python module/function docstrings are documentation

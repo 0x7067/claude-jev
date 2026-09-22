@@ -64,7 +64,7 @@ ESCALATE = True
 MAX_BLOCK_CHARS = 3000
 RULE_CONTEXT_CHARS = 400
 
-CALIB_FILE = os.path.expanduser("~/.claude/jev-rules-calib.json")
+CALIB_FILE = os.path.join(jev.config_dir(), "jev-rules-calib.json")
 ACT_DECISIVE = 0.70
 ACT_NOISY = 0.85
 CALIB_MIN_CHECKS = 20
@@ -73,12 +73,12 @@ CALIB_NOISY = 0.25
 RELEVANCE_GATE = True
 
 COMPARATORS = True
-DEFAULT_LOG = os.path.expanduser("~/.claude/jev-router-log.jsonl")
-BLOCK_DIR = os.path.expanduser("~/.claude/jev-rule-blocks")
+DEFAULT_LOG = os.path.join(jev.config_dir(), "jev-router-log.jsonl")
+BLOCK_DIR = os.path.join(jev.config_dir(), "jev-rule-blocks")
 
 RULE_FILES = ("CLAUDE.md", "AGENTS.md")
 RULE_DIRS = (".claude/rules", ".cursor/rules")
-GLOBAL_RULE_FILES = (os.path.expanduser("~/.claude/CLAUDE.md"),)
+GLOBAL_RULE_FILES = (os.path.join(jev.config_dir(), "CLAUDE.md"),)
 MAX_ITEM_CHARS = 600
 
 EXCLUDED = re.compile(r"(^|/)(node_modules|\.git|dist|build|\.next|coverage|"
@@ -251,7 +251,7 @@ SUBJECT_CRITERIA = {
 CHOICE_MIN = 0.5
 DEFAULT_SUBJECT = "other"
 DEFAULT_POLARITY = "forbid"
-CLASSIFY_CACHE = os.path.expanduser("~/.claude/jev-rules-cache.json")
+CLASSIFY_CACHE = os.path.join(jev.config_dir(), "jev-rules-cache.json")
 INSTRUCTION_MIN = 0.5
 TURN_MIN = 0.5
 ITEMS_PER_REQUEST = 15

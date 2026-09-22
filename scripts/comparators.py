@@ -34,6 +34,9 @@ import time
 import urllib.request
 import zipfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import jev
+
 VERSION = "0.45.3"
 RELEASE = ("https://github.com/ast-grep/ast-grep/releases/download/"
            f"{VERSION}/app-%s.zip")
@@ -47,7 +50,7 @@ SHA256 = {
     "x86_64-unknown-linux-gnu":
         "f8ac830881339d1edee6b2652f54798c0f4da5a827f2db38a08ee31117783ce8",
 }
-BIN_DIR = os.path.expanduser(f"~/.claude/jev-bin/ast-grep-{VERSION}")
+BIN_DIR = os.path.join(jev.config_dir(), f"jev-bin/ast-grep-{VERSION}")
 BIN = os.path.join(BIN_DIR, "ast-grep")
 
 USER_AGENT = "OpenAI File Downloader, XaiImageApiFetch/1.0"
