@@ -27,7 +27,6 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import compare
 import compactor
-import sweep
 
 CONSTRAINTS = [
     "One constraint: do not touch anything under migrations/, the DBA owns that folder.",
@@ -122,6 +121,7 @@ def main() -> int:
     args = ap.parse_args()
     mod = load_old(args.old) if args.old else compactor
 
+    import sweep
     todo = sweep.events(args.synth, args.seed)
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as ex:
