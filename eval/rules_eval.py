@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import collections
 import difflib
+import functools
 import glob
 import hashlib
 import json
@@ -172,20 +173,15 @@ def git_out(cwd: str, *args: str) -> str | None:
     return r.stdout.strip() if r.returncode == 0 else None
 
 
-_git: dict[tuple, str | None] = {}
-
-
+@functools.lru_cache(maxsize=None)
 def repo_root(cwd: str) -> str | None:
-    if ("top", cwd) not in _git:
-        _git[("top", cwd)] = git_out(cwd, "rev-parse", "--show-toplevel") if os.path.isdir(cwd) else None
-    return _git[("top", cwd)]
+    return git_out(cwd, "rev-parse", "--show-toplevel") if os.path.isdir(cwd) else None
 
 
+@functools.lru_cache(maxsize=None)
 def head_sha(cwd: str) -> str | None:
     top = repo_root(cwd)
-    if top and ("head", top) not in _git:
-        _git[("head", top)] = git_out(top, "rev-parse", "HEAD")
-    return _git[("head", top)] if top else None
+    return git_out(top, "rev-parse", "HEAD") if top else None
 
 
 def at_commit(cwd: str, sha: str) -> str:

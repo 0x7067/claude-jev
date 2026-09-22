@@ -251,7 +251,7 @@ def classify_items(lines: list[str],
     phases: dict[int, str] = {}
     for start in range(0, len(items), ITEMS_PER_REQUEST):
         chunk = items[start:start + ITEMS_PER_REQUEST]
-        state = "\n\n".join(f"[{i}] ({headings.get(ln, 'no heading')}) {text}"
+        state = "\n\n".join(f"[{i}] ({headings[ln]}) {text}"
                              for i, (ln, text) in enumerate(chunk))
         questions = {}
         for i in range(len(chunk)):
