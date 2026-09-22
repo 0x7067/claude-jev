@@ -1,5 +1,4 @@
 __pycache__/
 .claude/settings.local.json
 *.pyc
-pins.json
 rules_cases.jsonl

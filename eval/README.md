@@ -29,22 +29,17 @@ when it is there and carries on when it is not.
 
 ```bash
 python3 eval/rules_eval.py extract
-python3 eval/rules_eval.py pin
 python3 eval/rules_eval.py run --sample 250
 python3 eval/rules_eval.py report
 ```
 
-`pin` records the HEAD of every repo the corpora reference in
-`private/pins.json`. `run` then judges each edit from a detached worktree of
-that commit under `data/pinned/`, so rules edited in a live checkout do not
-move the numbers until you `pin --move <repo>` on purpose (`--move-all` for
-every repo). Each prediction records the `sha` it was judged at. Only
-committed rules are pinned; a dirty tree is reported. Unpinned repos fall
-back to the live checkout.
-
-`~/.claude/CLAUDE.md` is outside any repo, so `pin` snapshots it to
-`eval/global_CLAUDE.md` (committed) and `run` reads the snapshot instead of
-the live file. `pin --move global` refreshes it.
+A record's `sha` is the commit it is judged at: `run` checks that commit out
+as a detached worktree under `data/at/` and reads rules and file contents
+from there, so editing a repo's rules does not move old numbers. `extract`
+stamps each edit with the repo's HEAD; a hand-written case carries the sha
+its rule was written against. A record without a sha is judged at the live
+checkout. `~/.claude/CLAUDE.md` has no sha, so the committed copy at
+`eval/global_CLAUDE.md` stands in for it.
 
 Answers cache in `data/rules_cache.jsonl`, keyed by model, state and questions,
 so re-running after an unrelated change costs nothing.
