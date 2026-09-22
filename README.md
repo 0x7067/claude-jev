@@ -51,6 +51,13 @@ claude plugin install claude-jev@claude-jev
 
 Set `TYPESAFE_API_KEY` — the plugin's only variable, required; without it hooks disable silently. Needs `python3`, stdlib only.
 
+The rule hook's comparators use [ast-grep](https://ast-grep.github.io) 0.45.3. If it is not on your PATH the plugin fetches the pinned release once to `~/.claude/jev-bin`, verified by sha256, in a detached process the first time an edit needs it; every hook works without it. To warm it up or see which binary would run:
+
+```bash
+python3 scripts/comparators.py fetch
+python3 scripts/comparators.py which
+```
+
 Compaction additionally needs Claude Code 2.1.278 or later started with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`. That is Claude Code's own switch for its experimental function hooks, off by default; the four other hooks work without it. Function-hook modules also load only in a trusted workspace, and not for subagents.
 
 ## Does it work?
@@ -59,9 +66,9 @@ Compaction additionally needs Claude Code 2.1.278 or later started with `CLAUDE_
 
 Judged inside real repos against those repos' own rules, on corpora that aren't committed (they need the repos). `eval/rules_eval.py extract` pulls reachable Edits/Writes from `~/.claude/projects`; those were accepted at the time, so any block is a measured false positive.
 
-Same 250-edit sample, judged at each edit's commit, before and after the structured-rule change (v0.14.0):
+Same 250-edit sample, judged at each edit's commit, before and after the structured-rule change (v0.15.0):
 
-| | v0.13.0 | v0.14.0 |
+| | v0.13.0 | v0.15.0 |
 |---|---|---|
 | Real edits blocked | 4 (1.6%) | **1 (0.4%)** |
 | Real edits flagged only | 32 | 20 |
@@ -70,7 +77,7 @@ Same 250-edit sample, judged at each edit's commit, before and after the structu
 | Rules asked per edit, median | 10 | 4 |
 | Latency, median | 0.71s | 0.71s |
 
-With escalation on, real flags fall from 20 to 14 and p90 latency from 0.85s to 0.73s at 2 real blocks. The remaining misses cluster under the bar (0.56–0.78) or target rules no instruction file states. On 20 further hand-written pairs from three repos, the judge caught every violation visible in the added text itself (a bare constant, a missing annotation, a hand-rolled mock, a narrating comment) and none that need a comparison with something outside the hunk (a literal that duplicates an existing constant, an unsound `as` cast, a swallowed error, a test that cannot fail). Slicing the hunk by subject and per-rule thresholds were both measured; neither moved those, and slicing cost a catch, so it is out and thresholds are opt-in via `report --write-calib`. The one near-miss added in v0.14.0 is a live false positive: a sibling-module import blocked at 0.86 under a "standard library only" rule; with the sibling list in the state it scores 0.74, flagged but not blocked. `report --sweep` shows the real-block rate flat from 0.70 to 0.85, so `ACT` sits on a plateau, not a cliff.
+With escalation on, real flags fall from 20 to 14 and p90 latency from 0.85s to 0.73s at 2 real blocks. The remaining misses cluster under the bar (0.56–0.78) or target rules no instruction file states. On 20 further hand-written pairs from three repos, the judge caught every violation visible in the added text itself (a bare constant, a missing annotation, a hand-rolled mock, a narrating comment) and none that need a comparison with something outside the hunk (a literal that duplicates an existing constant, an unsound `as` cast, a swallowed error, a test that cannot fail). Slicing the hunk by subject and per-rule thresholds were both measured; neither moved those, and slicing cost a catch, so it is out and thresholds are opt-in via `report --write-calib`. The one near-miss added in v0.15.0 is a live false positive: a sibling-module import blocked at 0.86 under a "standard library only" rule; with the sibling list in the state it scores 0.74, flagged but not blocked. `report --sweep` shows the real-block rate flat from 0.70 to 0.85, so `ACT` sits on a plateau, not a cliff.
 
 Both corpora are weak labels. A real edit counts as compliant because nobody objected at the time, and the hand-written set is small enough that one case is a five-point swing. The live decision log now records what happened after each block (repaired, retried identical, ignored, abandoned), which is the signal for growing the case set; see `/claude-jev:stats`.
 
