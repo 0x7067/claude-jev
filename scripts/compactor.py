@@ -355,6 +355,57 @@ def fit_kept(kept: list[dict], blocks: list[dict]) -> list[dict]:
     return [k for k in kept if k["kind"] != "dropped"]
 
 
+REF_CHARS = 160  # enough of a block to recognize the file or command it names,
+                 # which is all a later pass needs to see whether the agent
+                 # re-fetched what compaction dropped
+
+
+def block_kind(text: str) -> str:
+    """The row's shape, from the marker `block_text` wrote: `tool_use:<Name>`,
+    `tool_result`, or `text`. Only dropped or truncated tool rows can be
+    re-fetched, so the kind is what makes the row list scorable."""
+    if text.startswith("[tool_use"):
+        end = text.find("]")
+        name = text[len("[tool_use"):end].strip() if end > 0 else ""
+        return f"tool_use:{name or '?'}"
+    if text.startswith("[tool_result]"):
+        return "tool_result"
+    return "text"
+
+
+def block_rows(blocks: list[dict], kept: list[dict], answers: dict,
+               n_judged: int) -> list[dict]:
+    """One record per input block: what Jev scored it and what became of it.
+
+    Built after `fit_kept`, so a block the digest cap dropped or downgraded
+    reads as dropped or truncated here, and a tool_use the orphan rule pulled
+    back in reads as kept.
+    """
+    final = {k["i"]: k for k in kept}
+    out = []
+    for i, b in enumerate(blocks):
+        k = final.get(i)
+        if k is None:
+            verdict = "dropped"
+        elif k.get("pinned"):
+            verdict = "pinned"
+        else:
+            verdict = k["kind"]
+        keep = (answers.get(f"keep_{i}") or {}).get("noul") if i < n_judged else None
+        full = (answers.get(f"full_{i}") or {}).get("noul") if i < n_judged else None
+        out.append({
+            "i": i,
+            "role": b["role"],
+            "kind": block_kind(b["text"]),
+            "chars": len(b["text"]),
+            "keep": keep,
+            "full": full,
+            "verdict": verdict,
+            "ref": " ".join(b["text"].split())[:REF_CHARS],
+        })
+    return out
+
+
 def judge(transcript_path: str, cwd: str | None) -> tuple[list[str], dict]:
     """The whole selection pass: transcript -> Jev keep/truncate/drop ->
     digest entries. The newest PIN_TAIL blocks are never judged."""
@@ -412,7 +463,8 @@ def select_blocks(blocks: list[dict], cwd: str | None,
              "truncated": sum(1 for k in kept if k["kind"] == "truncated"),
              "escalated": sum(1 for k in kept if k.get("escalated")),
              "chars_before": sum(len(b["text"]) for b in blocks),
-             "chars_after": sum(len(k["text"]) for k in kept), "ms": ms}
+             "chars_after": sum(len(k["text"]) for k in kept), "ms": ms,
+             "rows": block_rows(blocks, kept, answers, n_judged)}
     stats["est_tokens_after"] = stats["chars_after"] // 4
     stats["reduction"] = round(
         1 - stats["chars_after"] / max(stats["chars_before"], 1), 3)

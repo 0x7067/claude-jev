@@ -12,19 +12,75 @@ Env:
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 
 API_URL = "https://api.typesafe.ai/v1/systemone"
 DEFAULT_MODEL = "jev-latest"
 DEFAULT_TIMEOUT = 8.0
+CALL_LOG = os.path.expanduser("~/.claude/jev-calls.jsonl")
+# One line per API call, from every hook. The per-hook logs record what was
+# decided; none of them records what the call cost, so a latency regression or
+# a hook quietly failing open was invisible. This is the only place all four
+# hooks pass through.
+
+_VERSION: str | None = None
 
 
 class JevError(Exception):
     pass
+
+
+def version() -> str:
+    """Plugin version from the manifest next to this package, read once.
+
+    Stamped on every log line so numbers from two versions never get averaged
+    together. Missing or unreadable manifest answers "unknown": a log field is
+    never worth raising over.
+    """
+    global _VERSION
+    if _VERSION is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "..", ".claude-plugin", "plugin.json")
+        try:
+            with open(path, encoding="utf-8") as f:
+                _VERSION = str(json.load(f).get("version") or "unknown")
+        except (OSError, ValueError, AttributeError):
+            _VERSION = "unknown"
+    return _VERSION
+
+
+def caller_name() -> str:
+    """Which script is asking — `rules`, `prompt_router`, `compactor`, `jev`."""
+    name = os.path.basename(sys.argv[0] or "jev")
+    return name[:-3] if name.endswith(".py") else (name or "jev")
+
+
+def log_call(model: str, n_questions: int, t0: float, error: str | None) -> None:
+    """Append one call record. Never raises: the caller is mid-request and a
+    log failure must not change what `ask` returns or what it raises."""
+    try:
+        os.makedirs(os.path.dirname(CALL_LOG), exist_ok=True)
+        rec = {
+            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "caller": caller_name(),
+            "n_questions": n_questions,
+            "model": model,
+            "ms": int((time.monotonic() - t0) * 1000),
+            "ok": error is None,
+            "v": version(),
+        }
+        if error is not None:
+            rec["error"] = error[:300]
+        with open(CALL_LOG, "a") as f:
+            f.write(json.dumps(rec) + "\n")
+    except OSError:
+        pass
 
 
 def api_key() -> str:
@@ -51,14 +107,19 @@ def ask(state, questions: dict, model: str | None = None, timeout: float | None 
         method="POST",
     )
     t = timeout if timeout is not None else DEFAULT_TIMEOUT
+    n = len(questions) if isinstance(questions, dict) else 0
+    t0 = time.monotonic()
     try:
         with urllib.request.urlopen(req, timeout=t) as resp:
             payload = json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
         detail = e.read().decode(errors="replace")[:500]
+        log_call(body["model"], n, t0, f"HTTP {e.code}: {detail}")
         raise JevError(f"HTTP {e.code}: {detail}") from e
     except (urllib.error.URLError, TimeoutError, OSError) as e:
+        log_call(body["model"], n, t0, str(e))
         raise JevError(str(e)) from e
+    log_call(body["model"], n, t0, None)
     return payload.get("answers", {})
 
 

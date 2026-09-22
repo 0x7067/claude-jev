@@ -19,14 +19,27 @@ Env:
 import json
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import jev  # noqa: E402
+import observed  # noqa: E402
 
 MIN_CONFIDENCE = 0.75
 DEFAULT_LOG = os.path.expanduser("~/.claude/jev-router-log.jsonl")
 MAX_QUIET = 0.10
 CONTEXT_LINES = 400
+
+SILENT_INTENTS = {"feature"}
+# Intents whose choice is still logged but never injected. Live Sep 18-22
+# 2026: 67 prompts were predicted `feature`, 6 sessions actually did feature
+# work — wrong ten times in eleven, and the hint's advice ("outline a plan
+# first") costs real tokens when it is wrong.
+
+COMPACT_PROMPT = "Your task is to create a detailed summary"
+# Claude Code's own compaction request arrives on this hook like a typed
+# prompt. `observed.SYNTHETIC` is the shared scorer's list and not ours to
+# extend, and it does not match this one, so the router checks it locally.
 
 GUIDANCE = {
     "chat": "Answer directly from the conversation. No file reads, no commands.",
@@ -140,6 +153,9 @@ def decide(answers: dict) -> tuple[str | None, dict]:
     elif choice == "chat" or choice not in GUIDANCE or conf < MIN_CONFIDENCE:
         return None, answers
 
+    if choice in SILENT_INTENTS:
+        return None, answers
+
     scope = (answers.get("scope") or {}).get("score")
     parts = [f"[jev router] intent={choice} conf={conf:.2f}"]
     if scope is not None:
@@ -156,7 +172,8 @@ def decide(answers: dict) -> tuple[str | None, dict]:
 
 
 def log_decision(event: dict, answers: dict, hint: str | None,
-                 tier: str | None, model_now: str | None) -> None:
+                 tier: str | None, model_now: str | None,
+                 ms: int | None = None) -> None:
     """Record what was predicted so a later eval can score it against what the
     session actually did. Joins to the transcript by session id and timestamp.
     """
@@ -172,6 +189,8 @@ def log_decision(event: dict, answers: dict, hint: str | None,
                 "hint": hint,
                 "tier_hint": tier,
                 "model_now": model_now,
+                "ms": ms,
+                "v": jev.version(),
             }) + "\n")
     except OSError:
         pass
@@ -184,15 +203,21 @@ def main() -> None:
         # Skip slash commands, #-memorize lines, and near-empty prompts.
         if len(prompt) < 3 or prompt[0] in "/#":
             return
+        # Harness-written turns and compaction requests are not user requests:
+        # routing them spends a call and logs a decision nothing will score.
+        if observed.is_synthetic(prompt) or prompt.startswith(COMPACT_PROMPT):
+            return
         tp = event.get("transcript_path")
         prev_user, prev_assistant, model_now = "", "", None
         if tp:
             prev_user, prev_assistant, model_now = conversation_tail(tp, prompt)
+        t0 = time.monotonic()
         answers = jev.ask(build_state(prompt, prev_user, prev_assistant),
                           jev.intent_bundle())
+        ms = int((time.monotonic() - t0) * 1000)
         ctx, _ = decide(answers)
         tier = tier_hint(answers, model_now)
-        log_decision(event, answers, ctx, tier, model_now)
+        log_decision(event, answers, ctx, tier, model_now, ms)
         out = {}
         if ctx:
             out["hookSpecificOutput"] = {
