@@ -4,10 +4,14 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-09-22
+
 - Subagent briefs are checked before the spawn: a brief that changes files but omits paths, acceptance criteria, a verification command, or a commit policy is denied once per session with the missing parts listed, then goes through with a `systemMessage`. Read-only briefs are exempt. Live, a thin rename brief scored 0.06–0.16 on all four parts and a complete one 0.97+.
 - Subagent tier criteria rewritten with sharper boundaries and a fourth `fable` option for adversarial review and cross-system debugging with conflicting evidence, never implementation. On seven hand-written briefs the live-vs-eval bug moved from opus 0.44 to 0.77, above the routing gate. The prompt router's advisory tier hint recognizes `fable` model names. Tier text can be overridden by a `## Delegating to sub-agents` section with `- tier: text` bullets in the user's global `CLAUDE.md`.
 - Every file under the user's config directory (logs, caches, ast-grep binary, global `CLAUDE.md`) resolves through `CLAUDE_CONFIG_DIR` when set, else `~/.claude`.
 - `scripts/compactor.py` changed only its log path. Compaction gate: re-fetch verbatim coverage 76.5% (floor 70%, n=727); planted user constraint survival 100.0% (floor 95%, n=72); planted buried restatement survival 98.6% (floor 90%, n=69).
+
+[0.17.0]: https://github.com/0x7067/claude-jev/compare/v0.16.1...v0.17.0
 
 ## [0.16.1] - 2026-09-22
 
