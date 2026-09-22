@@ -6,6 +6,7 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 - Subagent spawns are checked for brief completeness: a brief that changes files but omits paths, acceptance criteria, a verification command, or a commit policy is denied once per session with the missing parts listed. Read-only briefs are exempt. Tier criteria are read from a `## Delegating to sub-agents` section in `~/.claude/CLAUDE.md` when present.
 - Subagent tier criteria rewritten with sharper boundaries and a fourth `fable` option for adversarial review and cross-system debugging with conflicting evidence. The prompt router's advisory tier hint recognizes `fable` model names.
+- Every file under the user's config directory (logs, caches, ast-grep binary, global `CLAUDE.md`) resolves through `CLAUDE_CONFIG_DIR` when set, else `~/.claude`.
 
 ## [0.16.1] - 2026-09-22
 

@@ -51,7 +51,7 @@ HEAD_SLACK = 200
 
 TARGET_CHARS = 16000
 
-STATS_LOG = os.path.expanduser("~/.claude/jev-compact-log.jsonl")
+STATS_LOG = os.path.join(jev.config_dir(), "jev-compact-log.jsonl")
 TAIL_LINES = 5000
 ROWS_HEADER = ("This session's history was compacted by Jev. Every message below "
                "was judged still needed and kept verbatim, or as a head with an "

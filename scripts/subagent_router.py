@@ -9,7 +9,7 @@ list, so the parent rewrites it instead of the subagent guessing.
 This is real routing, not advisory: `updatedInput` replaces the tool input,
 so the subagent starts on the tier Jev picked. A model already present in
 tool_input always wins — Claude named it on purpose. Tier criteria come from
-the user's `~/.claude/CLAUDE.md` when it has a "Delegating to sub-agents"
+the user's `CLAUDE.md` in the Claude config dir when it has a "Delegating to sub-agents"
 section with `- tier: text` bullets; otherwise the shipped text is used.
 
 Always exits 0 and prints nothing on any failure — routing must never block
@@ -30,8 +30,8 @@ import jev
 
 MIN_CONFIDENCE = 0.75
 BRIEF_MISSING = 0.25
-DEFAULT_LOG = os.path.expanduser("~/.claude/jev-router-log.jsonl")
-USER_RULES = os.path.expanduser("~/.claude/CLAUDE.md")
+DEFAULT_LOG = os.path.join(jev.config_dir(), "jev-router-log.jsonl")
+USER_RULES = os.path.join(jev.config_dir(), "CLAUDE.md")
 TIERS = ("haiku", "sonnet", "opus", "fable")
 BRIEF_PARTS = {
     "brief_paths": "the exact files or paths to work in",

@@ -26,7 +26,7 @@ import jev
 import observed
 
 MIN_CONFIDENCE = 0.75
-DEFAULT_LOG = os.path.expanduser("~/.claude/jev-router-log.jsonl")
+DEFAULT_LOG = os.path.join(jev.config_dir(), "jev-router-log.jsonl")
 MAX_QUIET = 0.10
 CONTEXT_LINES = 400
 
