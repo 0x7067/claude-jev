@@ -225,11 +225,21 @@ def judge(rec: dict, rule_cache: dict) -> dict:
     if not in_scope:
         out["skipped"] = "no rules in scope"
         return out
+    # The file at `sha` may predate the edit, in which case the anchor line is
+    # absent and file_context returns nothing — the hook sees the file after
+    # the write, the eval only when the corpus happens to match.
+    abs_path = os.path.join(cwd, rel)
+    context = rules.file_context(abs_path, rules.needle_of(rec["tool_input"]))
+    siblings = rules.sibling_modules(abs_path)
     t0 = time.time()
     try:
-        hits, probs, _ = rules.judge_edit(rel, hunk, rec.get("task") or "", in_scope)
-        out.update(hits=[{k: h[k] for k in ("rule", "prob", "band", "text", "file", "line")}
-                         for h in hits], probs=probs)
+        hits, probs, _, skipped = rules.judge_edit(
+            rel, hunk, rec.get("task") or "", in_scope, context, siblings)
+        out.update(hits=[{k: h.get(k) for k in
+                          ("rule", "prob", "band", "text", "file", "line",
+                           "polarity", "subject")} for h in hits],
+                   probs=probs, n_irrelevant=len(skipped),
+                   context_chars=len(context))
     except Exception as e:  # the hook fails open; the eval records why
         out["error"] = str(e)[:300]
     out["latency"] = round(time.time() - t0, 3)
@@ -306,6 +316,46 @@ def expected_fired(r: dict, threshold_band: str) -> bool:
     return False
 
 
+def top_prob(r: dict) -> float | None:
+    """The record's highest rule probability, which is what any ACT compares
+    against. `judge` stores every in-scope rule's probability; prediction
+    files written before it did have only the hits, so fall back to those
+    (their maximum is right whenever the record fired at all)."""
+    probs = r.get("probs")
+    if probs:
+        return max(probs.values())
+    hits = r.get("hits")
+    if hits:
+        return max(h["prob"] for h in hits)
+    return None
+
+
+def sweep(viol: list[dict], clean: list[dict], real: list[dict]) -> None:
+    """What moving ACT would have done, FLAG held at 0.50. Same shape as
+    `replay.py report --sweep`: one row per candidate threshold, the live
+    value marked."""
+    pv = [p for p in (top_prob(r) for r in viol) if p is not None]
+    pc = [p for p in (top_prob(r) for r in clean) if p is not None]
+    pr = [p for p in (top_prob(r) for r in real) if p is not None]
+    missing = ((len(viol) - len(pv)) + (len(clean) - len(pc)) + (len(real) - len(pr)))
+    print(f"\nthreshold sweep (FLAG={rules.FLAG} fixed)")
+    if missing:
+        print(f"  {missing} judged records carry no probabilities; "
+              "re-run `run` to refresh the prediction file")
+    print(f"  {'ACT':<7}{'real blocked':<16}{'violations caught':<20}"
+          f"{'near-misses blocked':<21}")
+    print("  " + "-" * 64)
+    for i in range(60, 100, 5):
+        act = i / 100
+        nb = sum(1 for p in pr if p >= act)
+        nv = sum(1 for p in pv if p >= act)
+        nc = sum(1 for p in pc if p >= act)
+        rate = f"{nb} ({100*nb/len(pr):.1f}%)" if pr else "-"
+        mark = "  <- current" if abs(act - rules.ACT) < 1e-9 else ""
+        print(f"  {act:<7.2f}{rate:<16}{f'{nv}/{len(pv)}':<20}"
+              f"{f'{nc}/{len(pc)}':<21}{mark}")
+
+
 def by_tag(cases: list[dict]) -> None:
     """Detection and false-block rate per tag value — where does the judge
     break: whole-file writes, needles at the end, large files?"""
@@ -379,6 +429,17 @@ def cmd_report(args) -> int:
             print(f"  latency     : median {statistics.median(lat):.2f}s  "
                   f"p90 {sorted(lat)[int(0.9*(len(lat)-1))]:.2f}s  "
                   f"questions/edit median {statistics.median(r['n_scope'] for r in real)}")
+        irr = [r.get("n_irrelevant", 0) for r in real]
+        if any(irr):
+            asked = [r["n_scope"] - r.get("n_irrelevant", 0) for r in real]
+            print(f"  relevance   : in scope {sum(r['n_scope'] for r in real)}, "
+                  f"skipped as irrelevant {sum(irr)} "
+                  f"({100*sum(irr)/max(1, sum(r['n_scope'] for r in real)):.1f}%), "
+                  f"asked median {statistics.median(asked)}")
+        ctx = [r.get("context_chars", 0) for r in real]
+        if any(ctx):
+            print(f"  context     : {sum(1 for c in ctx if c)}/{len(real)} edits "
+                  f"carried surrounding lines")
         by_rule = collections.Counter(h["rule"] for r in blocked for h in r["hits"]
                                       if h["band"] == "act")
         if by_rule:
@@ -393,6 +454,9 @@ def cmd_report(args) -> int:
                       f"\"{' '.join(h['text'].split())[:110]}\"")
                 if r.get("task"):
                     print(f"      task: {' '.join(r['task'].split())[:110]}")
+
+    if args.sweep:
+        sweep(viol, clean, real)
 
     per_rule = collections.defaultdict(list)
     for r in judged:
@@ -428,6 +492,8 @@ def main() -> int:
     rp.add_argument("--examples", type=int, default=8)
     rp.add_argument("--rules", type=int, default=25)
     rp.add_argument("--pred", default=PRED)
+    rp.add_argument("--sweep", action="store_true",
+                    help="what each ACT from 0.60 to 0.95 would have blocked")
     rp.add_argument("--by-tag", action="store_true",
                     help="breakdown per tag; the case list shows only misses and false blocks")
     rp.set_defaults(fn=cmd_report)
