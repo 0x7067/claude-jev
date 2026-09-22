@@ -28,7 +28,7 @@ def _py_comment_hits(text: str) -> list[tuple[int, str]]:
             if tok.type != tokenize.COMMENT:
                 continue
             line = tok.line.rstrip("\n")
-            if tok.start[1] == 0 and line.startswith("#!"):
+            if tok.start == (1, 0) and line.startswith("#!"):
                 continue
             hits.append((tok.start[0], line.strip()[:120]))
     except tokenize.TokenError as exc:
@@ -206,6 +206,10 @@ def _self_check() -> None:
     nested_then_comment = 'const x = `${`https://a.com/${n}`}`; // after\n'
     hits = _js_comment_hits(nested_then_comment)
     assert len(hits) == 1 and "// after" in hits[0][1], hits
+
+    assert _py_comment_hits("#!/usr/bin/env python3\nx = 1\n") == []
+    mid_bang = _py_comment_hits("x = 1\n#! banned rationale\n")
+    assert len(mid_bang) == 1 and mid_bang[0][0] == 2 and "#! banned" in mid_bang[0][1], mid_bang
 
 
 def iter_targets() -> list[Path]:
