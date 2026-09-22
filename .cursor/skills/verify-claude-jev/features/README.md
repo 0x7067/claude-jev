@@ -25,7 +25,8 @@ feature file as the recipe.
 ## In-band vs out-of-band
 
 **In-band** (this skill's proved contract without Claude Code): `compileall`,
-hook stdin fail-open / skip, `rows` fallback and pin-tail, `jev.py` missing-key.
+hook stdin fail-open / skip, `rows` bad-input fallback, pin-tail keep, and
+no-key multi-row Jev-error fallback, `jev.py` missing-key.
 
 **Out-of-band** (needs a machine with Claude Code + `TYPESAFE_API_KEY`): live
 classify/route/block answers, a real plugin session, function-hook `/compact`.
@@ -76,5 +77,5 @@ handles, required state, commands, and observable proof.
 - [Prompt routing](./prompt-routing.md) covers UserPromptSubmit skip and fail-open.
 - [Subagent routing](./subagent-routing.md) covers PreToolUse model picking and fail-open.
 - [Rule enforcement](./rule-enforcement.md) covers PostToolUse / Stop fail-open and event shape.
-- [Session compaction](./session-compaction.md) covers the `rows` bridge, pin-tail keep, and fallback.
+- [Session compaction](./session-compaction.md) covers the `rows` bridge: bad-input fallback, pin-tail keep, and no-key multi-row Jev-error fallback.
 - [Jev CLI](./jev-cli.md) covers the agent skill CLI missing-key and ask surfaces.

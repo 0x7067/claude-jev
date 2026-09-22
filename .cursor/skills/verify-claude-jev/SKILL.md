@@ -26,7 +26,9 @@ gotchas when hooks or skills drift.
 - `python3 -m compileall` over `scripts/` and `eval/`
 - Hook stdin contract: empty/malformed events and no-key fail-open exit `0`
   without live classify (silent stdout)
-- `compactor.py rows` fallback and pin-tail keep without calling Jev
+- `compactor.py rows` bad-input fallback, pin-tail keep (no Jev call), and
+  no-key multi-row Jev-error fallback (`fallback` when >`PIN_TAIL` rows need
+  judging and `TYPESAFE_API_KEY` is unset)
 - `jev.py` missing-key exit `2`
 
 **Out-of-band (not proved on a ship without Claude Code + API key):**
@@ -135,7 +137,8 @@ Override with `JE_VERIFY_EVIDENCE` if needed. Capture:
 - Command, stdout, stderr, and exit code for every drive step.
 - The JSON event fed to a hook (action) and the hook's stdout (result).
 - For compaction: the `messages` or `fallback` object, plus proof that
-  pin-tail or fallback behavior matches the feature file.
+  pin-tail keep, bad-input fallback, or no-key multi-row Jev-error fallback
+  matches the feature file (including `fallback-nokey.json` when that path ran).
 - For mutations of disposable state under `$VERIFY_HOME/.claude/`: a second
   read of the file after the action (hooks append logs only when Jev answers).
 
@@ -150,7 +153,9 @@ at the production boundary already used by the plugin (missing
 `TYPESAFE_API_KEY` → fail open / `jev: set TYPESAFE_API_KEY`). When proving a
 no-key path, observe silence or exit 2 rather than trusting the docstring.
 
-In-band evidence proves compile + fail-open / pin-tail / missing-key only.
+In-band evidence proves compile + fail-open / pin-tail / no-key multi-row
+Jev-error fallback / missing-key. That Jev-error fallback still has no API
+key and is not live classify.
 Out-of-band evidence (live classify, real `claude` session, function-hook
 compaction) belongs on a machine with Claude Code and `TYPESAFE_API_KEY`; do
 not treat an empty fail-open transcript as that proof.
