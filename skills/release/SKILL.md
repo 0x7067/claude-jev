@@ -1,56 +1,48 @@
 ---
 name: release
 description: >
-  Cut a claude-jev release: changelog entry, version bump in plugin.json and
-  marketplace.json, tagged commit, push, and a GitHub release whose notes are
-  the changelog section. Use when the user asks to release, ship, tag, or
-  publish a version, or runs /claude-jev:release. Plans first; nothing moves
-  until the user confirms and `--execute` runs.
+  Cut a claude-jev release: changelog entry, version bump, tagged commit,
+  push, GitHub release. Use when the user asks to release, ship, tag, or
+  publish a version, or runs /claude-jev:release. Not for an ordinary
+  version bump or changelog edit without a release.
 argument-hint: "<X.Y.Z>"
 ---
 
 # Release
 
-`${CLAUDE_PLUGIN_ROOT}/scripts/release.py` does the whole cut. The changelog
-is the input; the GitHub release is the output. Your job is the notes and
-the confirmation.
+`${CLAUDE_PLUGIN_ROOT}/scripts/release.py X.Y.Z` does the mechanical part.
+Its docstring is the authoritative list of what it checks and changes. It
+plans by default and writes nothing until `--execute`.
 
-## Steps
+## Do
 
-1. **Pick the version.** `git describe --tags --abbrev=0` gives the last
-   tag. Minor bump for a behavior change, patch for docs and fixes. If
-   `.claude-plugin/plugin.json` was already bumped in a prior commit, release
-   that number.
-2. **Write the notes.** `git log --format='%h %s' <last-tag>..HEAD` lists
-   what shipped. Put user-facing changes under `## [Unreleased]` in
-   `CHANGELOG.md` as `-` bullets, one change per bullet, measured numbers
-   where a run produced them, in the order a user would care. Skip commits
-   that only touch eval data or wording. The first bullet becomes the commit
-   and tag title. Commit the changelog edit; the script needs a clean tree.
-3. **Plan.** Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/release.py X.Y.Z`.
-   It checks: clean tree, on `main`, not behind `origin/main`, tag unused,
-   version not below `plugin.json`, `compileall`, and the compaction bridge
-   falling back on empty input. Then it prints the exact commit, tag, push,
-   and release notes. It writes nothing.
-4. **Confirm.** Show the plan to the user. A release is public and a tag is
-   hard to move; wait for a yes.
-5. **Execute.** Re-run with `--execute`, adding
-   `--trailer "Claude-Session: <url>"` when this session's commit
-   attribution asks for one. The script bumps both version files, rotates
-   the changelog section to `## [X.Y.Z] - <date>` with a compare link, commits
-   as `X.Y.Z: <first bullet>`, tags `vX.Y.Z`, pushes `main` and the tag, and
-   runs `gh-axi release create` with the section as notes.
-6. **Verify.** `gh-axi release view vX.Y.Z` shows the notes; `git status -sb`
-   shows `main` level with origin. Report the release URL.
+1. **Version.** Use the one the user named. Otherwise take the last tag from
+   `git describe --tags --abbrev=0` and bump minor for a behavior change,
+   patch for docs or fixes. A version already set in
+   `.claude-plugin/plugin.json` by an earlier commit is the one to release.
+2. **Notes.** `## [Unreleased]` in `CHANGELOG.md` must hold the user-facing
+   changes since the last tag, one `-` bullet each, with numbers where a
+   run produced them. Source: `git log --format='%h %s' <last-tag>..HEAD`.
+   The first sentence of the first bullet becomes the commit and tag title.
+   Commit the changelog edit; the script needs a clean tree.
+3. **Plan.** Run the script without `--execute` and read the output. It
+   stops on any failed check and names it.
+4. **Confirm.** If the user's request named the version and asked to
+   release, the plan output is the confirmation; proceed. Otherwise show the
+   plan and wait: a push and a tag are public.
+5. **Execute.** Re-run with `--execute`. Add `--trailer "Claude-Session: <url>"`
+   when this session's commit attribution requires that line.
 
-## Gotchas
+## Done when
 
-- Empty `[Unreleased]` stops the script before any change. That is the point:
-  no notes, no release.
-- The compaction eval gate (`python3 eval/compare.py compact --synth 60`)
-  is not run here; it costs API calls. Run it before releasing a change to
-  `scripts/compactor.py` and quote its three gate lines in the changelog.
-- `gh-axi` must be authenticated for `0x7067/claude-jev`. If the release
-  step fails after the push, the tag is already public: fix auth and run
-  `gh-axi release create vX.Y.Z --notes-file <notes> --verify-tag` by hand
-  rather than re-running the script.
+`gh-axi release view vX.Y.Z` shows the notes and `git status -sb` prints
+`## main...origin/main` with nothing ahead or behind. Report the release URL.
+
+## If
+
+- **The script fails after the push but before the release exists,** the
+  tag is already public. Run
+  `gh-axi release create vX.Y.Z --notes-file <notes> --verify-tag` by hand.
+  Do not re-run the script.
+- **The release changes `scripts/compactor.py`,** run the compaction gate
+  first as AGENTS.md describes, and quote its three gate lines in the notes.

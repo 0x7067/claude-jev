@@ -9,8 +9,13 @@ The changelog is the source of the release notes. `CHANGELOG.md` must have a
 non-empty `## [Unreleased]` section; the script renames it to the version
 and date, writes those lines to the GitHub release, and opens a fresh
 `[Unreleased]` above it. No notes, no release: the run stops before touching
-anything. Every check runs in plan mode too, so a plan that prints clean is
-a release that will go through.
+anything.
+
+Checks, all run in plan mode too: version is X.Y.Z and not below
+plugin.json; working tree clean; branch is main and not behind origin/main;
+tag vX.Y.Z unused; `compileall` over scripts and eval; `compactor.py rows`
+falls back on empty input. Needs `git` with push rights and `gh-axi`
+authenticated for the repository.
 """
 
 from __future__ import annotations
