@@ -16,7 +16,7 @@
 // `fallback` answer from the Python side calls next(e), and Claude Code's
 // own compaction runs exactly as if this module were not loaded. No
 // judgment happens in JavaScript; this file is a bridge, not a second
-// implementation.
+// implementation. Even the debug-log line comes preformatted from Python.
 
 const PYTHON_TIMEOUT_MS = 30000; // Jev judges ~150 blocks in about a second;
                                  // the built-in summary takes 30-60 s, so a
@@ -24,10 +24,13 @@ const PYTHON_TIMEOUT_MS = 30000; // Jev judges ~150 blocks in about a second;
 
 export function register(on) {
   on("session.compact", async ($, e, next) => {
+    const fallThrough = async (why) => {
+      await $.ui.log(`jev-compact: ${why}; built-in summary runs`);
+      return next(e);
+    };
     let run;
     try {
-      const cwd = await $.session.cwd();
-      const sessionId = await $.session.id();
+      const [cwd, sessionId] = await Promise.all([$.session.cwd(), $.session.id()]);
       run = await $.process.run(
         ["python3", `${$.plugin.root}/scripts/compactor.py`, "rows"],
         {
@@ -42,26 +45,21 @@ export function register(on) {
         },
       );
     } catch (err) {
-      await $.ui.log(`jev-compact: bridge failed, built-in summary runs: ${String(err)}`);
-      return next(e);
+      return fallThrough(`bridge failed: ${String(err)}`);
     }
     if (run.exitCode !== 0) {
-      await $.ui.log(`jev-compact: compactor.py exit ${run.exitCode}, built-in summary runs: ${run.stderr.slice(0, 300)}`);
-      return next(e);
+      return fallThrough(`compactor.py exit ${run.exitCode}: ${run.stderr.slice(0, 300)}`);
     }
     let out;
     try {
       out = JSON.parse(run.stdout);
     } catch (err) {
-      await $.ui.log(`jev-compact: unreadable compactor.py output, built-in summary runs: ${String(err)}`);
-      return next(e);
+      return fallThrough(`unreadable compactor.py output: ${String(err)}`);
     }
     if (!out || !Array.isArray(out.messages)) {
-      await $.ui.log(`jev-compact: ${out && out.fallback ? out.fallback : "no rows returned"}; built-in summary runs`);
-      return next(e);
+      return fallThrough(out?.fallback ?? "no rows returned");
     }
-    const s = out.stats || {};
-    await $.ui.log(`jev-compact: ${e.trigger} compaction replaced by ${out.messages.length} rows (kept ${s.kept}, ${s.truncated} truncated, ${Math.round((s.reduction || 0) * 100)}% smaller, ${s.ms} ms)`);
+    await $.ui.log(`jev-compact: ${out.summary ?? `${out.messages.length} rows returned`}`);
     return { messages: out.messages };
   });
 }

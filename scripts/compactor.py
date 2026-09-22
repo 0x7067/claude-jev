@@ -9,11 +9,12 @@ here, Jev judges them, and the rows it keeps go back as the whole
 post-compaction context. The built-in summarizer never runs.
 
 Contract with the module: stdout is one JSON object, either {"messages":
-[...]} to replace the compaction or {"fallback": "<reason>"} to let the
-built-in summary run. Bad input, a missing key, a Jev outage, or a weak
-selection all answer with a fallback and exit 0, so a failure here can never
-leave a session uncompacted. `judge` stays because `eval/compare.py` replays
-recorded transcripts through it.
+[...], "summary": "<one line for the debug log>"} to replace the compaction
+or {"fallback": "<reason>"} to let the built-in summary run. Bad input, a
+missing key, a Jev outage, or a weak selection all answer with a fallback and
+exit 0, so a failure here can never leave a session uncompacted. `judge` and
+the transcript readers stay because `eval/compare.py` replays recorded
+transcripts through them.
 
 Env:
   TYPESAFE_API_KEY   required (the bridge falls back silently without it)
@@ -50,6 +51,8 @@ MAX_WORKERS = 16        # socket bound; a long session fans out in waves instead
 BLOCK_CHARS = 1200      # chars of each block shown to Jev
 KEEP_CHARS = 1500       # chars of each kept block in the digest
 HEAD_CHARS = 400        # head retained on a truncated block
+HEAD_SLACK = 200        # a block within this of HEAD_CHARS stays whole: the
+                        # elision note would cost nearly what the cut saves
 TARGET_CHARS = 16000    # hard cap on digest size, and the lever that decides
                         # how much survives: 66% of re-fetched artifacts held
                         # against 50% at 8k, 21 wins to none. ~3.9k tokens,
@@ -72,6 +75,8 @@ META_PREFIXES = ("<command-", "<local-command", "<system-reminder", "<caveat",
 # promptSource values that mean a person drove this turn. Anything else on a
 # user line is the harness speaking through the user channel.
 SOURCE_OK = ("typed", "queued", "suggestion_accepted")
+# A user turn that is only an acknowledgement carries nothing to keep.
+ACK = re.compile(r"(ok|yes|no|thanks|continue)\.?", re.I)
 
 
 def block_text(content) -> str:
@@ -95,6 +100,17 @@ def block_text(content) -> str:
     return "\n".join(parts)
 
 
+def judgeable(role: str, text: str) -> str | None:
+    """`text` if Jev should see it, else None: harness tags and one-word acks
+    carry nothing worth a question. Shared by the transcript and row paths so
+    the same rules gate both."""
+    if not text or text.startswith(META_PREFIXES):
+        return None
+    if role == "user" and ACK.fullmatch(text):
+        return None
+    return text
+
+
 def injected(d: dict, strict_source: bool) -> bool:
     """True when Claude Code wrote this line rather than the user or the model.
 
@@ -115,12 +131,12 @@ def injected(d: dict, strict_source: bool) -> bool:
 
 
 def compaction_marker(d: dict, text: str) -> bool:
-    """The start of the turn that ran /claude-jev:compact.
+    """The start of the turn that ran the `/claude-jev:compact` skill.
 
-    That turn is the skill body, the `prepare` call and its relay line — all
-    of it about compacting, none of it about the work being compacted. It is
-    also the newest thing in the transcript, so PIN_TAIL would otherwise
-    guarantee it survives.
+    Only recorded transcripts from before 0.10.0 have one; the eval replays
+    those, and the turn is about compacting, not about the work being
+    compacted. It is also the newest thing in such a transcript, so PIN_TAIL
+    would otherwise guarantee it survives.
     """
     if d.get("isMeta") and text.startswith("Base directory for this skill:"):
         return text.split("\n", 1)[0].rstrip().rstrip("/").endswith("skills/compact")
@@ -140,11 +156,7 @@ def visible_text(d: dict, text: str | None = None,
     role = msg.get("role") or d["type"]
     if text is None:
         text = block_text(msg.get("content")).strip()
-    if not text or text.startswith(META_PREFIXES):
-        return None
-    if role == "user" and re.fullmatch(r"(ok|yes|no|thanks|continue)\.?", text, re.I):
-        return None
-    return text
+    return judgeable(role, text)
 
 
 def transcript_blocks(transcript_path: str) -> list[dict]:
@@ -182,31 +194,39 @@ def transcript_blocks(transcript_path: str) -> list[dict]:
     return blocks if cut_at is None else blocks[:cut_at]
 
 
-def compact_state(blocks: list[dict], cwd: str | None,
-                  lo: int = 0, hi: int | None = None,
-                  directive: str | None = None) -> str:
-    """The state for one chunk: the session's goals, then only the blocks that
+def session_context(blocks: list[dict], cwd: str | None,
+                    directive: str | None) -> str:
+    """The part of every chunk's state that does not depend on the chunk:
+    working directory, the `/compact <text>` directive, and the session's
+    goals. Built once per compaction; the keep question needs the goals, so
+    every request carries them."""
+    lines = []
+    if cwd:
+        lines.append(f"Working directory: {cwd}")
+    if directive:
+        lines.append(f"The user asked this compaction to: {directive}")
+    goal = "\n".join(b["text"][:300] for b in blocks
+                     if b["role"] == "user")[-HEADER_CHARS:]
+    if goal.strip():
+        lines.append(f"Most recent user requests:\n{goal}")
+    return "\n".join(lines)
+
+
+def compact_state(blocks: list[dict], lo: int, hi: int, context: str) -> str:
+    """The state for one chunk: the shared context, then only the blocks that
     chunk judges, labeled by their position in the whole transcript.
 
-    The goals are repeated per chunk because the keep question needs them. The
-    blocks are not: sending every block to every chunk makes each request grow
-    with the session, so the total cost grows as blocks x chunks. Chunk-local
-    bodies make it linear, which is what lets MAX_BLOCKS be 150.
+    Sending every block to every chunk would make each request grow with the
+    session, so the total cost grows as blocks x chunks. Chunk-local bodies
+    make it linear, which is what lets MAX_BLOCKS be 150.
     """
-    hi = len(blocks) if hi is None else hi
     header = [
         "Transcript of an AI coding-assistant session being compacted.",
         f"Blocks are numbered by position in the session, oldest first. "
         f"This request shows blocks [{lo}]..[{hi - 1}].",
     ]
-    if cwd:
-        header.append(f"Working directory: {cwd}")
-    if directive:
-        header.append(f"The user asked this compaction to: {directive}")
-    goal = "\n".join(b["text"][:300] for b in blocks
-                     if b["role"] == "user")[-HEADER_CHARS:]
-    if goal.strip():
-        header.append(f"Most recent user requests:\n{goal}")
+    if context:
+        header.append(context)
     body = "\n\n".join(f"[{i}] [{blocks[i]['role']}] {blocks[i]['text'][:BLOCK_CHARS]}"
                        for i in range(lo, hi))
     return "\n".join(header) + "\n\n" + body
@@ -254,6 +274,7 @@ def ask_chunked(blocks: list[dict], cwd: str | None, n: int,
     and request size stays flat however long the session is.
     """
     questions = keep_questions(n, directive)
+    context = session_context(blocks, cwd, directive)
     ranges = [(i, min(i + BLOCKS_PER_CHUNK, n))
               for i in range(0, n, BLOCKS_PER_CHUNK)]
 
@@ -265,7 +286,7 @@ def ask_chunked(blocks: list[dict], cwd: str | None, n: int,
         # `ex.map` re-raises on iteration, so without this a single timeout
         # would throw away the whole selection.
         try:
-            return jev.ask(compact_state(blocks, cwd, lo, hi, directive), q)
+            return jev.ask(compact_state(blocks, lo, hi, context), q)
         except jev.JevError:
             return {}
 
@@ -282,38 +303,31 @@ def ask_chunked(blocks: list[dict], cwd: str | None, n: int,
     return answers
 
 
-def cut_text(text: str, chars: int) -> str:
-    """Cap at chars, preferring a paragraph break near the limit so kept
-    blocks don't end mid-word."""
-    if len(text) <= chars:
-        return text
-    cut = text.rfind("\n\n", chars // 2, chars)
-    return text[:cut] if cut > 0 else text[:chars]
-
-
 ELISION = "[… {n} chars elided by jev-compact — re-read the file or re-run the command if needed]"
 
 
 def cut_marked(text: str, chars: int) -> str:
-    """`cut_text`, but it says so when it cuts: a block that lost its tail
-    silently reads as whole."""
-    short = cut_text(text, chars)
-    if len(short) == len(text):
+    """Cap at `chars`, preferring a paragraph break near the limit so the
+    kept part doesn't end mid-word, and say so when it cuts: a block that
+    lost its tail silently would read as whole. The count is against the
+    text passed in, so callers pass the original block, never an already
+    cut one."""
+    if len(text) <= chars:
         return text
-    return f"{short}\n" + ELISION.format(n=len(text) - len(short))
+    cut = text.rfind("\n\n", chars // 2, chars)
+    head = text[:cut] if cut > 0 else text[:chars]
+    return f"{head}\n" + ELISION.format(n=len(text) - len(head))
 
 
 def truncate_block(text: str) -> str:
     """Head of a kept block plus a pointer, instead of its full text — the
     block is visibly still there and the agent can re-read or re-run it."""
-    text = cut_text(text, KEEP_CHARS)
-    if len(text) <= HEAD_CHARS + 200:
+    if len(text) <= HEAD_CHARS + HEAD_SLACK:
         return text
-    head = cut_text(text, HEAD_CHARS)
-    return f"{head}\n" + ELISION.format(n=len(text) - len(head))
+    return cut_marked(text, HEAD_CHARS)
 
 
-def fit_kept(kept: list[dict]) -> list[dict]:
+def fit_kept(kept: list[dict], blocks: list[dict]) -> list[dict]:
     """Hard cap on the digest so the kept set can't grow without bound over
     a long session. No extra Jev calls: downgrade the lowest-confidence full
     keeps to truncated heads first, then drop the weakest remaining blocks,
@@ -327,9 +341,9 @@ def fit_kept(kept: list[dict]) -> list[dict]:
                     key=lambda k: k["full"]):
         if total <= TARGET_CHARS:
             break
-        shorter = truncate_block(k["text"])
-        if len(shorter) == len(k["text"]):
-            continue  # frees nothing, and costs the verbatim pass-through
+        shorter = truncate_block(blocks[k["i"]]["text"])
+        if len(shorter) >= len(k["text"]):
+            continue  # frees nothing; leave it labeled as the whole block it is
         total -= len(k["text"]) - len(shorter)
         k["text"], k["kind"] = shorter, "truncated"
         k["escalated"] = True
@@ -340,7 +354,6 @@ def fit_kept(kept: list[dict]) -> list[dict]:
             break
         total -= len(k["text"])
         k["kind"] = "dropped"
-        k["escalated"] = True
     return [k for k in kept if k["kind"] != "dropped"]
 
 
@@ -364,10 +377,9 @@ def select_blocks(blocks: list[dict], cwd: str | None,
     ms = int((time.monotonic() - t0) * 1000)
     kept: list[dict] = []
     for i, b in enumerate(blocks):
-        text = cut_marked(b["text"], KEEP_CHARS)
         if i >= n_judged:  # pinned tail — kept verbatim, unjudged
-            kept.append({"i": i, "text": text, "kind": "full", "keep": 1.0,
-                         "full": 1.0, "pinned": True})
+            kept.append({"i": i, "text": cut_marked(b["text"], KEEP_CHARS),
+                         "kind": "full", "pinned": True})
             continue
         keep = (answers.get(f"keep_{i}") or {}).get("noul")
         full = (answers.get(f"full_{i}") or {}).get("noul")
@@ -377,7 +389,8 @@ def select_blocks(blocks: list[dict], cwd: str | None,
                 and full < KEEP_THRESHOLD else "full"
             kept.append({
                 "i": i,
-                "text": text if kind == "full" else truncate_block(text),
+                "text": truncate_block(b["text"]) if kind == "truncated"
+                else cut_marked(b["text"], KEEP_CHARS),
                 "kind": kind,
                 "keep": keep if keep is not None else 1.0,
                 "full": full if full is not None else 1.0,
@@ -392,17 +405,16 @@ def select_blocks(blocks: list[dict], cwd: str | None,
                 and i - 1 not in kept_idx
                 and blocks[i - 1]["text"].startswith("[tool_use")):
             paired.append({"i": i - 1, "text": cut_marked(blocks[i - 1]["text"], KEEP_CHARS),
-                           "kind": "full", "keep": k["keep"], "full": k["full"]})
+                           "kind": "full", "keep": k.get("keep", 1.0), "full": k.get("full", 1.0)})
             kept_idx.add(i - 1)
         paired.append(k)
-    kept = fit_kept(paired)
+    kept = fit_kept(paired, blocks)
     stats = {"judged": n_judged, "pinned": len(blocks) - n_judged,
              "kept": len(kept),
              "truncated": sum(1 for k in kept if k["kind"] == "truncated"),
              "escalated": sum(1 for k in kept if k.get("escalated")),
              "chars_before": sum(len(b["text"]) for b in blocks),
              "chars_after": sum(len(k["text"]) for k in kept), "ms": ms}
-    stats["est_tokens_before"] = stats["chars_before"] // 4
     stats["est_tokens_after"] = stats["chars_after"] // 4
     stats["reduction"] = round(
         1 - stats["chars_after"] / max(stats["chars_before"], 1), 3)
@@ -414,28 +426,17 @@ def row_text(row: dict) -> str | None:
 
     A row is one message as the hooks engine shows it: `role`, `text`,
     `toolUses` [{tool_use_id, tool, input}], `toolResults` [{tool_use_id,
-    text, isError}], and a `handle`. Rendered the way `block_text` renders a
-    transcript line, so the same questions and thresholds apply. Harness
-    rows (slash-command wrappers, caveats) and one-word acks are invisible,
-    as in `visible_text`; the engine already drops isMeta rows.
+    text, isError}], and a `handle`. It is rendered through `block_text`, so
+    the same questions, thresholds, and `[tool_use`/`[tool_result]` markers
+    apply as on a transcript line, and gated by `judgeable`, as a transcript
+    line is; the engine already drops isMeta rows.
     """
-    parts = []
-    text = (row.get("text") or "").strip()
-    if text:
-        parts.append(text)
-    for u in row.get("toolUses") or []:
-        if isinstance(u, dict):
-            parts.append(f"[tool_use {u.get('tool', '?')}] "
-                         f"{json.dumps(u.get('input', {}))[:400]}")
-    for r in row.get("toolResults") or []:
-        if isinstance(r, dict):
-            parts.append(f"[tool_result] {str(r.get('text') or '')[:800]}")
-    text = "\n".join(parts).strip()
-    if not text or text.startswith(META_PREFIXES):
-        return None
-    if row.get("role") == "user" and re.fullmatch(r"(ok|yes|no|thanks|continue)\.?", text, re.I):
-        return None
-    return text
+    content = [{"type": "text", "text": row.get("text") or ""}]
+    content += [{"type": "tool_use", "name": u.get("tool", "?"), "input": u.get("input", {})}
+                for u in row.get("toolUses") or [] if isinstance(u, dict)]
+    content += [{"type": "tool_result", "content": r.get("text")}
+                for r in row.get("toolResults") or [] if isinstance(r, dict)]
+    return judgeable(row.get("role"), block_text(content).strip())
 
 
 def plain_row(row: dict) -> bool:
@@ -445,85 +446,97 @@ def plain_row(row: dict) -> bool:
     return not row.get("toolUses") and not row.get("toolResults")
 
 
+def text_row(role: str, text: str) -> dict:
+    """A handle-less row: the engine turns it into a new message."""
+    return {"role": role, "text": text, "toolUses": [], "toolResults": []}
+
+
 def rows_out(blocks: list[dict], kept: list[dict]) -> list[dict]:
     """Kept entries -> rows the engine accepts.
 
-    An unchanged row (same object, same handle) is passed through: the
-    engine restores the original message verbatim. Anything else is a text
-    row with no handle, which the engine turns into a new message whose
-    bytes are still the transcript's own, cut or with an elision note.
+    A plain row whose text survived untouched is passed through as the same
+    object, handle and all, and the engine restores the original message
+    verbatim. Anything else — a tool row, or a block that was cut — is a text
+    row whose bytes are still the transcript's own, cut or with an elision
+    note.
     """
-    out = [{"role": "user", "text": ROWS_HEADER, "toolUses": [], "toolResults": []}]
+    out = [text_row("user", ROWS_HEADER)]
     for k in kept:
-        row = blocks[k["i"]]["row"]
-        if (k["kind"] == "full" and plain_row(row)
-                and len((row.get("text") or "")) <= KEEP_CHARS):
-            out.append(row)
-            continue
-        out.append({"role": row.get("role") or "assistant", "text": k["text"],
-                    "toolUses": [], "toolResults": []})
+        block = blocks[k["i"]]
+        if plain_row(block["row"]) and k["text"] == block["text"]:
+            out.append(block["row"])
+        else:
+            out.append(text_row(block["role"], k["text"]))
     return out
 
 
-def rows(stdin) -> int:
-    """`session.compact` bridge: {trigger, instructions, cwd, session_id,
-    messages} in, {messages} or {fallback} out. `fallback` tells the module
-    to call next(e) so the built-in summary runs; nothing here ever leaves
-    the conversation uncompacted."""
-    try:
-        event = json.load(stdin)
-    except ValueError as e:
-        print(json.dumps({"fallback": f"unreadable event: {e}"}))
-        return 0
-    if not isinstance(event, dict):
-        print(json.dumps({"fallback": "event is not an object"}))
-        return 0
-    # `/compact <text>`, capped because it rides in every chunk's state.
-    directive = (event.get("instructions") or "").strip()[:DIRECTIVE_CHARS] or None
-    incoming = [r for r in event.get("messages") or [] if isinstance(r, dict)]
-    blocks = []
-    for r in incoming:
-        text = row_text(r)
-        if text is not None:
-            blocks.append({"role": r.get("role") or "assistant", "text": text, "row": r})
-    blocks = blocks[-MAX_BLOCKS:]
-    if not blocks:
-        print(json.dumps({"fallback": "no judgeable rows"}))
-        return 0
-    try:
-        kept, stats = select_blocks(blocks, event.get("cwd"), directive)
-    except jev.JevError as e:
-        print(json.dumps({"fallback": f"jev: {e}"}))
-        return 0
-    stats["rows_in"] = len(incoming)
-    if stats.get("reduction", 0) < MIN_REDUCTION:
-        log_stats({"session_id": event.get("session_id"), "source": "rows"},
-                  {**stats, "gated": True})
-        print(json.dumps({"fallback": f"only {stats['reduction']:.0%} smaller; "
-                                      "letting the built-in summary run"}))
-        return 0
-    out = rows_out(blocks, kept)
-    stats["rows_out"] = len(out)
-    stats["passed_through"] = sum(1 for r in out if r.get("handle"))
-    log_stats({"session_id": event.get("session_id"), "source": "rows"}, stats)
-    print(json.dumps({"messages": out, "stats": {
-        "kept": stats["kept"], "truncated": stats["truncated"],
-        "reduction": stats["reduction"], "ms": stats["ms"]}}))
+def fallback(reason: str) -> int:
+    """Answer the module with a reason to call next(e). Always exit 0: a
+    failure here must never look like one to the host."""
+    print(json.dumps({"fallback": reason}))
     return 0
 
 
-def log_stats(event: dict, stats: dict) -> None:
+def log_stats(session_id: str | None, stats: dict) -> None:
     try:
         os.makedirs(os.path.dirname(STATS_LOG), exist_ok=True)
         with open(STATS_LOG, "a") as f:
             f.write(json.dumps({
                 "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "session_id": event.get("session_id"),
-                "source": event.get("source") or event.get("hook_event_name") or "prepare",
+                "session_id": session_id,
+                "source": "rows",
                 **stats,
             }) + "\n")
     except OSError:
         pass
+
+
+def rows(stdin) -> int:
+    """`session.compact` bridge: {trigger, instructions, cwd, session_id,
+    messages} in, {messages, summary} or {fallback} out. `fallback` tells the
+    module to call next(e) so the built-in summary runs; nothing here ever
+    leaves the conversation uncompacted."""
+    try:
+        event = json.load(stdin)
+    except ValueError as e:
+        return fallback(f"unreadable event: {e}")
+    if not isinstance(event, dict):
+        return fallback("event is not an object")
+    # `/compact <text>`, capped because it rides in every chunk's state.
+    directive = (event.get("instructions") or "").strip()[:DIRECTIVE_CHARS] or None
+    incoming = [r for r in event.get("messages") or [] if isinstance(r, dict)]
+    # Newest first, stopping at the window: rendering rows that fall outside
+    # it is the one cost here that grows with the session.
+    blocks = []
+    for r in reversed(incoming):
+        if len(blocks) == MAX_BLOCKS:
+            break
+        text = row_text(r)
+        if text is not None:
+            blocks.append({"role": r.get("role") or "assistant", "text": text, "row": r})
+    blocks.reverse()
+    if not blocks:
+        return fallback("no judgeable rows")
+    try:
+        kept, stats = select_blocks(blocks, event.get("cwd"), directive)
+    except jev.JevError as e:
+        return fallback(f"jev: {e}")
+    stats["trigger"] = event.get("trigger")
+    stats["rows_in"] = len(incoming)
+    if stats.get("reduction", 0) < MIN_REDUCTION:
+        log_stats(event.get("session_id"), {**stats, "gated": True})
+        return fallback(f"only {stats['reduction']:.0%} smaller; "
+                        "letting the built-in summary run")
+    out = rows_out(blocks, kept)
+    stats["rows_out"] = len(out)
+    stats["passed_through"] = sum(1 for r in out if r.get("handle"))
+    log_stats(event.get("session_id"), stats)
+    what = f"{stats['trigger']} compaction" if stats["trigger"] else "compaction"
+    print(json.dumps({"messages": out, "summary": (
+        f"{what} replaced by {len(out)} rows (kept {stats['kept']}, "
+        f"{stats['truncated']} truncated, {stats['reduction']:.0%} smaller, "
+        f"{stats['ms']} ms)")}))
+    return 0
 
 
 def main() -> int:
@@ -531,8 +544,7 @@ def main() -> int:
         try:
             return rows(sys.stdin)
         except Exception as e:  # the module falls through on any non-{messages} answer
-            print(json.dumps({"fallback": f"compactor.py: {e}"}))
-            return 0
+            return fallback(f"compactor.py: {e}")
     print("usage: compactor.py rows  (reads a session.compact event on stdin)",
           file=sys.stderr)
     return 2

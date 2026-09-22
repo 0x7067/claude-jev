@@ -22,16 +22,17 @@ explains what each hook decides and why. Read it before changing behavior.
 
 ## Invariants
 
-- **Hooks fail open.** A hook exits 0 and prints nothing on any error, missing
-  key, or timeout. Keep the `except Exception: return` at the top of every
-  hook `main`. Never add a path where a failure blocks or corrupts a session.
-  `compactor.py rows` fails open differently: it answers `{"fallback": ...}`
-  on stdout and exits 0, and `hooks/register.ts` then calls `next(e)`.
+- **Hooks fail open.** A failure never blocks or alters a session. Command
+  hooks exit 0 and print nothing on any error, missing key, or timeout; keep
+  the `except Exception: return` at the top of every hook `main`. The `rows`
+  bridge answers `{"fallback": ...}` on stdout and exits 0, and
+  `hooks/register.ts` then calls `next(e)` so the built-in summary runs.
 - **Python 3 standard library only.** No dependency file, no third-party
   imports. `urllib.request` is the HTTP client. The one non-Python file,
   `hooks/register.ts`, exists because Claude Code loads function-hook modules
   as JavaScript; it holds no judgment, only the call into `compactor.py rows`
-  and the fail-open fallthrough to `next(e)`. Keep it that way.
+  and the fail-open fallthrough to `next(e)`. Even its debug-log line is the
+  `summary` string Python sends. Keep it that way.
 - **One environment variable:** `TYPESAFE_API_KEY`. Do not add another, and
   do not add a fallback name. Every other tunable is a module-level constant.
 - **A constant carries a comment saying why it has that value.** Thresholds
