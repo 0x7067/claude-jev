@@ -10,7 +10,7 @@ explains what each hook decides and why. Read it before changing behavior.
 |---|---|
 | `scripts/jev.py` | API client and CLI. Every other script imports it. |
 | `scripts/prompt_router.py` | `UserPromptSubmit` — routing hint |
-| `scripts/subagent_router.py` | `PreToolUse` on `Agent\|Task` — sets subagent model |
+| `scripts/subagent_router.py` | `PreToolUse` on `Agent\|Task` — sets subagent model, denies a file-changing brief that omits paths, acceptance, verification, or commit policy |
 | `scripts/rules.py` | `PostToolUse` on edits, and `Stop` — rule enforcement |
 | `scripts/compactor.py` | The `rows` bridge behind `session.compact`; `judge` is kept for the eval |
 | `hooks/register.ts` | Experimental function-hooks module: `session.compact` -> `compactor.py rows`. A bridge, not a second implementation. |
