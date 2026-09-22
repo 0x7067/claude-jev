@@ -1,0 +1,29 @@
+README.md
+  s_5cfb1a32fce1ec::t_6634abf47a4a3d 37,74
+.claude-plugin/plugin.json
+  s_5cfb1a32fce1ec::t_6634abf47a4a3d 3
+scripts/compactor.py
+  s_5cfb1a32fce1ec::t_6634abf47a4a3d 14
+docs/compaction-design.md
+  s_5cfb1a32fce1ec::t_6634abf47a4a3d 40-42,321
+eval/compare.py
+  s_5cfb1a32fce1ec::t_6634abf47a4a3d 375-376,378,496
+docs/claude-code-compaction-research.md
+  s_5cfb1a32fce1ec::t_6634abf47a4a3d 385-387,415
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "66139077605e5bf0f9f64ac67f747ee2d7a5b523",
+  "prompts": {},
+  "sessions": {
+    "s_5cfb1a32fce1ec": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "11cdb6fd-f296-4607-b38b-79778c096374",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
