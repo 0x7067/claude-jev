@@ -189,15 +189,27 @@ def intent_bundle() -> dict:
 
 
 TIER_CRITERIA = {
-    "haiku": "Bounded, mechanical work with a clear stop condition: search, "
-             "fetch, count, summarize, list callers, run a command and report "
-             "its output",
-    "sonnet": "Ordinary implementation from a complete brief: focused edits, "
-              "a standard feature in known files, a bug with a clear signal, "
-              "mechanical changes across files",
-    "opus": "Work that needs judgment the brief cannot pin down: ambiguous "
-            "multi-file changes, subtle bugs, design inside a module, a "
-            "review that must find what is wrong",
+    "haiku": "Bounded, mechanical work with a clear stop condition and no "
+             "design choices: search, fetch, count, summarize, list callers, "
+             "run a named command and report its output, apply a rename or "
+             "one-line change that the brief spells out exactly. If the "
+             "brief says precisely what to do and where, this is enough",
+    "sonnet": "Ordinary implementation from a complete brief: focused edits "
+              "or a standard feature in named files, a bug with a clear "
+              "reproduction or error message, mechanical changes across "
+              "several files that follow an existing pattern. Needs local "
+              "judgment about code, not decisions about design",
+    "opus": "Work where the brief leaves real decisions open: an ambiguous "
+            "multi-file change, a bug with no clear signal, design inside a "
+            "module, a review that must find what is wrong rather than "
+            "confirm what is right, changes in tangled or unfamiliar code. "
+            "The default for hard work",
+    "fable": "Only when a cheaper tier would likely return a confident wrong "
+             "answer: adversarial review of an architecture or a "
+             "security-sensitive design, debugging across systems where the "
+             "cause is unknown and the evidence conflicts, or a task whose "
+             "acceptance criteria cannot be written down in advance. Rare "
+             "and the most expensive; not for implementation",
 }
 
 BRIEF_CHECKS = {

@@ -42,7 +42,7 @@ GUIDANCE = {
     "ops": "Likely a command/build/git task — run it and report the output.",
 }
 
-TIER_ORDER = ["haiku", "sonnet", "opus"]
+TIER_ORDER = ["haiku", "sonnet", "opus", "fable"]
 
 
 def conversation_tail(transcript_path: str, prompt: str) -> tuple[str, str, str | None]:

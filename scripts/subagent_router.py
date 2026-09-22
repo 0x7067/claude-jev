@@ -32,7 +32,7 @@ MIN_CONFIDENCE = 0.75
 BRIEF_MISSING = 0.25
 DEFAULT_LOG = os.path.expanduser("~/.claude/jev-router-log.jsonl")
 USER_RULES = os.path.expanduser("~/.claude/CLAUDE.md")
-TIERS = ("haiku", "sonnet", "opus")
+TIERS = ("haiku", "sonnet", "opus", "fable")
 BRIEF_PARTS = {
     "brief_paths": "the exact files or paths to work in",
     "brief_acceptance": "acceptance criteria",
