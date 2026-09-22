@@ -4,7 +4,11 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-09-22
+
 - The release skill and script moved out of the plugin into `.claude/skills/release`; `/claude-jev:release` no longer exists for plugin users.
+
+[0.16.1]: https://github.com/0x7067/claude-jev/compare/v0.16.0...v0.16.1
 
 ## [0.16.0] - 2026-09-22
 
