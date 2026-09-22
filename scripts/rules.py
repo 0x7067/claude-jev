@@ -62,6 +62,21 @@ MAX_CONTEXT_CHARS = 1200
 # Enough for any real source directory; past that the list is noise in the
 # state and the judge stops reading it.
 SIBLING_CAP = 40
+# A rule in the flag band is one the judge could not settle from the hunk
+# alone. The second call is where the expensive context goes, so the common
+# case (nothing flagged) still costs one request.
+ESCALATE = True
+MAX_BLOCK_CHARS = 3000
+RULE_CONTEXT_CHARS = 400
+# Per-rule act thresholds, learned from how the rule behaves on real edits.
+# A rule that sits near zero on everything it does not govern has earned a
+# lower bar; one that hovers in the middle everywhere has not.
+CALIB_FILE = os.path.expanduser("~/.claude/jev-rules-calib.json")
+ACT_DECISIVE = 0.70
+ACT_NOISY = 0.85
+CALIB_MIN_CHECKS = 20   # below this the median is an accident, not a habit
+CALIB_DECISIVE = 0.10
+CALIB_NOISY = 0.25
 RELEVANCE_GATE = True  # off only to attribute a measurement to this change
 DEFAULT_LOG = os.path.expanduser("~/.claude/jev-router-log.jsonl")
 BLOCK_DIR = os.path.expanduser("~/.claude/jev-rule-blocks")
@@ -376,6 +391,8 @@ def parse_rules(path: str, base_label: str | None = None,
     for idx, (line_no, text) in enumerate(items):
         if idx not in meta:
             continue
+        around = " ".join(t for _ln, t in items[max(0, idx - 1):idx + 2]
+                          if t != text)[:RULE_CONTEXT_CHARS]
         if len(text) > MAX_ITEM_CHARS:
             cut = text.rfind(". ", 0, MAX_ITEM_CHARS)
             text = text[: cut + 1] if cut > 100 else text[:MAX_ITEM_CHARS]
@@ -392,7 +409,7 @@ def parse_rules(path: str, base_label: str | None = None,
                       "file": base, "line": line_no, "scope": scope,
                       "when": meta[idx]["when"], "file_hash": file_hash,
                       "polarity": meta[idx]["polarity"],
-                      "subject": meta[idx]["subject"]})
+                      "subject": meta[idx]["subject"], "context": around})
     return rules
 
 
@@ -679,12 +696,48 @@ def file_context(path: str, needle: str) -> str:
     return ""
 
 
-def rule_question(rule: dict) -> dict:
+STRICT_PREAMBLE = ("This edit was already judged possibly in breach of this "
+                   "rule. Decide it. ")
+
+
+def enclosing_block(path: str, needle: str) -> str:
+    """The function or class the anchor line sits in, by indentation. Read
+    after the edit, so it shows the code as the agent left it."""
+    if not path or not needle:
+        return ""
+    try:
+        with open(path, errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return ""
+    anchor = next((i for i, l in enumerate(lines) if needle in l), None)
+    if anchor is None:
+        return ""
+    def indent(l: str) -> int:
+        return len(l) - len(l.lstrip())
+    depth = indent(lines[anchor])
+    start = anchor
+    for i in range(anchor - 1, -1, -1):
+        if lines[i].strip() and indent(lines[i]) < depth:
+            start = i
+            depth = indent(lines[i])
+            if depth == 0:
+                break
+    end = len(lines)
+    for i in range(anchor + 1, len(lines)):
+        if lines[i].strip() and indent(lines[i]) <= depth and i > start:
+            end = i
+            break
+    return "\n".join(lines[start:end])[:MAX_BLOCK_CHARS]
+
+
+def rule_question(rule: dict, strict: bool = False) -> dict:
     """One yes/no question per rule, in the user's own words. The answer is
     the probability the rule is broken. Asked as one concrete check —
     does the new code do the forbidden thing, or lack the required one —
     because "does this edit violate X" invites a judgment on pre-existing
     code the agent did not write."""
+    pre = STRICT_PREAMBLE if strict else ""
     edit = rule.get("when") == "edit"
     subject = "this edit" if edit else "the changes this agent made"
     scope_note = ("Judge only what the edit itself introduces, not "
@@ -693,7 +746,7 @@ def rule_question(rule: dict) -> dict:
     if (rule.get("polarity") or DEFAULT_POLARITY) == "require":
         what = ("this edit" if edit else "these changes")
         return {"type": "noul",
-                "instructions": f"Does {what} add or change code that this rule "
+                "instructions": pre + f"Does {what} add or change code that this rule "
                                 f"clearly covers, and do it WITHOUT what the rule "
                                 f"requires: \"{rule['text']}\"? Answer yes only "
                                 f"when both hold and the requirement is plainly "
@@ -705,7 +758,7 @@ def rule_question(rule: dict) -> dict:
     added = ("the ADDED or CHANGED code in this edit" if edit
              else "the ADDED or CHANGED code in these changes")
     return {"type": "noul",
-            "instructions": f"Does {added} do what this rule forbids: "
+            "instructions": pre + f"Does {added} do what this rule forbids: "
                             f"\"{rule['text']}\"? {scope_note}",
             "criteria": EDIT_FORBID_CRITERIA}
 
@@ -756,21 +809,26 @@ def record_hunk(state: dict, rel: str, hunk: str) -> None:
 ADDED_HEAD_CHARS = 200
 
 
+def added_body(hunk: str) -> str:
+    """Just the lines the edit puts in the file, whichever shape the hunk
+    came in: an Edit's ADDED section, a whole new file, or the + side of a
+    git diff."""
+    marker = "ADDED:\n"
+    if marker in hunk:
+        return hunk.split(marker, 1)[1]
+    if hunk.startswith("NEW FILE"):
+        return hunk.split("\n", 1)[1] if "\n" in hunk else ""
+    if hunk.lstrip().startswith(("diff --git", "---", "@@", "index ")):
+        return "\n".join(l[1:] for l in hunk.splitlines()
+                          if l.startswith("+") and not l.startswith("+++"))
+    return hunk
+
+
 def added_head(hunk: str) -> str:
     """The start of what the edit put in the file. A later pass matches it
     against the file's next state: an unrelated edit to the same file is not
     a repair."""
-    marker = "ADDED:\n"
-    if marker in hunk:
-        body = hunk.split(marker, 1)[1]
-    elif hunk.startswith("NEW FILE"):
-        body = hunk.split("\n", 1)[1] if "\n" in hunk else ""
-    elif hunk.lstrip().startswith(("diff --git", "---", "@@", "index ")):
-        body = "\n".join(l[1:] for l in hunk.splitlines()
-                          if l.startswith("+") and not l.startswith("+++"))
-    else:
-        body = hunk
-    return body.strip()[:ADDED_HEAD_CHARS]
+    return added_body(hunk).strip()[:ADDED_HEAD_CHARS]
 
 
 def input_digest(event: dict) -> str | None:
@@ -792,7 +850,8 @@ def log_decision(event: dict, answers: dict, probs: dict, violations: list,
                  n_rules: int, n_scoped_out: int, phase: str,
                  input_hash: str | None = None, blocked: list | None = None,
                  hashes: dict | None = None, ms: int | None = None,
-                 n_irrelevant: int = 0, head: str | None = None) -> None:
+                 n_irrelevant: int = 0, head: str | None = None,
+                 escalated: list | None = None) -> None:
     try:
         with open(DEFAULT_LOG, "a") as f:
             f.write(json.dumps({
@@ -807,6 +866,7 @@ def log_decision(event: dict, answers: dict, probs: dict, violations: list,
                 "n_rules": n_rules,
                 "n_scoped_out": n_scoped_out,
                 "n_irrelevant": n_irrelevant,
+                "escalated": escalated or [],
                 "ms": ms,
                 "probs": probs,
                 "violations": violations,
@@ -829,7 +889,7 @@ def cite(v: dict) -> str:
             f"\"{text}\" ({v['prob']:.2f})")
 
 
-def ask_rules(state_text: str, rules: list[dict]) -> dict:
+def ask_rules(state_text: str, rules: list[dict], strict: bool = False) -> dict:
     """One batched request, questions keyed by rule id."""
     if not rules:
         return {}
@@ -842,24 +902,60 @@ def ask_rules(state_text: str, rules: list[dict]) -> dict:
             n += 1
         seen.add(key)
         r["_qkey"] = key
-        questions[key] = rule_question(r)
+        questions[key] = rule_question(r, strict)
     return jev.ask(state_text, questions)
 
 
-def collect_verdicts(rules: list[dict], answers: dict,
-                     act: float, flag: float) -> tuple[list[dict], dict]:
-    """(hits at or above flag, every rule's probability for calibration)."""
-    hits, probs = [], {}
+def load_calib() -> dict:
+    """Per-rule {median, n} over past real edits, written by
+    `rules_eval.py report --write-calib`. Absent, every rule acts at ACT."""
+    try:
+        with open(CALIB_FILE) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+CALIB = load_calib()
+
+
+def act_for(rule: dict, act: float = ACT, calib: dict | None = None) -> float:
+    """The threshold this rule blocks at."""
+    c = (CALIB if calib is None else calib).get(rule["id"])
+    if not isinstance(c, dict) or act != ACT:
+        return act
+    median, n = c.get("median"), c.get("n", 0)
+    if not isinstance(median, (int, float)):
+        return act
+    if n >= CALIB_MIN_CHECKS and median <= CALIB_DECISIVE:
+        return ACT_DECISIVE
+    if median >= CALIB_NOISY:
+        return ACT_NOISY
+    return act
+
+
+def hits_from(rules: list[dict], probs: dict, act: float,
+              flag: float) -> list[dict]:
+    """Every rule at or above flag, banded against its own act threshold."""
+    hits = []
     for r in rules:
-        p = verdict(answers.get(r.get("_qkey") or r["id"]))
-        probs[r["id"]] = round(p, 3)
+        p = probs.get(r["id"], 0.0)
         if p >= flag:
             hits.append({"rule": r["id"], "text": r["text"],
                          "file": r["file"], "line": r.get("line", 0),
                          "polarity": r.get("polarity"), "subject": r.get("subject"),
                          "prob": round(p, 2),
-                         "band": "act" if p >= act else "flag"})
-    return hits, probs
+                         "band": "act" if p >= act_for(r, act) else "flag"})
+    return hits
+
+
+def collect_verdicts(rules: list[dict], answers: dict,
+                     act: float, flag: float) -> tuple[list[dict], dict]:
+    """(hits at or above flag, every rule's probability for calibration)."""
+    probs = {r["id"]: round(verdict(answers.get(r.get("_qkey") or r["id"])), 3)
+             for r in rules}
+    return hits_from(rules, probs, act, flag), probs
 
 
 def scoped_rules(rules: list[dict], phase: str, files: list[str]) -> list[dict]:
@@ -888,10 +984,11 @@ def scoped_rules(rules: list[dict], phase: str, files: list[str]) -> list[dict]:
 
 
 def judge_edit(rel: str, hunk: str, task: str, in_scope: list[dict],
-               context: str = "", siblings: str = "", act: float = ACT,
-               flag: float = FLAG) -> tuple[list[dict], dict, dict, list[dict]]:
+               context: str = "", siblings: str = "", block: str = "",
+               act: float = ACT, flag: float = FLAG
+               ) -> tuple[list[dict], dict, dict, list[dict], list[str]]:
     """One judged edit, no session side effects:
-    (hits, probs, answers, rules skipped as irrelevant).
+    (hits, probs, answers, rules skipped as irrelevant, rules escalated).
     The hook and the eval harness share this so they measure the same thing."""
     parts = [f"File: {rel}"]
     if task:
@@ -905,7 +1002,30 @@ def judge_edit(rel: str, hunk: str, task: str, in_scope: list[dict],
         parts.append(f"Local modules importable from this file's directory: {names}")
     answers = ask_rules("\n\n".join(parts), asked)
     hits, probs = collect_verdicts(in_scope, answers, act, flag)
-    return hits, probs, answers, skipped
+
+    escalated: list[str] = []
+    undecided = [r for r in asked
+                 if flag <= probs.get(r["id"], 0.0) < act_for(r, act)]
+    if ESCALATE and undecided:
+        extra = list(parts)
+        if block:
+            extra.append(f"The function or block this edit landed in, after "
+                         f"the edit:\n{block}")
+        around = "\n".join(f"[{r['id']}] {r['context']}" for r in undecided
+                            if r.get("context"))
+        if around:
+            extra.append(f"The instruction file says, around this rule:\n{around}")
+        try:
+            second = ask_rules("\n\n".join(extra), undecided, strict=True)
+        except jev.JevError:
+            second = {}
+        if second:
+            for r in undecided:
+                probs[r["id"]] = round(verdict(second.get(r.get("_qkey")
+                                                          or r["id"])), 3)
+                escalated.append(r["id"])
+            hits = hits_from(in_scope, probs, act, flag)
+    return hits, probs, answers, skipped, escalated
 
 
 def handle_edit(event: dict) -> dict:
@@ -932,9 +1052,10 @@ def handle_edit(event: dict) -> dict:
     task = last_user_prompt(event.get("transcript_path"))
     context = file_context(file_path, needle_of(inp))
     siblings = sibling_modules(file_path)
+    block = enclosing_block(file_path, needle_of(inp)) if ESCALATE else ""
     t0 = time.monotonic()
-    hits, probs, answers, skipped = judge_edit(rel, state, task, in_scope,
-                                               context, siblings)
+    hits, probs, answers, skipped, escalated = judge_edit(
+        rel, state, task, in_scope, context, siblings, block)
     ms = int((time.monotonic() - t0) * 1000)
     acting, flagged = [], []
     for v in hits:
@@ -952,7 +1073,8 @@ def handle_edit(event: dict) -> dict:
                  input_hash=input_digest(event),
                  blocked=[v["rule"] for v in acting],
                  hashes=rule_hashes(in_scope), ms=ms,
-                 n_irrelevant=len(skipped), head=added_head(state))
+                 n_irrelevant=len(skipped), head=added_head(state),
+                 escalated=escalated)
 
     out = {}
     if flagged:
