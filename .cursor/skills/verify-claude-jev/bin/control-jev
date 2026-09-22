@@ -80,11 +80,36 @@ path_under() {
   [[ "$resolved" == "$base" || "$resolved" == "$base"/* ]]
 }
 
-# VERIFY_HOME must be exactly /tmp/jev-verify-$RUN_ID (no symlink escape).
+# VERIFY_HOME as a private 0700 dir owned by us — same rules as STATE_DIR.
+# Creates with mkdir -m 700 when absent; refuses foreign/symlink trees.
+ensure_verify_home() {
+  local uid owner expected resolved
+  uid="$(id -u)"
+  validate_run_id "$RUN_ID"
+  expected="/tmp/jev-verify-$RUN_ID"
+  [[ -n "${VERIFY_HOME:-}" ]] || die "VERIFY_HOME unset"
+  [[ "$VERIFY_HOME" == "$expected" ]] || die "VERIFY_HOME must be $expected (got: $VERIFY_HOME)"
+  [[ "$VERIFY_HOME" != *..* ]] || die "VERIFY_HOME must not contain .. (got: $VERIFY_HOME)"
+  if [[ -e "$VERIFY_HOME" || -L "$VERIFY_HOME" ]]; then
+    [[ ! -L "$VERIFY_HOME" ]] || die "VERIFY_HOME must not be a symlink (got: $VERIFY_HOME)"
+    [[ -d "$VERIFY_HOME" ]] || die "VERIFY_HOME exists and is not a directory: $VERIFY_HOME"
+    owner="$(stat -c '%u' "$VERIFY_HOME" 2>/dev/null || stat -f '%u' "$VERIFY_HOME")"
+    [[ "$owner" == "$uid" ]] || die "VERIFY_HOME not owned by current user: $VERIFY_HOME (owner=$owner)"
+    resolved="$(realpath "$VERIFY_HOME")"
+    [[ "$resolved" == "$expected" ]] || die "resolved VERIFY_HOME $resolved != $expected"
+    chmod 700 "$VERIFY_HOME"
+  else
+    mkdir -m 700 "$VERIFY_HOME"
+  fi
+}
+
+# VERIFY_HOME must be exactly /tmp/jev-verify-$RUN_ID (no symlink escape),
+# owned by us with mode tightened to 0700 when present.
 # EVIDENCE_DIR must resolve under ARTIFACTS_ROOT as ARTIFACTS_ROOT/$RUN_ID.
 assert_run_paths() {
   validate_run_id "$RUN_ID"
-  local expected="/tmp/jev-verify-$RUN_ID"
+  local expected="/tmp/jev-verify-$RUN_ID" uid owner resolved
+  uid="$(id -u)"
   [[ -n "${VERIFY_HOME:-}" ]] || die "VERIFY_HOME unset"
   [[ -n "${EVIDENCE_DIR:-}" ]] || die "EVIDENCE_DIR unset"
   [[ "$VERIFY_HOME" == "$expected" ]] || die "VERIFY_HOME must be $expected (got: $VERIFY_HOME)"
@@ -92,9 +117,11 @@ assert_run_paths() {
   if [[ -e "$VERIFY_HOME" || -L "$VERIFY_HOME" ]]; then
     [[ ! -L "$VERIFY_HOME" ]] || die "VERIFY_HOME must not be a symlink (got: $VERIFY_HOME)"
     [[ -d "$VERIFY_HOME" ]] || die "VERIFY_HOME exists and is not a directory: $VERIFY_HOME"
-    local resolved
+    owner="$(stat -c '%u' "$VERIFY_HOME" 2>/dev/null || stat -f '%u' "$VERIFY_HOME")"
+    [[ "$owner" == "$uid" ]] || die "VERIFY_HOME not owned by current user: $VERIFY_HOME (owner=$owner)"
     resolved="$(realpath "$VERIFY_HOME")"
     [[ "$resolved" == "$expected" ]] || die "resolved VERIFY_HOME $resolved != $expected"
+    chmod 700 "$VERIFY_HOME"
   fi
   local expected_ev artifacts_resolved ev_resolved
   artifacts_resolved="$(realpath -m "$ARTIFACTS_ROOT")"
@@ -134,8 +161,9 @@ load_state() {
 
 write_state() {
   ensure_state_dir
+  ensure_verify_home
   assert_run_paths
-  mkdir -p "$VERIFY_HOME" "$EVIDENCE_DIR"
+  mkdir -p "$EVIDENCE_DIR"
   # Single validated assignment — no shell metacharacters in RUN_ID.
   printf 'RUN_ID=%s\n' "$RUN_ID" >"$STATE_FILE"
   chmod 600 "$STATE_FILE"
@@ -179,13 +207,15 @@ cmd_launch() {
   ensure_state_dir
   if [[ "${1:-}" == "--reuse" ]]; then
     load_state || die "no state to reuse; run: control-jev launch"
-    mkdir -p "$VERIFY_HOME" "$EVIDENCE_DIR"
+    ensure_verify_home
+    mkdir -p "$EVIDENCE_DIR"
   else
     RUN_ID="${JE_VERIFY_RUN_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
     validate_run_id "$RUN_ID"
     VERIFY_HOME="/tmp/jev-verify-$RUN_ID"
     EVIDENCE_DIR="$ARTIFACTS_ROOT/$RUN_ID"
-    mkdir -p "$VERIFY_HOME" "$EVIDENCE_DIR"
+    ensure_verify_home
+    mkdir -p "$EVIDENCE_DIR"
   fi
   assert_run_paths
   write_state
@@ -260,14 +290,17 @@ cmd_cleanup() {
   local run="$RUN_ID"
   local evidence="$EVIDENCE_DIR"
   local expected="/tmp/jev-verify-$run"
+  local uid owner resolved
+  uid="$(id -u)"
   assert_run_paths
   [[ "$home_to_remove" == "$expected" ]] || die "VERIFY_HOME must be $expected (got: $home_to_remove)"
   [[ ! -L "$home_to_remove" ]] || die "refusing to remove symlink VERIFY_HOME=$home_to_remove"
-  if [[ -e "$home_to_remove" ]]; then
-    local resolved
-    resolved="$(realpath "$home_to_remove")"
-    [[ "$resolved" == "$expected" ]] || die "resolved VERIFY_HOME $resolved != $expected (symlink escape?)"
-  fi
+  [[ -d "$home_to_remove" ]] || die "VERIFY_HOME missing before cleanup: $home_to_remove"
+  owner="$(stat -c '%u' "$home_to_remove" 2>/dev/null || stat -f '%u' "$home_to_remove")"
+  [[ "$owner" == "$uid" ]] || die "refusing to remove VERIFY_HOME not owned by current user (owner=$owner)"
+  resolved="$(realpath "$home_to_remove")"
+  [[ "$resolved" == "$expected" ]] || die "resolved VERIFY_HOME $resolved != $expected (symlink escape?)"
+  chmod 700 "$home_to_remove"
   rm -rf -- "$home_to_remove"
   rm -f -- "$STATE_FILE"
   cat <<EOF

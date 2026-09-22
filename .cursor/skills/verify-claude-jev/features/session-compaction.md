@@ -25,17 +25,21 @@ Preconditions:
 - `control-jev doctor` reports `doctor=ok` for this run.
 - Disposable verify home is set by `control-jev launch`.
 - `eval "$(control-jev env)"` so `$CLAUDE_PLUGIN_ROOT` is set for the event `cwd`.
+- `TYPESAFE_API_KEY` is unset for `rows-fallback-no-key` (in-band).
 
 - **Bad input fallback.** Feed empty stdin. Run `printf '' | control-jev rows`. Exit code `0` and stdout is JSON containing `"fallback"`.
 - **Pin-tail keep.** Feed two plain messages (under the pin-tail window). Write the event and run `control-jev rows "$EVENT_FILE"` with:
   `{"trigger":"manual","instructions":null,"cwd":"'"$CLAUDE_PLUGIN_ROOT"'","session_id":"verify-compact","messages":[{"role":"user","text":"hello world this is a real prompt"},{"role":"assistant","text":"hi there","toolUses":[],"toolResults":[]}]}`.
   Exit code `0`. Stdout JSON has `messages` whose texts include the fixed compaction header and both original strings, and a `summary` mentioning `manual compaction`.
-- **Proof.** Save stdout as `session-compaction/rows-out.json` via `control-jev save session-compaction/rows-out.json -`. The artifact contains `"hello world this is a real prompt"` and `"hi there"`. Also save the bad-input fallback line as `session-compaction/fallback.json`.
+- **No-key multi-row fallback.** With `TYPESAFE_API_KEY` unset, feed **five** judgeable plain messages so at least one falls outside `PIN_TAIL` (4) and must be scored. Write the event and run `control-jev rows "$NOKEY_FILE"` with:
+  `{"trigger":"manual","instructions":null,"cwd":"'"$CLAUDE_PLUGIN_ROOT"'","session_id":"verify-compact-nokey","messages":[{"role":"user","text":"turn one needs a real sentence"},{"role":"assistant","text":"reply one needs a real sentence","toolUses":[],"toolResults":[]},{"role":"user","text":"turn two needs a real sentence"},{"role":"assistant","text":"reply two needs a real sentence","toolUses":[],"toolResults":[]},{"role":"user","text":"turn three needs a real sentence"}]}`.
+  Exit code `0`. Stdout is JSON containing `"fallback"` and a reason that mentions `jev` (missing key / Jev error) — not a `messages` replacement.
+- **Proof.** Save pin-tail stdout as `session-compaction/rows-out.json` via `control-jev save session-compaction/rows-out.json -`. Save bad-input fallback as `session-compaction/fallback.json`. Save the no-key multi-row stdout as `session-compaction/fallback-nokey.json` via `control-jev save session-compaction/fallback-nokey.json -`. The last artifact contains `"fallback"` and does not contain a top-level `"messages"` array of kept rows.
 
 ## Gotchas
 
-- Newest `PIN_TAIL` (4) rows are never judged; a short fixture proves the bridge without an API key (in-band).
-- One-word acks (`ok`, `yes`, …) are not judgeable and can yield `fallback: no judgeable rows`.
+- Newest `PIN_TAIL` (4) rows are never judged; a short fixture proves the bridge without an API key (in-band). Five or more judgeable rows force a Jev call — without the key that is the `rows-fallback-no-key` path.
+- One-word acks (`ok`, `yes`, …) are not judgeable and can yield `fallback: no judgeable rows` instead of a Jev error; use full sentences in the no-key fixture.
 - A live Claude Code `/compact` through `hooks/register.ts` is **out-of-band** (needs Claude Code 2.1.278+, function hooks, trusted workspace). The stdin `rows` bridge is the in-band path.
 - Cleanup must not delete `artifacts/<RUN_ID>/session-compaction/`.
 - Skipping `eval "$(control-jev env)"` leaves `$CLAUDE_PLUGIN_ROOT` empty in the event `cwd`.
