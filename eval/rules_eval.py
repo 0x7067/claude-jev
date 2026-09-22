@@ -14,6 +14,10 @@
   report    detection on violations (at the block and flag bands, and
             whether the *expected* rule is the one that fired), false blocks
             on compliant cases and real edits, per-rule calibration.
+  pin       record each repo's HEAD in eval/private/pins.json. `run` then
+            judges against a detached worktree at that commit, so a rule
+            file edited in the live checkout does not move the numbers
+            until the pin is moved on purpose.
 
 The judge sees exactly what the hook would send: file path, the user's
 request, and the old->new hunk. Nothing is applied to any repo.
@@ -30,6 +34,7 @@ import json
 import os
 import random
 import statistics
+import subprocess
 import sys
 import threading
 import time
@@ -49,6 +54,11 @@ EDITS = os.path.join(DATA, "rules_edits.jsonl")
 # gitignored. Absent, `run` just judges whatever else was asked for.
 CASES = os.path.join(HERE, "private", "rules_cases.jsonl")
 PRED = os.path.join(DATA, "rules_pred.jsonl")
+# cwd -> commit sha. Pinned repos are judged from a detached worktree under
+# eval/data/pinned/, not the live checkout, so that editing a repo's rules
+# mid-experiment does not change what an old run would have measured.
+PINS = os.path.join(HERE, "private", "pins.json")
+PINNED = os.path.join(DATA, "pinned")
 CACHE = os.path.join(DATA, "rules_cache.jsonl")
 PROJECTS = os.path.expanduser("~/.claude/projects")
 
@@ -154,11 +164,64 @@ def case_hunk(rec: dict, cwd: str, rel: str) -> str:
     return "".join(diff)
 
 
-def judge(rec: dict, rule_cache: dict) -> dict:
+def git_out(cwd: str, *args: str) -> str | None:
+    try:
+        r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+_tops: dict[str, str | None] = {}
+
+
+def repo_root(cwd: str) -> str | None:
+    """Pins are keyed by repo root: several corpus cwds are subdirectories
+    of one checkout, and one commit covers them all."""
+    if cwd not in _tops:
+        _tops[cwd] = git_out(cwd, "rev-parse", "--show-toplevel") if os.path.isdir(cwd) else None
+    return _tops[cwd]
+
+
+def load_pins() -> dict[str, str]:
+    try:
+        with open(PINS) as f:
+            pins = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return {k: v for k, v in pins.items() if isinstance(v, str) and len(v) >= 7}
+
+
+def pinned_cwd(cwd: str, pins: dict[str, str]) -> tuple[str, str | None]:
+    """(directory to judge `cwd` from, sha): the same relative place inside
+    a detached worktree of the pinned commit, created on first use, or
+    (`cwd`, None) when its repo is unpinned. Worktrees are per sha, so
+    moving a pin materialises a new one; the old stays as a record of what
+    earlier runs saw."""
+    top = repo_root(cwd)
+    sha = pins.get(top) if top else None
+    if not sha:
+        return cwd, None
+    dest = os.path.join(PINNED, f"{os.path.basename(top)}-{sha[:12]}")
+    if not os.path.exists(os.path.join(dest, ".git")):
+        os.makedirs(PINNED, exist_ok=True)
+        r = subprocess.run(["git", "worktree", "add", "--detach", dest, sha], cwd=top,
+                           capture_output=True, text=True, timeout=120)
+        if r.returncode != 0:
+            raise SystemExit(f"cannot pin {top} at {sha[:12]}: {r.stderr.strip()}")
+    return os.path.normpath(os.path.join(dest, os.path.relpath(cwd, top))), sha
+
+
+def judge(rec: dict, rule_cache: dict, pins: dict[str, str] | None = None) -> dict:
     cwd = rec["cwd"]
     rel = rules.relative(rec["file_path"], cwd)
     out = {k: rec.get(k) for k in ("id", "kind", "cwd", "task", "violates", "expect", "note", "tags")}
     out["rel"] = rel
+    if pins:
+        with _lock:
+            cwd, sha = pinned_cwd(cwd, pins)
+        if sha:
+            out["sha"] = sha[:12]
     if rules.EXCLUDED.search(rel) or rules.outside(rel):
         out["skipped"] = "excluded path"
         return out
@@ -207,12 +270,17 @@ def cmd_run(args) -> int:
     jev.ask = cached_ask(cache, cache_f)
     rules.jev.ask = jev.ask
     rule_cache: dict = {}
+    pins = load_pins()
+    repos = {repo_root(r["cwd"]) or r["cwd"] for r in recs}
+    print(f"  {len(repos & set(pins))}/{len(repos)} repos pinned"
+          + ("" if pins else f" (no {os.path.relpath(PINS, HERE)}; run `pin`)"),
+          file=sys.stderr)
     done = 0
     results = []
 
     def work(rec):
         nonlocal done
-        r = judge(rec, rule_cache)
+        r = judge(rec, rule_cache, pins)
         with _lock:
             results.append(r)
             done += 1
@@ -355,6 +423,37 @@ def cmd_report(args) -> int:
     return 0
 
 
+def cmd_pin(args) -> int:
+    """HEAD of every repo the corpora reference. A repo already pinned keeps
+    its sha unless --move names it (or --move-all)."""
+    recs = load_jsonl(args.cases) + load_jsonl(EDITS)
+    pins = load_pins()
+    for cwd in sorted({r["cwd"] for r in recs}):
+        top = repo_root(cwd)
+        if not top:
+            print(f"  skip  (not a git repo)  {cwd}")
+            continue
+        if top != cwd:
+            continue  # covered by its root, listed on its own line
+        if top in pins and not (args.move_all or top in args.move):
+            print(f"  keep  {pins[top][:12]}  {top}")
+            continue
+        sha = git_out(top, "rev-parse", "HEAD")
+        if not sha:
+            print(f"  skip  (no commits)  {top}")
+            continue
+        dirty = git_out(top, "status", "--porcelain")
+        print(f"  {'move' if top in pins else 'pin '}  {sha[:12]}  {top}"
+              + ("  (working tree dirty; uncommitted rules are not pinned)" if dirty else ""))
+        pins[top] = sha
+    os.makedirs(os.path.dirname(PINS), exist_ok=True)
+    with open(PINS, "w") as f:
+        json.dump(pins, f, indent=2, sort_keys=True)
+        f.write("\n")
+    print(f"{len(pins)} pins -> {PINS}")
+    return 0
+
+
 def main() -> int:
     p = argparse.ArgumentParser(prog="rules_eval", description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -376,6 +475,12 @@ def main() -> int:
     rp.add_argument("--by-tag", action="store_true",
                     help="breakdown per tag; the case list shows only misses and false blocks")
     rp.set_defaults(fn=cmd_report)
+    pn = sub.add_parser("pin", help="record repo HEADs so runs judge a fixed commit")
+    pn.add_argument("--cases", default=CASES)
+    pn.add_argument("--move", nargs="*", default=[], metavar="CWD",
+                    help="re-pin these repos at their current HEAD")
+    pn.add_argument("--move-all", action="store_true")
+    pn.set_defaults(fn=cmd_pin)
     args = p.parse_args()
     return args.fn(args)
 

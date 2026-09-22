@@ -29,9 +29,19 @@ when it is there and carries on when it is not.
 
 ```bash
 python3 eval/rules_eval.py extract
+python3 eval/rules_eval.py pin
 python3 eval/rules_eval.py run --sample 250
 python3 eval/rules_eval.py report
 ```
+
+`pin` records the HEAD of every repo the corpora reference in
+`private/pins.json`. `run` then judges each edit from a detached worktree of
+that commit under `data/pinned/`, so rules edited in a live checkout do not
+move the numbers until you `pin --move <repo>` on purpose (`--move-all` for
+every repo). Each prediction records the `sha` it was judged at. Only
+committed rules are pinned: a dirty tree is reported, and `~/.claude/CLAUDE.md`
+is outside any repo, so it is always read live. Unpinned repos fall back to
+the live checkout.
 
 Answers cache in `data/rules_cache.jsonl`, keyed by model, state and questions,
 so re-running after an unrelated change costs nothing.
