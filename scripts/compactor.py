@@ -34,12 +34,15 @@ import jev  # noqa: E402
 
 KEEP_THRESHOLD = 0.5    # noul floor to keep a block
 MAX_BLOCKS = 150        # oldest blocks beyond the cap are dropped unjudged.
-                        # Sessions long enough to compact run to a median of
-                        # 116 blocks, so 45 judged 39% of the median one. 150
-                        # covers it whole and still fits one parallel wave.
+                        # 1200 is affordable but scored worse — 42% of
+                        # re-fetched artifacts held against 50% — because the
+                        # extra candidates crowd a fixed digest budget.
 PIN_TAIL = 4            # newest blocks always kept verbatim — the live working context
-CHUNK = 20              # questions per API call; chunks run in parallel
+CHUNK = 20              # questions per API call; chunks run in parallel. 40
+                        # halves the requests but judges worse: 61% of
+                        # re-fetched artifacts held against 66% here.
 BLOCKS_PER_CHUNK = CHUNK // 2   # two questions per block
+DIRECTIVE_CHARS = 500   # cap on `/compact <text>`; it rides in every chunk's state
 HEADER_CHARS = 1500     # session goals, repeated in every chunk's state — the
                         # length compact_state already used for them, and the
                         # repetition is now the main per-request overhead
@@ -47,10 +50,10 @@ MAX_WORKERS = 16        # socket bound; a long session fans out in waves instead
 BLOCK_CHARS = 1200      # chars of each block shown to Jev
 KEEP_CHARS = 1500       # chars of each kept block in the digest
 HEAD_CHARS = 400        # head retained on a truncated block
-TARGET_CHARS = 8000     # hard cap on digest size. Sized against the default
-                        # summarizer: 40k let a 150-block window inject ~5.4k
-                        # tokens, losing to the ~2.4k default it replaces.
-                        # A wider window is for choosing better, not keeping more.
+TARGET_CHARS = 16000    # hard cap on digest size, and the lever that decides
+                        # how much survives: 66% of re-fetched artifacts held
+                        # against 50% at 8k, 21 wins to none. ~3.9k tokens,
+                        # still under the summary it replaces; 40k overshoots.
 MIN_REDUCTION = 0.25    # required size reduction; compaction busts the prompt cache,
                         # so a weak selection must not ship
 STATS_LOG = os.path.expanduser("~/.claude/jev-compact-log.jsonl")
@@ -180,7 +183,8 @@ def transcript_blocks(transcript_path: str) -> list[dict]:
 
 
 def compact_state(blocks: list[dict], cwd: str | None,
-                  lo: int = 0, hi: int | None = None) -> str:
+                  lo: int = 0, hi: int | None = None,
+                  directive: str | None = None) -> str:
     """The state for one chunk: the session's goals, then only the blocks that
     chunk judges, labeled by their position in the whole transcript.
 
@@ -197,6 +201,8 @@ def compact_state(blocks: list[dict], cwd: str | None,
     ]
     if cwd:
         header.append(f"Working directory: {cwd}")
+    if directive:
+        header.append(f"The user asked this compaction to: {directive}")
     goal = "\n".join(b["text"][:300] for b in blocks
                      if b["role"] == "user")[-HEADER_CHARS:]
     if goal.strip():
@@ -206,10 +212,19 @@ def compact_state(blocks: list[dict], cwd: str | None,
     return "\n".join(header) + "\n\n" + body
 
 
-def keep_questions(n: int) -> dict:
+def keep_questions(n: int, directive: str | None = None) -> dict:
     """Two judgments per block: whether it is still needed at all, and
     whether it is needed verbatim — a `no` on the second means a truncated
-    head plus a pointer suffices, which is where most of the bulk is."""
+    head plus a pointer suffices, which is where most of the bulk is.
+
+    `/compact <text>` is named in the state, not repeated per question, and
+    both judgments defer to it: what the user asked to keep outranks what
+    the block would score on its own."""
+    asked = (" The state names what the user asked this compaction to do; a "
+             "block that request covers is needed, however old or routine."
+             if directive else "")
+    asked_full = (" If that request asks for this block's exact content, "
+                  "answer yes." if directive else "")
     questions = {}
     for i in range(n):
         questions[f"keep_{i}"] = {
@@ -218,25 +233,27 @@ def keep_questions(n: int) -> dict:
                             "(marked [{i}] in the state) still be needed to continue the work — "
                             "a decision, constraint, file path, error cause, or open task the "
                             "agent would otherwise lose? Answer yes only for lasting information "
-                            "value, not for politeness or because it is recent.",
+                            "value, not for politeness or because it is recent." + asked,
         }
         questions[f"full_{i}"] = {
             "type": "noul",
             "instructions": f"Does the agent need block [{i}] in full, verbatim? Answer no if "
                             "knowing the block happened plus its opening lines is enough — e.g. "
                             "a file read or command whose output the agent could re-run, versus "
-                            "an exact error message or constraint it could not reconstruct.",
+                            "an exact error message or constraint it could not reconstruct."
+                            + asked_full,
         }
     return questions
 
 
-def ask_chunked(blocks: list[dict], cwd: str | None, n: int) -> dict:
+def ask_chunked(blocks: list[dict], cwd: str | None, n: int,
+                directive: str | None = None) -> dict:
     """Judge the first `n` blocks, one request per BLOCKS_PER_CHUNK of them.
 
     Each request carries only its own blocks, so wall time stays ~1 round trip
     and request size stays flat however long the session is.
     """
-    questions = keep_questions(n)
+    questions = keep_questions(n, directive)
     ranges = [(i, min(i + BLOCKS_PER_CHUNK, n))
               for i in range(0, n, BLOCKS_PER_CHUNK)]
 
@@ -248,7 +265,7 @@ def ask_chunked(blocks: list[dict], cwd: str | None, n: int) -> dict:
         # `ex.map` re-raises on iteration, so without this a single timeout
         # would throw away the whole selection.
         try:
-            return jev.ask(compact_state(blocks, cwd, lo, hi), q)
+            return jev.ask(compact_state(blocks, cwd, lo, hi, directive), q)
         except jev.JevError:
             return {}
 
@@ -274,6 +291,18 @@ def cut_text(text: str, chars: int) -> str:
     return text[:cut] if cut > 0 else text[:chars]
 
 
+ELISION = "[… {n} chars elided by jev-compact — re-read the file or re-run the command if needed]"
+
+
+def cut_marked(text: str, chars: int) -> str:
+    """`cut_text`, but it says so when it cuts: a block that lost its tail
+    silently reads as whole."""
+    short = cut_text(text, chars)
+    if len(short) == len(text):
+        return text
+    return f"{short}\n" + ELISION.format(n=len(text) - len(short))
+
+
 def truncate_block(text: str) -> str:
     """Head of a kept block plus a pointer, instead of its full text — the
     block is visibly still there and the agent can re-read or re-run it."""
@@ -281,34 +310,32 @@ def truncate_block(text: str) -> str:
     if len(text) <= HEAD_CHARS + 200:
         return text
     head = cut_text(text, HEAD_CHARS)
-    return (f"{head}\n[… {len(text) - len(head)} chars elided by "
-            "jev-compact — re-read the file or re-run the command if needed]")
+    return f"{head}\n" + ELISION.format(n=len(text) - len(head))
 
 
 def fit_kept(kept: list[dict]) -> list[dict]:
     """Hard cap on the digest so the kept set can't grow without bound over
     a long session. No extra Jev calls: downgrade the lowest-confidence full
-    keeps to truncated heads first, then drop the weakest truncated blocks
-    oldest-first. Pinned tail blocks are exempt — that is the live context."""
+    keeps to truncated heads first, then drop the weakest remaining blocks,
+    oldest-first on a tie. Pinned tail blocks are exempt — that is the live
+    context."""
     total = sum(len(k["text"]) for k in kept)
     if total <= TARGET_CHARS:
         return kept
-    downgradable = sorted(
-        (k for k in kept if k["kind"] == "full"),
-        key=lambda k: k["full"],
-    )
-    for k in downgradable:
+    movable = [k for k in kept if not k.get("pinned")]
+    for k in sorted((k for k in movable if k["kind"] == "full"),
+                    key=lambda k: k["full"]):
         if total <= TARGET_CHARS:
             break
         shorter = truncate_block(k["text"])
+        if len(shorter) == len(k["text"]):
+            continue  # frees nothing, and costs the verbatim pass-through
         total -= len(k["text"]) - len(shorter)
         k["text"], k["kind"] = shorter, "truncated"
         k["escalated"] = True
-    droppable = sorted(
-        (k for k in kept if k["kind"] == "truncated"),
-        key=lambda k: k["keep"],
-    )
-    for k in droppable:
+    # A block too short to shrink must still be droppable, or the cap goes
+    # unenforced once nothing is left to downgrade.
+    for k in sorted(movable, key=lambda k: (k["keep"], k["i"])):
         if total <= TARGET_CHARS:
             break
         total -= len(k["text"])
@@ -324,7 +351,8 @@ def judge(transcript_path: str, cwd: str | None) -> tuple[list[str], dict]:
     return [k["text"] for k in kept], stats
 
 
-def select_blocks(blocks: list[dict], cwd: str | None) -> tuple[list[dict], dict]:
+def select_blocks(blocks: list[dict], cwd: str | None,
+                  directive: str | None = None) -> tuple[list[dict], dict]:
     """Jev keep/truncate/drop over labeled blocks. Each kept entry carries the
     block index `i`, its digest `text`, and `kind` (full or truncated), so the
     caller can hand back either the text or the row the block came from."""
@@ -332,13 +360,14 @@ def select_blocks(blocks: list[dict], cwd: str | None) -> tuple[list[dict], dict
         return [], {"judged": 0}
     n_judged = max(0, len(blocks) - PIN_TAIL)
     t0 = time.monotonic()
-    answers = ask_chunked(blocks, cwd, n_judged) if n_judged else {}
+    answers = ask_chunked(blocks, cwd, n_judged, directive) if n_judged else {}
     ms = int((time.monotonic() - t0) * 1000)
     kept: list[dict] = []
     for i, b in enumerate(blocks):
-        text = cut_text(b["text"], KEEP_CHARS)
+        text = cut_marked(b["text"], KEEP_CHARS)
         if i >= n_judged:  # pinned tail — kept verbatim, unjudged
-            kept.append({"i": i, "text": text, "kind": "full", "keep": 1.0, "full": 1.0})
+            kept.append({"i": i, "text": text, "kind": "full", "keep": 1.0,
+                         "full": 1.0, "pinned": True})
             continue
         keep = (answers.get(f"keep_{i}") or {}).get("noul")
         full = (answers.get(f"full_{i}") or {}).get("noul")
@@ -362,7 +391,7 @@ def select_blocks(blocks: list[dict], cwd: str | None) -> tuple[list[dict], dict
         if (k["text"].startswith("[tool_result]") and i > 0
                 and i - 1 not in kept_idx
                 and blocks[i - 1]["text"].startswith("[tool_use")):
-            paired.append({"i": i - 1, "text": cut_text(blocks[i - 1]["text"], KEEP_CHARS),
+            paired.append({"i": i - 1, "text": cut_marked(blocks[i - 1]["text"], KEEP_CHARS),
                            "kind": "full", "keep": k["keep"], "full": k["full"]})
             kept_idx.add(i - 1)
         paired.append(k)
@@ -437,10 +466,10 @@ def rows_out(blocks: list[dict], kept: list[dict]) -> list[dict]:
 
 
 def rows(stdin) -> int:
-    """`session.compact` bridge: {trigger, cwd, session_id, messages} in,
-    {messages} or {fallback} out. `fallback` tells the module to call
-    next(e) so the built-in summary runs; nothing here ever leaves the
-    conversation uncompacted."""
+    """`session.compact` bridge: {trigger, instructions, cwd, session_id,
+    messages} in, {messages} or {fallback} out. `fallback` tells the module
+    to call next(e) so the built-in summary runs; nothing here ever leaves
+    the conversation uncompacted."""
     try:
         event = json.load(stdin)
     except ValueError as e:
@@ -449,6 +478,8 @@ def rows(stdin) -> int:
     if not isinstance(event, dict):
         print(json.dumps({"fallback": "event is not an object"}))
         return 0
+    # `/compact <text>`, capped because it rides in every chunk's state.
+    directive = (event.get("instructions") or "").strip()[:DIRECTIVE_CHARS] or None
     incoming = [r for r in event.get("messages") or [] if isinstance(r, dict)]
     blocks = []
     for r in incoming:
@@ -460,7 +491,7 @@ def rows(stdin) -> int:
         print(json.dumps({"fallback": "no judgeable rows"}))
         return 0
     try:
-        kept, stats = select_blocks(blocks, event.get("cwd"))
+        kept, stats = select_blocks(blocks, event.get("cwd"), directive)
     except jev.JevError as e:
         print(json.dumps({"fallback": f"jev: {e}"}))
         return 0
