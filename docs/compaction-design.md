@@ -48,8 +48,8 @@ keyed on transcript lines plus a hash of `compactor.py`:
 | | default: summary + tail | jev: selection digest |
 |---|---|---|
 | context injected per event | 2.4-5.0k tok | 3.2-3.9k tok |
-| time to compact | ~117 s | ~1.3-1.7 s |
-| re-fetch coverage | 73-91% mentioned | 76-81% verbatim |
+| time to compact | ~117 s | ~0.9-1.1 s |
+| re-fetch coverage | 73-91% mentioned | 76-82% verbatim |
 
 Coverage means: after the compaction point the agent re-fetched a file,
 grep, glob or URL it had already fetched; the path string is present in the
@@ -329,10 +329,10 @@ when `compactor.py` changes, so each item costs one run. Ask before running.
 | Item | Column | Baseline | Expect |
 |---|---|---|---|
 | 1 question set | new `digest_kinds`: kept chars by kind | none | `decision`+`open` >= 10% of digest chars on sessions over 100 blocks (section 1.4) |
-| 1 question set | `refetch_jev_full` | 76-81% | Hold or rise. This is the verbatim number; a drop means the policy trades paths for reasoning, and the README must say so |
+| 1 question set | `refetch_jev_full` | 76-82% | Hold or rise. This is the verbatim number; a drop means the policy trades paths for reasoning, and the README must say so |
 | 1, 3 | `jev_tok` | 3.2-3.9k | Stay under the default's summary |
-| 2 tool units | `refetch_jev_covered` | at least the 76-81% verbatim | Rise toward 85-90% from pointers. Report as "path survived", not verbatim |
-| 2 tool units | `jev_ms` and a new `req_chars` column | ~1.3-1.7 s | Fall: fewer questions per session |
+| 2 tool units | `refetch_jev_covered` | at least the 76-82% verbatim | Rise toward 85-90% from pointers. Report as "path survived", not verbatim |
+| 2 tool units | `jev_ms` and a new `req_chars` column | ~0.9-1.1 s | Fall: fewer questions per session |
 | 3 fit_kept | `digest_kinds` share of `status` and pinned chars | none | Pinned under 25% of digest chars |
 | 4 budget | new `reach`: fraction of user prompts judged; fraction of judged units older than block 150 | 0% past 150 | 100% of user prompts at any length |
 | 4 budget | `jev_ms` on the p90+ synthetic cuts | | Under 3 s |

@@ -69,6 +69,6 @@ python3 eval/rules_eval.py report
 
 ### Jev selection vs. default summary
 
-`eval/compare.py` replays the pre-compaction blocks at each `compact_boundary` in recorded transcripts (12 real, 60 synthetic) through the same selection the hook runs: 3.2–3.9k tok of kept context vs. the 2.4–5.0k tok summary it replaces, ~1.3–1.7s vs. ~117s to compact. Of 710 artifacts the agent re-fetched post-compaction, the summary mentioned 73–91% and the kept blocks held 76–81% verbatim — a mention isn't the content. The rest fell outside the judgment window or below the keep floor.
+`eval/compare.py` replays the pre-compaction blocks at each `compact_boundary` in recorded transcripts (12 real, 60 synthetic) through the same selection the hook runs: 3.2–3.9k tok of kept context vs. the 2.4–5.0k tok summary it replaces, ~0.9–1.1s vs. ~117s to compact. Of 710 artifacts the agent re-fetched post-compaction, the summary mentioned 73–91% and the kept blocks held 76–82% verbatim — a mention isn't the content. The rest fell outside the judgment window or below the keep floor.
 
 Live, through the `session.compact` hook on Claude Code 2.1.278 (one session each, not a sweep): a 15-row session compacted in 0.7s with 7 rows kept, and a 5-row session fell through to the built-in summary at 0% reduction, as the gate intends. The selection is the same code the eval measures; the eval numbers are the ones to trust.
