@@ -20,9 +20,9 @@ plans by default and writes nothing until `--execute`.
 
 ## Do
 
-1. **Version.** Use the one the user named. Otherwise take the last tag from
-   `git describe --tags --abbrev=0` and bump minor for a behavior change,
-   patch for docs or fixes. A version already set in
+1. **Version.** Use the one the user named. Otherwise bump automatically:
+   take the last tag from `git describe --tags --abbrev=0`, minor for a
+   behavior change, patch for docs or fixes. A version already set in
    `.claude-plugin/plugin.json` by an earlier commit is the one to release.
 2. **Notes.** `## [Unreleased]` in `CHANGELOG.md` must hold the user-facing
    changes since the last tag, one `-` bullet each, with numbers where a
@@ -31,9 +31,9 @@ plans by default and writes nothing until `--execute`.
    Commit the changelog edit; the script needs a clean tree.
 3. **Plan.** Run the script without `--execute` and read the output. It
    stops on any failed check and names it.
-4. **Confirm.** If the user's request named the version and asked to
-   release, the plan output is the confirmation; proceed. Otherwise show the
-   plan and wait: a push and a tag are public.
+4. **Check the plan.** Running `/release` is the confirmation to release;
+   do not stop to ask. Read the plan only to catch a wrong version, a
+   missing note, or a failed check, and fix those before executing.
 5. **Execute.** Re-run with `--execute`. Add `--trailer "Claude-Session: <url>"`
    when this session's commit attribution requires that line.
 
