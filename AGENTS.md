@@ -71,6 +71,10 @@ python3 -m compileall -q scripts eval
 echo '{"prompt":"hi","transcript_path":""}' | python3 scripts/prompt_router.py; echo "exit=$?"
 ```
 
+`python3 scripts/comparators.py which` prints the ast-grep the rule hook
+would run, or `(none)`; `fetch` downloads the pinned one. The hook must exit
+0 within its budget either way — check with the binary renamed away.
+
 Every hook must exit 0 on a malformed or empty event. Feed the script you
 changed a matching JSON event on stdin and check the exit code.
 
