@@ -19,6 +19,7 @@ Usage: control-jev <command> [args]
 
   launch [--reuse]    Create an isolated VERIFY_HOME and record the run id
   doctor              Read-only health check for the active run
+  env                 Print exportable assignments for eval "$(control-jev env)"
   cleanup             Tear down the disposable home; keep evidence
   status              Print the active RUN_ID, VERIFY_HOME, and evidence dir
   hook <name> [json]  Drive one hook with a JSON event on stdin or as arg
@@ -221,6 +222,25 @@ api_key=$([ -n "${TYPESAFE_API_KEY:-}" ] && echo set || echo unset)
 EOF
 }
 
+# Print shell assignments recipes can eval. Always includes CLAUDE_PLUGIN_ROOT
+# (from this checkout). After launch, also exports RUN_ID / VERIFY_HOME /
+# EVIDENCE_DIR. Does not export HOME — that would replace the caller's home.
+cmd_env() {
+  printf 'export CLAUDE_PLUGIN_ROOT=%q\n' "$ROOT"
+  if [[ -n "${RUN_ID:-}" && -n "${VERIFY_HOME:-}" && -n "${EVIDENCE_DIR:-}" ]]; then
+    validate_run_id "$RUN_ID"
+  elif [[ -f "$STATE_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$STATE_FILE"
+    validate_run_id "$RUN_ID"
+  else
+    return 0
+  fi
+  printf 'export RUN_ID=%q\n' "$RUN_ID"
+  printf 'export VERIFY_HOME=%q\n' "$VERIFY_HOME"
+  printf 'export EVIDENCE_DIR=%q\n' "$EVIDENCE_DIR"
+}
+
 cmd_hook() {
   require_active
   local name="${1:-}"
@@ -284,6 +304,7 @@ main() {
   case "$cmd" in
     launch) cmd_launch "$@" ;;
     doctor) cmd_doctor "$@" ;;
+    env) cmd_env "$@" ;;
     cleanup) cmd_cleanup "$@" ;;
     status) cmd_status "$@" ;;
     hook) cmd_hook "$@" ;;

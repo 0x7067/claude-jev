@@ -11,22 +11,36 @@ feature file as the recipe.
 - `control-jev launch` created this run's disposable
   `VERIFY_HOME=/tmp/jev-verify-$RUN_ID` (child processes see it as `HOME`).
 - `control-jev doctor` printed `doctor=ok` and wrote `$EVIDENCE_DIR/doctor.txt`.
+- Run `eval "$(control-jev env)"` before any recipe line that expands
+  `$CLAUDE_PLUGIN_ROOT`, `$EVIDENCE_DIR`, or `$RUN_ID`. That command exports
+  those assignments without replacing your shell `HOME`.
 - Never drive a verify home that was not started by this verification run.
 - Do not `source` the control-jev state file into your shell.
 - `TYPESAFE_API_KEY` may be unset. Without it, hooks must fail open (exit 0,
-  no stdout) and `jev.py` must exit 2 with `jev: set TYPESAFE_API_KEY`. Live
-  classification proofs require the key; feature files say so under Gotchas.
+  no stdout) and `jev.py` must exit 2 with `jev: set TYPESAFE_API_KEY`. That
+  is the **in-band** contract for this skill.
 - Put evidence under `.cursor/skills/verify-claude-jev/artifacts/$RUN_ID/` via
   `control-jev save`.
+
+## In-band vs out-of-band
+
+**In-band** (this skill's proved contract without Claude Code): `compileall`,
+hook stdin fail-open / skip, `rows` fallback and pin-tail, `jev.py` missing-key.
+
+**Out-of-band** (needs a machine with Claude Code + `TYPESAFE_API_KEY`): live
+classify/route/block answers, a real plugin session, function-hook `/compact`.
+Feature bullets labeled out-of-band are recipes for that machine only — never
+count an in-band fail-open pass as verifying them.
 
 ## Driving conventions
 
 - Start every recipe from the baseline state unless its preconditions say otherwise.
 - Treat every command as literal. Keep quoted JSON and flags unchanged.
+- Load recipe env with `eval "$(control-jev env)"` before expanding `$CLAUDE_PLUGIN_ROOT`.
 - Drive hooks through `control-jev hook <name> '<json>'`.
 - Drive the rows bridge through `control-jev rows`.
 - Drive the agent-facing CLI through `control-jev jev -- ...`.
-- Restore nothing under `$HOME` after a mutation except when a recipe says to
+- Restore nothing under `$VERIFY_HOME` after a mutation except when a recipe says to
   delete a disposable fixture file. Never remove proof artifacts during cleanup.
 
 ## Proof and skip reporting
@@ -36,12 +50,12 @@ feature file as the recipe.
 - Hook proof includes the event file and the hook output (or empty output when
   fail-open / skip applies).
 - CLI proof includes the command, stdout, stderr, and exit code.
-- Mutation proof (log append under `$HOME/.claude/`) includes a second read of
+- Mutation proof (log append under `$VERIFY_HOME/.claude/`) includes a second read of
   the log after the call.
 - Record the feature ID and entry point used with every artifact.
-- Report an unreachable path with the attempted command and the unmet
-  precondition (usually a missing `TYPESAFE_API_KEY`).
-- Do not report a skipped live-API entry point as verified through fail-open.
+- Report an unreachable or out-of-band path with the attempted command and the
+  unmet precondition (usually missing `TYPESAFE_API_KEY` or no `claude`).
+- Do not report a skipped live-API / Claude Code entry point as verified through fail-open.
 
 ## Feature entry contract
 

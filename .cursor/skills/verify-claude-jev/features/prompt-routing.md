@@ -22,6 +22,7 @@ Preconditions:
 
 - `control-jev doctor` reports `doctor=ok` for this run.
 - Disposable verify home is set by `control-jev launch`.
+- `eval "$(control-jev env)"` if the recipe needs `$CLAUDE_PLUGIN_ROOT` / `$EVIDENCE_DIR`.
 
 - **Skip short.** Feed a two-character prompt. Run `control-jev hook prompt_router '{"prompt":"hi","transcript_path":""}'`. Exit code `0` and stdout empty.
 - **Skip slash.** Feed a slash command. Run `control-jev hook prompt_router '{"prompt":"/help","transcript_path":""}'`. Exit code `0` and stdout empty.
@@ -31,6 +32,7 @@ Preconditions:
 
 ## Gotchas
 
-- A classifiable prompt with a live key writes `~/.claude/jev-router-log.jsonl` under the disposable `HOME` only — still isolate.
+- Live classify with a real hint is **out-of-band** (needs `TYPESAFE_API_KEY`). In-band proof is skip + fail-open only.
+- A classifiable prompt with a live key writes `jev-router-log.jsonl` under the disposable verify home only — still isolate.
 - Do not treat empty stdout with a live key as proof the router is broken; confidence below `0.75` also suppresses the hint.
 - Synthetic harness prompts and compaction summary prompts are skipped; do not use them as positive routing cases.
