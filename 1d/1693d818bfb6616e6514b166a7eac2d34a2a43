@@ -1,0 +1,23 @@
+scripts/stats.py
+  s_52f08eadac0e76::t_f8349cd56f0527 19,29-30,32-36
+  s_52f08eadac0e76::t_a9ea4482c34257 67-191
+  s_52f08eadac0e76::t_4d699984dae5af 428-431
+  s_52f08eadac0e76::t_9654b0288c7ace 223-323
+  s_52f08eadac0e76::t_07dad5975ee690 324-325
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1d1693d818bfb6616e6514b166a7eac2d34a2a43",
+  "prompts": {},
+  "sessions": {
+    "s_52f08eadac0e76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "69b2223e-e573-4c48-b2bf-b154ce12619d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
