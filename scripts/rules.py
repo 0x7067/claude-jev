@@ -40,6 +40,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import comparators  # noqa: E402
 import jev  # noqa: E402
 
 # Bands, not a single cut at 0.5: act above, flag the middle, ignore below.
@@ -78,6 +79,10 @@ CALIB_MIN_CHECKS = 20   # below this the median is an accident, not a habit
 CALIB_DECISIVE = 0.10
 CALIB_NOISY = 0.25
 RELEVANCE_GATE = True  # off only to attribute a measurement to this change
+# The judge is reliable on what the hunk shows and unreliable on anything that
+# needs a comparison with code outside it. The comparators run that comparison
+# deterministically; see scripts/comparators.py. Off only to measure.
+COMPARATORS = True
 DEFAULT_LOG = os.path.expanduser("~/.claude/jev-router-log.jsonl")
 BLOCK_DIR = os.path.expanduser("~/.claude/jev-rule-blocks")
 
@@ -851,7 +856,8 @@ def log_decision(event: dict, answers: dict, probs: dict, violations: list,
                  input_hash: str | None = None, blocked: list | None = None,
                  hashes: dict | None = None, ms: int | None = None,
                  n_irrelevant: int = 0, head: str | None = None,
-                 escalated: list | None = None) -> None:
+                 escalated: list | None = None, cmp_chars: dict | None = None,
+                 sg: str | None = None) -> None:
     try:
         with open(DEFAULT_LOG, "a") as f:
             f.write(json.dumps({
@@ -867,6 +873,8 @@ def log_decision(event: dict, answers: dict, probs: dict, violations: list,
                 "n_scoped_out": n_scoped_out,
                 "n_irrelevant": n_irrelevant,
                 "escalated": escalated or [],
+                "comparators": cmp_chars or {},
+                "sg": sg,
                 "ms": ms,
                 "probs": probs,
                 "violations": violations,
@@ -985,10 +993,10 @@ def scoped_rules(rules: list[dict], phase: str, files: list[str]) -> list[dict]:
 
 def judge_edit(rel: str, hunk: str, task: str, in_scope: list[dict],
                context: str = "", siblings: str = "", block: str = "",
-               act: float = ACT, flag: float = FLAG
-               ) -> tuple[list[dict], dict, dict, list[dict], list[str]]:
-    """One judged edit, no session side effects:
-    (hits, probs, answers, rules skipped as irrelevant, rules escalated).
+               cwd: str = "", act: float = ACT, flag: float = FLAG
+               ) -> tuple[list[dict], dict, dict, list[dict], list[str], dict]:
+    """One judged edit, no session side effects: (hits, probs, answers, rules
+    skipped as irrelevant, rules escalated, comparator sizes by subject).
     The hook and the eval harness share this so they measure the same thing."""
     parts = [f"File: {rel}"]
     if task:
@@ -1000,6 +1008,14 @@ def judge_edit(rel: str, hunk: str, task: str, in_scope: list[dict],
     if siblings and any(r.get("subject") == "imports_deps" for r in asked):
         names = ", ".join(siblings.split(", ")[:SIBLING_CAP])
         parts.append(f"Local modules importable from this file's directory: {names}")
+    cmp_chars: dict = {}
+    if COMPARATORS and cwd:
+        for subject in dict.fromkeys(r.get("subject") for r in asked):
+            found = comparators.comparator(subject or DEFAULT_SUBJECT, hunk,
+                                           rel, cwd)
+            if found:
+                cmp_chars[subject] = len(found)
+                parts.append(found)
     answers = ask_rules("\n\n".join(parts), asked)
     hits, probs = collect_verdicts(in_scope, answers, act, flag)
 
@@ -1025,7 +1041,7 @@ def judge_edit(rel: str, hunk: str, task: str, in_scope: list[dict],
                                                           or r["id"])), 3)
                 escalated.append(r["id"])
             hits = hits_from(in_scope, probs, act, flag)
-    return hits, probs, answers, skipped, escalated
+    return hits, probs, answers, skipped, escalated, cmp_chars
 
 
 def handle_edit(event: dict) -> dict:
@@ -1053,9 +1069,12 @@ def handle_edit(event: dict) -> dict:
     context = file_context(file_path, needle_of(inp))
     siblings = sibling_modules(file_path)
     block = enclosing_block(file_path, needle_of(inp)) if ESCALATE else ""
+    # Sampled before the judgment, not after: a miss starts a detached fetch,
+    # and by the time the call returns the binary can already be on disk.
+    sg = comparators.which()[1]
     t0 = time.monotonic()
-    hits, probs, answers, skipped, escalated = judge_edit(
-        rel, state, task, in_scope, context, siblings, block)
+    hits, probs, answers, skipped, escalated, cmp_chars = judge_edit(
+        rel, state, task, in_scope, context, siblings, block, cwd)
     ms = int((time.monotonic() - t0) * 1000)
     acting, flagged = [], []
     for v in hits:
@@ -1074,7 +1093,7 @@ def handle_edit(event: dict) -> dict:
                  blocked=[v["rule"] for v in acting],
                  hashes=rule_hashes(in_scope), ms=ms,
                  n_irrelevant=len(skipped), head=added_head(state),
-                 escalated=escalated)
+                 escalated=escalated, cmp_chars=cmp_chars, sg=sg)
 
     out = {}
     if flagged:

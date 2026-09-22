@@ -14,6 +14,7 @@ explains what each hook decides and why. Read it before changing behavior.
 | `scripts/rules.py` | `PostToolUse` on edits, and `Stop` — rule enforcement |
 | `scripts/compactor.py` | The `rows` bridge behind `session.compact`; `judge` is kept for the eval |
 | `hooks/register.ts` | Experimental function-hooks module: `session.compact` -> `compactor.py rows`. A bridge, not a second implementation. |
+| `scripts/comparators.py` | ast-grep lookups the rule hook adds to a judgment |
 | `scripts/observed.py` | Scores what a past turn actually did |
 | `scripts/stats.py` | `/claude-jev:stats` — scores live decisions from the three logs under `~/.claude`: `jev-router-log.jsonl` (router, subagent, rules), `jev-compact-log.jsonl`, `jev-calls.jsonl` (every API call, written by `jev.ask`) |
 | `eval/` | Offline measurement. See `eval/README.md`. |
@@ -27,6 +28,10 @@ explains what each hook decides and why. Read it before changing behavior.
   the `except Exception: return` at the top of every hook `main`. The `rows`
   bridge answers `{"fallback": ...}` on stdout and exits 0, and
   `hooks/register.ts` then calls `next(e)` so the built-in summary runs.
+- **The one external program is ast-grep**, pinned by version and sha256 in
+  `scripts/comparators.py`, fetched to `~/.claude/jev-bin` by a detached
+  process outside the hook's budget, and never required: every comparator
+  answers `""` without it, and the judgment proceeds as before.
 - **Python 3 standard library only.** No dependency file, no third-party
   imports. `urllib.request` is the HTTP client. The one non-Python file,
   `hooks/register.ts`, exists because Claude Code loads function-hook modules

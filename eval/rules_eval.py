@@ -234,13 +234,15 @@ def judge(rec: dict, rule_cache: dict) -> dict:
     block = rules.enclosing_block(abs_path, rules.needle_of(rec["tool_input"]))
     t0 = time.time()
     try:
-        hits, probs, _, skipped, escalated = rules.judge_edit(
-            rel, hunk, rec.get("task") or "", in_scope, context, siblings, block)
+        hits, probs, _, skipped, escalated, cmp_chars = rules.judge_edit(
+            rel, hunk, rec.get("task") or "", in_scope, context, siblings,
+            block, cwd)
         out.update(hits=[{k: h.get(k) for k in
                           ("rule", "prob", "band", "text", "file", "line",
                            "polarity", "subject")} for h in hits],
                    probs=probs, n_irrelevant=len(skipped),
-                   context_chars=len(context), escalated=escalated)
+                   context_chars=len(context), escalated=escalated,
+                   comparators=cmp_chars)
     except Exception as e:  # the hook fails open; the eval records why
         out["error"] = str(e)[:300]
     out["latency"] = round(time.time() - t0, 3)
@@ -269,6 +271,9 @@ def cmd_run(args) -> int:
     rules.jev.ask = jev.ask
     rule_cache: dict = {}
     rules.GLOBAL_RULE_FILES = (GLOBAL,)
+    if args.no_comparators:
+        rules.COMPARATORS = False
+        print("  comparators off (control run)", file=sys.stderr)
     live = sum(1 for r in recs if not r.get("sha"))
     if live:
         print(f"  {live}/{len(recs)} records have no sha; judged at the live checkout",
@@ -528,6 +533,8 @@ def main() -> int:
     r.add_argument("--sample", type=int, default=0, help="cap on real edits")
     r.add_argument("--seed", type=int, default=0)
     r.add_argument("--workers", type=int, default=4)
+    r.add_argument("--no-comparators", action="store_true",
+                   help="control run: judge without the ast-grep lookups")
     r.add_argument("--cases", default=CASES)
     r.add_argument("--out", default=PRED)
     r.set_defaults(fn=cmd_run)
