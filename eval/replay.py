@@ -31,10 +31,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
-import jev  # noqa: E402
+import jev
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import variants  # noqa: E402
+import variants
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
@@ -44,9 +44,7 @@ CACHE = os.path.join(DATA, "cache.jsonl")
 
 INTENTS = ["chat", "lookup", "fix", "feature", "refactor", "ops", "unclear"]
 
-# --- stage 1: extract -------------------------------------------------------
-
-from observed import (  # noqa: E402
+from observed import (
     EDIT_TOOLS, READ_TOOLS, bash_kind, derive_label, is_synthetic,
     prompt_text, scope_band, segments, summarize, trace, walk_session,
 )
@@ -111,9 +109,6 @@ def cmd_extract(args) -> int:
     print(f"extracted {rows} prompts from {len(files)} transcripts -> {DATASET}")
     return 0
 
-
-# --- stage 2: run -----------------------------------------------------------
-
 _cache_lock = threading.Lock()
 
 
@@ -131,7 +126,7 @@ def load_cache() -> dict:
 
 
 def cache_key(model: str, variant, state: str) -> str:
-    # The bundle must be part of the key: changing a question changes the answer.
+
     return hashlib.sha256(f"{model}|{variant.bundle_hash}|{state}".encode()).hexdigest()
 
 
@@ -198,8 +193,6 @@ def cmd_run(args) -> int:
     return 0
 
 
-# --- stage 3: score ---------------------------------------------------------
-
 def join(variant, preds_path: str, floor: float):
     """-> list of (record, predicted class or None, confidence)"""
     ds = {r["id"]: r for r in load_dataset(True)}
@@ -220,7 +213,7 @@ def metrics(variant, rows, floor: float) -> dict:
     ok = sum(1 for r, c, _ in fired if c == variant.truth(r))
     truths = collections.Counter(variant.truth(r) for r, _c, _cf in fired)
     best_const = max(truths.values()) / n if n else 0.0
-    # A wrong quiet hint tells the agent to skip work it actually needed.
+
     quiet = [r for r, c, _ in fired if c == variant.quiet_class]
     harmful = [r for r in quiet if r["n_tools"] >= 5]
     return {
@@ -348,7 +341,6 @@ def main() -> int:
 
     args = p.parse_args()
     return args.fn(args)
-
 
 if __name__ == "__main__":
     sys.exit(main())

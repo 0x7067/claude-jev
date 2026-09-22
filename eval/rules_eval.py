@@ -43,30 +43,23 @@ from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "scripts"))
-import jev  # noqa: E402
-import rules  # noqa: E402
-from observed import prompt_text  # noqa: E402
+import jev
+import rules
+from observed import prompt_text
 
 DATA = os.path.join(HERE, "data")
 EDITS = os.path.join(DATA, "rules_edits.jsonl")
-# The hand-written cases judge edits inside real repos: `cwd` has to be a
-# checkout with its own instruction files. They are not in the repo and are
-# not reproducible from a clone, so they live under eval/private/, which is
-# gitignored. Absent, `run` just judges whatever else was asked for.
+
 CASES = os.path.join(HERE, "private", "rules_cases.jsonl")
 PRED = os.path.join(DATA, "rules_pred.jsonl")
-AT = os.path.join(DATA, "at")  # one detached worktree per (repo, sha)
-# ~/.claude/CLAUDE.md is outside any repo and has no sha. This committed
-# copy stands in for it: the cases that target its rules are meaningless
-# without the wording they were written against.
+AT = os.path.join(DATA, "at")
+
 GLOBAL = os.path.join(HERE, "global_CLAUDE.md")
 CACHE = os.path.join(DATA, "rules_cache.jsonl")
 PROJECTS = os.path.expanduser("~/.claude/projects")
 
-_lock = threading.RLock()  # load_rules may call the cached ask while held
+_lock = threading.RLock()
 
-
-# --- extract ---------------------------------------------------------------
 
 def cmd_extract(args) -> int:
     os.makedirs(DATA, exist_ok=True)
@@ -98,9 +91,7 @@ def cmd_extract(args) -> int:
                     cwd = d.get("cwd")
                     if not cwd or not inp.get("file_path"):
                         continue
-                    # An edit the judge cannot reach is not a sample: a gone
-                    # repo has no rules to load, and an excluded path is never
-                    # judged. Both would otherwise land in the sample and skip.
+
                     if not os.path.isdir(cwd):
                         gone += 1
                         continue
@@ -119,8 +110,6 @@ def cmd_extract(args) -> int:
           f"   (pruned {gone} in repos that are gone, {excluded} on excluded paths)")
     return 0
 
-
-# --- run -------------------------------------------------------------------
 
 def load_jsonl(path: str) -> list[dict]:
     try:
@@ -225,9 +214,7 @@ def judge(rec: dict, rule_cache: dict) -> dict:
     if not in_scope:
         out["skipped"] = "no rules in scope"
         return out
-    # The file at `sha` may predate the edit, in which case the anchor line is
-    # absent and file_context returns nothing — the hook sees the file after
-    # the write, the eval only when the corpus happens to match.
+
     abs_path = os.path.join(cwd, rel)
     context = rules.file_context(abs_path, rules.needle_of(rec["tool_input"]))
     siblings = rules.sibling_modules(abs_path)
@@ -243,7 +230,7 @@ def judge(rec: dict, rule_cache: dict) -> dict:
                    probs=probs, n_irrelevant=len(skipped),
                    context_chars=len(context), escalated=escalated,
                    comparators=cmp_chars)
-    except Exception as e:  # the hook fails open; the eval records why
+    except Exception as e:
         out["error"] = str(e)[:300]
     out["latency"] = round(time.time() - t0, 3)
     return out
@@ -304,10 +291,7 @@ def cmd_run(args) -> int:
         print("  first error:", next(r["error"] for r in results if r.get("error")))
     return 0
 
-
-# --- report ----------------------------------------------------------------
-
-CALIB: dict = {}  # per-rule act thresholds; empty means a flat rules.ACT
+CALIB: dict = {}
 
 
 def act_of(rule_id: str) -> float:
@@ -554,7 +538,6 @@ def main() -> int:
     rp.set_defaults(fn=cmd_report)
     args = p.parse_args()
     return args.fn(args)
-
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -34,9 +34,6 @@ import time
 import urllib.request
 import zipfile
 
-# Pinned: a comparator that silently changes its matching semantics would move
-# every number in README.md without a code change. The hashes are of the
-# release zips, checked before anything is written to disk.
 VERSION = "0.45.3"
 RELEASE = ("https://github.com/ast-grep/ast-grep/releases/download/"
            f"{VERSION}/app-%s.zip")
@@ -52,26 +49,21 @@ SHA256 = {
 }
 BIN_DIR = os.path.expanduser(f"~/.claude/jev-bin/ast-grep-{VERSION}")
 BIN = os.path.join(BIN_DIR, "ast-grep")
-# The user's global instructions set this for every fetch the agent makes.
+
 USER_AGENT = "OpenAI File Downloader, XaiImageApiFetch/1.0"
 
-# One query is ~80 ms on a mid-sized TypeScript repo. The hook's whole budget
-# is 10 s and the Jev call owns most of it, so the comparators get a slice
-# they cannot overrun even when every query is slow.
 RUN_TIMEOUT = 1.5
 QUERY_BUDGET = 3.0
 MAX_QUERIES = 6
-MAX_HITS = 6      # past a handful the judge stops reading the list
+MAX_HITS = 6
 MAX_CHARS = 1200
-MAX_LITERALS = 4  # distinct literals worth asking about in one edit
+MAX_LITERALS = 4
 
 LANGS = {".py": "python", ".ts": "ts", ".tsx": "tsx", ".js": "js",
          ".jsx": "jsx", ".mjs": "js"}
 
-_no_download = False  # a bad checksum disables the fetch for this process
+_no_download = False
 
-
-# --- the binary -------------------------------------------------------------
 
 def triple() -> str | None:
     """The release asset for this machine, or None where there is none."""
@@ -150,8 +142,6 @@ def fetch() -> bool:
     return True
 
 
-# --- running a query --------------------------------------------------------
-
 def lang_for(rel: str) -> str | None:
     return LANGS.get(os.path.splitext(rel)[1].lower())
 
@@ -176,7 +166,7 @@ def run(pattern: str, lang: str, cwd: str, timeout: float = RUN_TIMEOUT,
         return []
     if not isinstance(raw, list):
         return []
-    import rules  # late: rules imports this module
+    import rules
     out = []
     for m in raw:
         if not isinstance(m, dict):
@@ -226,9 +216,6 @@ def block(label: str, hits: list[dict]) -> str:
             break
     return f"{label}\n" + "\n".join(lines)[:MAX_CHARS]
 
-
-# --- the lookups ------------------------------------------------------------
-
 COMMENT_LINE = re.compile(r"\s*(#|//|/\*|\*|<!--)")
 NUMBER = re.compile(r"(?<![\w.])(-?\d[\d_]*(?:\.\d+)?)\b")
 STRING = re.compile(r"[\"']([^\"'\n]{4,})[\"']")
@@ -248,9 +235,9 @@ def literal_hits(added: str, lang: str, cwd: str, b: _Budget) -> str:
     lits: list[str] = []
     for line in added.splitlines():
         if DECLARES.search(line):
-            continue  # the edit is naming it, which is what the rule wants
+            continue
         if COMMENT_LINE.match(line):
-            continue  # "70% shipped" in a comment is prose, not a literal
+            continue
         for m in NUMBER.finditer(line):
             if m.group(1) not in ("0", "1", "-1") and m.group(1) not in lits:
                 lits.append(m.group(1))
@@ -277,9 +264,7 @@ def test_hits(added: str, rel: str, lang: str, cwd: str, b: _Budget) -> str:
     import rules
     if not rules.TESTISH.search(rel):
         return ""
-    # The added lines are scanned through stdin, not from disk: the hook sees
-    # the file after the write but the eval never writes, and a tautological
-    # assertion has to be findable in both.
+
     same: list[dict] = []
     for pattern in ("expect($X).toBe($X)", "expect($X).toEqual($X)",
                     "assert $X == $X"):
@@ -303,7 +288,6 @@ def test_hits(added: str, rel: str, lang: str, cwd: str, b: _Budget) -> str:
            block("Bodies of the functions under test:", bodies)]
     return "\n\n".join(p for p in out if p)
 
-
 ENCLOSING = re.compile(r"(?:^|\s)(?:def|function)\s+(\w+)|"
                        r"(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\(")
 
@@ -326,14 +310,11 @@ def enclosing_name(path: str, added: str) -> list[str]:
         m = ENCLOSING.search(lines[i])
         if not m:
             continue
-        if m.group(1):          # a real function or def declaration
+        if m.group(1):
             return [m.group(1)]
-        # `const request = (async () => ...)` is usually an inner value, not
-        # the function whose contract the caller sees; keep it only if
-        # nothing better appears above.
+
         fallback = fallback or [m.group(2)]
     return fallback
-
 
 CATCHES = re.compile(r"\b(catch|except)\b")
 THROWS = re.compile(r"\b(throw|raise|reject)\b")
@@ -344,13 +325,10 @@ LOGS = re.compile(r"\b(console\.\w+|logger?\.\w+|print|log)\s*\(")
 def error_hits(added: str, rel: str, lang: str, cwd: str, b: _Budget) -> str:
     """Whether swallowing an error matters depends on who calls the function,
     which is exactly what the hunk leaves out."""
-    # An edit inside an existing catch block carries no `catch` keyword of its
-    # own. Anything that handles a value named `error` counts, on the same
-    # bias-to-True footing as the relevance gate.
+
     if not (CATCHES.search(added) or re.search(r"(?i)\berr(or)?\b", added)):
         return ""
-    # Returning a value from a catch is the swallow the rule is about, so it
-    # must not read the same as re-raising.
+
     if THROWS.search(added):
         what = "re-raises"
     elif RETURNS.search(added):
@@ -394,9 +372,7 @@ def comparator(subject: str, hunk: str, rel: str, cwd: str) -> str:
         b = _Budget()
         if subject == "literals_constants":
             return literal_hits(added, lang, cwd, b)
-        # No lookup for types: showing the declaration of the type a cast
-        # names read as evidence the cast was sound (a violation fell from
-        # 0.77 to 0.64 while its compliant twin held at 0.73).
+
         if subject == "tests":
             return test_hits(added, rel, lang, cwd, b)
         if subject == "errors":
@@ -413,7 +389,6 @@ def main() -> int:
     path, source = which()
     print(f"{path or '(none)'}  [{source}]  pinned {VERSION} -> {BIN}")
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

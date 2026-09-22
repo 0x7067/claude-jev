@@ -24,10 +24,6 @@ API_URL = "https://api.typesafe.ai/v1/systemone"
 DEFAULT_MODEL = "jev-latest"
 DEFAULT_TIMEOUT = 8.0
 CALL_LOG = os.path.expanduser("~/.claude/jev-calls.jsonl")
-# One line per API call, from every hook. The per-hook logs record what was
-# decided; none of them records what the call cost, so a latency regression or
-# a hook quietly failing open was invisible. This is the only place all four
-# hooks pass through.
 
 _VERSION: str | None = None
 
@@ -258,7 +254,7 @@ def main() -> int:
                 raise JevError("score needs at least two --level")
             out = ask(read_state_arg(args.state), {"q": {
                 "type": "score", "instructions": args.question, "criteria": args.level}})["q"]
-        else:  # intent
+        else:
             out = ask(read_state_arg(args.state), intent_bundle())
         json.dump(out, sys.stdout)
         sys.stdout.write("\n")
@@ -269,7 +265,6 @@ def main() -> int:
     except (json.JSONDecodeError, KeyError) as e:
         print(f"jev: bad input: {e}", file=sys.stderr)
         return 2
-
 
 if __name__ == "__main__":
     sys.exit(main())
