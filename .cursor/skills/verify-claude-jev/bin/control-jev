@@ -2,16 +2,13 @@
 # Harness for project-local verification of claude-jev.
 # Isolates every run under VERIFY_HOME=/tmp/jev-verify-$RUN_ID so live
 # ~/.claude logs and caches are never touched. Child processes see that
-# path as HOME; the caller's HOME is left alone (do not source the state
-# file into an interactive shell). Evidence lives under the skill's
-# artifacts/ tree and must survive cleanup.
+# path as HOME; the caller's HOME is left alone. Evidence lives under the
+# skill's artifacts/ tree and must survive cleanup.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ARTIFACTS_ROOT="${JE_VERIFY_EVIDENCE:-$SKILL_DIR/artifacts}"
-STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/jev-verify-control"
-STATE_FILE="$STATE_DIR/active-run"
+ARTIFACTS_ROOT="$(realpath -m "${JE_VERIFY_EVIDENCE:-$SKILL_DIR/artifacts}")"
 
 usage() {
   cat <<'EOF'
@@ -34,51 +31,46 @@ Environment:
                        must match [A-Za-z0-9._-]+
   JE_VERIFY_EVIDENCE   Override evidence root (default: skill artifacts/)
   TYPESAFE_API_KEY     Optional; without it hooks fail open and jev exits 2
+  XDG_RUNTIME_DIR      Preferred private dir for the active-run state file;
+                       if unset, uses /tmp/jev-verify-control-<uid> mode 0700
 
-Note: control-jev loads its own state file. Do not `source` that file into
-your shell — it would replace HOME and break git/ssh for the session.
+State is a validated RUN_ID line only — never sourced as shell. Prefer
+eval "$(control-jev env)" for recipe vars; that does not export HOME.
 EOF
 }
 
 die() { echo "control-jev: $*" >&2; exit 1; }
 
+# Private state directory: XDG_RUNTIME_DIR when set, else a 0700 per-uid dir.
+# Never fall back to world-writable /tmp/jev-verify-control.
+ensure_state_dir() {
+  local uid owner
+  uid="$(id -u)"
+  if [[ -n "${XDG_RUNTIME_DIR:-}" ]]; then
+    [[ -d "$XDG_RUNTIME_DIR" ]] || die "XDG_RUNTIME_DIR is not a directory: $XDG_RUNTIME_DIR"
+    owner="$(stat -c '%u' "$XDG_RUNTIME_DIR" 2>/dev/null || stat -f '%u' "$XDG_RUNTIME_DIR")"
+    [[ "$owner" == "$uid" ]] || die "XDG_RUNTIME_DIR not owned by current user"
+    STATE_DIR="$XDG_RUNTIME_DIR/jev-verify-control"
+  else
+    STATE_DIR="/tmp/jev-verify-control-$uid"
+  fi
+  if [[ -e "$STATE_DIR" ]]; then
+    [[ -d "$STATE_DIR" ]] || die "state path exists and is not a directory: $STATE_DIR"
+    [[ ! -L "$STATE_DIR" ]] || die "state dir must not be a symlink: $STATE_DIR"
+    owner="$(stat -c '%u' "$STATE_DIR" 2>/dev/null || stat -f '%u' "$STATE_DIR")"
+    [[ "$owner" == "$uid" ]] || die "state dir not owned by current user: $STATE_DIR"
+    chmod 700 "$STATE_DIR"
+  else
+    mkdir -m 700 "$STATE_DIR"
+  fi
+  STATE_FILE="$STATE_DIR/active-run"
+}
+
 validate_run_id() {
   local id="$1"
   [[ -n "$id" ]] || die "empty RUN_ID"
   [[ "$id" =~ ^[A-Za-z0-9._-]+$ ]] || die "RUN_ID must match [A-Za-z0-9._-]+ (got: $id)"
-  # Charset allows '.', but consecutive dots must not form a '..' path segment
-  # if a future change ever joined RUN_ID into a multi-component path.
   [[ "$id" != *..* ]] || die "RUN_ID must not contain .. (got: $id)"
-}
-
-# Run a command with the disposable home as HOME for that process only.
-with_verify_home() {
-  env HOME="$VERIFY_HOME" CLAUDE_PLUGIN_ROOT="$ROOT" "$@"
-}
-
-require_active() {
-  if [[ -n "${RUN_ID:-}" && -n "${VERIFY_HOME:-}" && -d "$VERIFY_HOME" && -n "${EVIDENCE_DIR:-}" ]]; then
-    validate_run_id "$RUN_ID"
-    return 0
-  fi
-  if [[ -f "$STATE_FILE" ]]; then
-    # shellcheck disable=SC1090
-    source "$STATE_FILE"
-  fi
-  [[ -n "${RUN_ID:-}" ]] || die "no active run; run: control-jev launch"
-  validate_run_id "$RUN_ID"
-  [[ -n "${VERIFY_HOME:-}" && -d "$VERIFY_HOME" ]] || die "VERIFY_HOME missing for RUN_ID=$RUN_ID; re-launch"
-  [[ -n "${EVIDENCE_DIR:-}" ]] || die "EVIDENCE_DIR missing for RUN_ID=$RUN_ID; re-launch"
-}
-
-write_state() {
-  mkdir -p "$STATE_DIR" "$EVIDENCE_DIR"
-  {
-    printf 'RUN_ID=%q\n' "$RUN_ID"
-    printf 'VERIFY_HOME=%q\n' "$VERIFY_HOME"
-    printf 'CLAUDE_PLUGIN_ROOT=%q\n' "$ROOT"
-    printf 'EVIDENCE_DIR=%q\n' "$EVIDENCE_DIR"
-  } >"$STATE_FILE"
 }
 
 # True when resolved path $1 is exactly $2 or a file under it.
@@ -86,6 +78,84 @@ path_under() {
   local resolved="$1"
   local base="$2"
   [[ "$resolved" == "$base" || "$resolved" == "$base"/* ]]
+}
+
+# VERIFY_HOME must be exactly /tmp/jev-verify-$RUN_ID (no symlink escape).
+# EVIDENCE_DIR must resolve under ARTIFACTS_ROOT as ARTIFACTS_ROOT/$RUN_ID.
+assert_run_paths() {
+  validate_run_id "$RUN_ID"
+  local expected="/tmp/jev-verify-$RUN_ID"
+  [[ -n "${VERIFY_HOME:-}" ]] || die "VERIFY_HOME unset"
+  [[ -n "${EVIDENCE_DIR:-}" ]] || die "EVIDENCE_DIR unset"
+  [[ "$VERIFY_HOME" == "$expected" ]] || die "VERIFY_HOME must be $expected (got: $VERIFY_HOME)"
+  [[ "$VERIFY_HOME" != *..* ]] || die "VERIFY_HOME must not contain .. (got: $VERIFY_HOME)"
+  if [[ -e "$VERIFY_HOME" || -L "$VERIFY_HOME" ]]; then
+    [[ ! -L "$VERIFY_HOME" ]] || die "VERIFY_HOME must not be a symlink (got: $VERIFY_HOME)"
+    [[ -d "$VERIFY_HOME" ]] || die "VERIFY_HOME exists and is not a directory: $VERIFY_HOME"
+    local resolved
+    resolved="$(realpath "$VERIFY_HOME")"
+    [[ "$resolved" == "$expected" ]] || die "resolved VERIFY_HOME $resolved != $expected"
+  fi
+  local expected_ev artifacts_resolved ev_resolved
+  artifacts_resolved="$(realpath -m "$ARTIFACTS_ROOT")"
+  expected_ev="$(realpath -m "$ARTIFACTS_ROOT/$RUN_ID")"
+  ev_resolved="$(realpath -m "$EVIDENCE_DIR")"
+  [[ "$ev_resolved" == "$expected_ev" ]] || die "EVIDENCE_DIR must be $expected_ev (got: $EVIDENCE_DIR -> $ev_resolved)"
+  path_under "$ev_resolved" "$artifacts_resolved" || die "EVIDENCE_DIR escapes ARTIFACTS_ROOT"
+}
+
+# Parse state file: only RUN_ID=<safe> lines. Never source as shell.
+# Paths are derived, not trusted from disk.
+load_state() {
+  ensure_state_dir
+  [[ -f "$STATE_FILE" ]] || return 1
+  [[ ! -L "$STATE_FILE" ]] || die "state file must not be a symlink"
+  local line val found=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    case "$line" in
+      RUN_ID=*)
+        val="${line#RUN_ID=}"
+        validate_run_id "$val"
+        RUN_ID="$val"
+        found=1
+        ;;
+      *)
+        die "invalid state line (only RUN_ID= allowed): $line"
+        ;;
+    esac
+  done <"$STATE_FILE"
+  [[ "$found" -eq 1 ]] || die "state file missing RUN_ID"
+  VERIFY_HOME="/tmp/jev-verify-$RUN_ID"
+  EVIDENCE_DIR="$ARTIFACTS_ROOT/$RUN_ID"
+  assert_run_paths
+  return 0
+}
+
+write_state() {
+  ensure_state_dir
+  assert_run_paths
+  mkdir -p "$VERIFY_HOME" "$EVIDENCE_DIR"
+  # Single validated assignment — no shell metacharacters in RUN_ID.
+  printf 'RUN_ID=%s\n' "$RUN_ID" >"$STATE_FILE"
+  chmod 600 "$STATE_FILE"
+}
+
+# Run a command with the disposable home as HOME for that process only.
+with_verify_home() {
+  assert_run_paths
+  env HOME="$VERIFY_HOME" CLAUDE_PLUGIN_ROOT="$ROOT" "$@"
+}
+
+require_active() {
+  ensure_state_dir
+  if [[ -n "${RUN_ID:-}" && -n "${VERIFY_HOME:-}" && -n "${EVIDENCE_DIR:-}" ]]; then
+    assert_run_paths
+    [[ -d "$VERIFY_HOME" ]] || die "VERIFY_HOME missing for RUN_ID=$RUN_ID; re-launch"
+    return 0
+  fi
+  load_state || die "no active run; run: control-jev launch"
+  [[ -d "$VERIFY_HOME" ]] || die "VERIFY_HOME missing for RUN_ID=$RUN_ID; re-launch"
 }
 
 # Refuse absolute paths and any .. path component; require dest under base.
@@ -106,12 +176,9 @@ evidence_dest() {
 }
 
 cmd_launch() {
-  # Always mint a new run unless JE_VERIFY_RUN_ID is set explicitly.
-  # Do not reuse a leftover RUN_ID from the caller's shell.
-  if [[ "${1:-}" == "--reuse" && -f "$STATE_FILE" ]]; then
-    # shellcheck disable=SC1090
-    source "$STATE_FILE"
-    validate_run_id "$RUN_ID"
+  ensure_state_dir
+  if [[ "${1:-}" == "--reuse" ]]; then
+    load_state || die "no state to reuse; run: control-jev launch"
     mkdir -p "$VERIFY_HOME" "$EVIDENCE_DIR"
   else
     RUN_ID="${JE_VERIFY_RUN_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
@@ -120,6 +187,7 @@ cmd_launch() {
     EVIDENCE_DIR="$ARTIFACTS_ROOT/$RUN_ID"
     mkdir -p "$VERIFY_HOME" "$EVIDENCE_DIR"
   fi
+  assert_run_paths
   write_state
   cat <<EOF
 run_id=$RUN_ID
@@ -191,18 +259,17 @@ cmd_cleanup() {
   local home_to_remove="$VERIFY_HOME"
   local run="$RUN_ID"
   local evidence="$EVIDENCE_DIR"
-  validate_run_id "$run"
-  # Literal path must be exactly the disposable tree for this id — no .. segments.
   local expected="/tmp/jev-verify-$run"
+  assert_run_paths
   [[ "$home_to_remove" == "$expected" ]] || die "VERIFY_HOME must be $expected (got: $home_to_remove)"
-  [[ "$home_to_remove" != *..* ]] || die "VERIFY_HOME must not contain .. (got: $home_to_remove)"
-  local resolved expected_resolved
-  resolved="$(realpath -m "$home_to_remove")"
-  expected_resolved="$(realpath -m "$expected")"
-  [[ "$resolved" == "$expected_resolved" ]] || die "resolved VERIFY_HOME $resolved != $expected_resolved"
-  path_under "$resolved" "$expected_resolved" || die "resolved VERIFY_HOME escapes disposable tree"
+  [[ ! -L "$home_to_remove" ]] || die "refusing to remove symlink VERIFY_HOME=$home_to_remove"
+  if [[ -e "$home_to_remove" ]]; then
+    local resolved
+    resolved="$(realpath "$home_to_remove")"
+    [[ "$resolved" == "$expected" ]] || die "resolved VERIFY_HOME $resolved != $expected (symlink escape?)"
+  fi
   rm -rf -- "$home_to_remove"
-  rm -f "$STATE_FILE"
+  rm -f -- "$STATE_FILE"
   cat <<EOF
 cleaned_home=$home_to_remove
 run_id=$run
@@ -226,13 +293,12 @@ EOF
 # (from this checkout). After launch, also exports RUN_ID / VERIFY_HOME /
 # EVIDENCE_DIR. Does not export HOME — that would replace the caller's home.
 cmd_env() {
+  ensure_state_dir
   printf 'export CLAUDE_PLUGIN_ROOT=%q\n' "$ROOT"
   if [[ -n "${RUN_ID:-}" && -n "${VERIFY_HOME:-}" && -n "${EVIDENCE_DIR:-}" ]]; then
-    validate_run_id "$RUN_ID"
-  elif [[ -f "$STATE_FILE" ]]; then
-    # shellcheck disable=SC1090
-    source "$STATE_FILE"
-    validate_run_id "$RUN_ID"
+    assert_run_paths
+  elif load_state; then
+    :
   else
     return 0
   fi

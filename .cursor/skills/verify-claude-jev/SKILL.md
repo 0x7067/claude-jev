@@ -61,10 +61,12 @@ Teardown is `control-jev cleanup` (see Cleanup). Never drive an instance whose
 verify home was not created by `control-jev launch` for this run.
 
 Isolation: each run uses `VERIFY_HOME=/tmp/jev-verify-$RUN_ID`; child
-processes see that path as `HOME`. `control-jev` loads its state file itself —
-do not `source` it into your shell (that would replace your real `HOME` and
-break git/ssh). Prefer `eval "$(control-jev env)"`, which exports recipe vars
-without touching `HOME`. Do not point two drives at the same verify home.
+processes see that path as `HOME`. Active-run state lives under
+`$XDG_RUNTIME_DIR/jev-verify-control` when set, otherwise
+`/tmp/jev-verify-control-<uid>` (mode 0700) — never a world-writable shared
+path. The state file is a validated `RUN_ID=` line only (never `source`d).
+Prefer `eval "$(control-jev env)"`, which exports recipe vars without
+touching `HOME`. Do not point two drives at the same verify home.
 
 ## Doctor
 
