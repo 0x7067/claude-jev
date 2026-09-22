@@ -45,6 +45,7 @@ import tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
 import compactor
 import prompt_router
+import planted
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
@@ -61,6 +62,10 @@ SYNTH_CHARS = 100_000
 MIN_POST_RETRIEVALS = 5
 
 MIN_BLOCKS = 30
+
+FLOOR_REFETCH_FULL = 0.70
+FLOOR_PLANTED_USER = 0.95
+FLOOR_PLANTED_BURIED = 0.90
 
 SUMMARY_PROMPT = """Your task is to create a detailed summary of the conversation so far between a user and an AI coding assistant, paying close attention to the user's explicit requests and the assistant's previous actions. This summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing development work without losing context.
 
@@ -422,6 +427,8 @@ def cmd_compact(args) -> int:
     done = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as ex:
         futs = {ex.submit(analyze, *t): t for t in todo}
+        plant_futs = [ex.submit(planted.run_event, compactor, fp, lines, i, kind, args.seed)
+                      for fp, lines, i, _e, _p, _ev, kind in todo]
         for f in concurrent.futures.as_completed(futs):
             fp, _l, _i, _e, _p, _ev, kind = futs[f]
             try:
@@ -438,7 +445,7 @@ def cmd_compact(args) -> int:
 
     def report(rows, title, widths, hdr):
         if not rows:
-            return
+            return collections.Counter()
         print(f"\n{title}\n")
         print("  " + "".join(h.ljust(w) for h, w in zip(hdr, widths)))
         print("  " + "-" * sum(widths))
@@ -479,6 +486,7 @@ def cmd_compact(args) -> int:
                   f"({100*tot['refetch_default_covered']/rd:.0f}%) | jev held "
                   f"{tot['refetch_jev_covered']} ({100*tot['refetch_jev_covered']/rd:.0f}%), "
                   f"{tot['refetch_jev_full']} ({100*tot['refetch_jev_full']/rd:.0f}%) verbatim")
+        return tot
 
     widths = [34, 8, 8, 9, 8, 7, 8, 9, 9, 9]
     hdr = ["session", "post_tok", "def_s", "jev_ms", "jev_tok", "kept",
@@ -496,7 +504,33 @@ def cmd_compact(args) -> int:
         for r in real + synth:
             f.write(json.dumps(r) + "\n")
     print(f"\nrows -> {out}")
-    return 0
+    return gate(real + synth, [f.result() for f in plant_futs if f.result()])
+
+
+def gate(rows: list[dict], plants: list[dict]) -> int:
+    """The two things compaction is for, judged together, or not at all.
+
+    Re-fetch coverage rewards keeping paths; constraint survival rewards
+    keeping what the user said. A wording that lifts one can sink the other,
+    and each alone once passed a change that failed the other. So one
+    command prints both and fails below either floor. The floors are the
+    2026-09-22 run: 79% verbatim coverage, 100% and 98% survival."""
+    reads = sum(r["refetch_reads"] for r in rows)
+    full = sum(r["refetch_jev_full"] for r in rows) / reads if reads else float("nan")
+    user = [p["user"] for p in plants if p["user"]]
+    buried = [p["buried"] for p in plants if p["buried"]]
+    su = sum(1 for v in user if v == "kept") / len(user) if user else float("nan")
+    sb = sum(1 for v in buried if v == "kept") / len(buried) if buried else float("nan")
+    checks = [("re-fetch verbatim coverage", full, FLOOR_REFETCH_FULL, reads),
+              ("planted user constraint survival", su, FLOOR_PLANTED_USER, len(user)),
+              ("planted buried restatement survival", sb, FLOOR_PLANTED_BURIED, len(buried))]
+    print("\ncompaction gate (both goals, one verdict):")
+    failed = False
+    for name, val, floor, n in checks:
+        ok = val >= floor
+        failed |= not ok
+        print(f"  {'ok  ' if ok else 'FAIL'} {name:38} {100*val:5.1f}%  floor {100*floor:.0f}%  n={n}")
+    return 2 if failed else 0
 
 
 def cmd_router(args) -> int:

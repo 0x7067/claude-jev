@@ -134,7 +134,14 @@ against the table in `README.md`:
 python3 eval/replay.py run --variant v7_no_unclear --sample 250
 python3 eval/rules_eval.py run --sample 250 --seed 0
 python3 eval/rules_eval.py report --sweep
+python3 eval/compare.py compact --synth 60
 ```
+
+The compaction command is the only way to measure `scripts/compactor.py`.
+It prints re-fetch coverage and planted-constraint survival in one gate and
+exits 2 below either floor, so a wording that keeps paths but drops what the
+user said, or the reverse, cannot pass on one number. `eval/sweep.py` and
+`eval/planted.py` are diagnostics for reading a change, not gates.
 
 `--seed 0 --sample 250` selects the same real edits as the numbers in
 `README.md`; keep it when comparing. A rule-question wording change misses
