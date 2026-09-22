@@ -37,6 +37,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import jev  # noqa: E402
@@ -53,6 +54,15 @@ MAX_HUNK_CHARS = 2000  # per edit, kept for the turn check
 MAX_TURN_CHARS = 16000
 MAX_PROMPT_TAIL = 400
 MAX_NESTED_DEPTH = 4
+# Required-element rules (a comment above a constant, a docstring at the top
+# of a function) are typically satisfied on a neighbouring line the hunk does
+# not show, so the judge saw a violation that was not there.
+CONTEXT_LINES = 4
+MAX_CONTEXT_CHARS = 1200
+# Enough for any real source directory; past that the list is noise in the
+# state and the judge stops reading it.
+SIBLING_CAP = 40
+RELEVANCE_GATE = True  # off only to attribute a measurement to this change
 DEFAULT_LOG = os.path.expanduser("~/.claude/jev-router-log.jsonl")
 BLOCK_DIR = os.path.expanduser("~/.claude/jev-rule-blocks")
 
@@ -126,6 +136,19 @@ def frontmatter_paths(lines: list[str]) -> list[str]:
     return paths
 
 
+# A prose paragraph buries one instruction per sentence, and a rule judged
+# as a whole paragraph asks Jev about several things at once. Bullets are
+# already one instruction each, so only long paragraphs are split.
+SENTENCE = re.compile(r"(?<=\.)\s+(?=[A-Z])")
+MIN_ITEM_CHARS = 20
+
+
+def split_sentences(text: str) -> list[str]:
+    parts = [t.strip() for t in SENTENCE.split(text)]
+    keep = [t for t in parts if len(t) >= MIN_ITEM_CHARS]
+    return keep or [text]
+
+
 def markdown_items(lines: list[str]) -> list[tuple[int, str]]:
     """(line, text) per bullet or paragraph, with wrapped lines joined.
     Instruction files wrap at ~80 columns, so a rule is rarely one line;
@@ -134,13 +157,18 @@ def markdown_items(lines: list[str]) -> list[tuple[int, str]]:
     titles are not rules."""
     items: list[tuple[int, str]] = []
     cur_line, cur = 0, []
+    bullet = False
     in_fence = False
     in_front = bool(lines) and bool(FRONT_MATTER.match(lines[0]))
 
     def flush():
         nonlocal cur
         if cur:
-            items.append((cur_line, " ".join(x.strip() for x in cur)))
+            text = " ".join(x.strip() for x in cur)
+            if not bullet and len(text) > MAX_ITEM_CHARS:
+                items.extend((cur_line, t) for t in split_sentences(text))
+            else:
+                items.append((cur_line, text))
         cur = []
 
     for i, raw in enumerate(lines, 1):
@@ -161,12 +189,12 @@ def markdown_items(lines: list[str]) -> list[tuple[int, str]]:
         m = BULLET.match(line)
         if m:
             flush()
-            cur_line, cur = i, [m.group(1)]
+            cur_line, cur, bullet = i, [m.group(1)], True
         elif cur and (line.startswith((" ", "\t")) or not BULLET.match(cur[0])):
             cur.append(line)
         else:
             flush()
-            cur_line, cur = i, [line]
+            cur_line, cur, bullet = i, [line], False
     flush()
     return items
 
@@ -201,10 +229,37 @@ TURN_CRITERIA = {
              "pattern, comment style, naming, error handling, or a required "
              "element in the code being added.",
 }
+# Polarity decides how the rule is asked. "Does this edit violate X?" makes a
+# judge check the whole edit against a whole rule; asking whether the new code
+# *does the forbidden thing* or *lacks the required element* is one concrete
+# check, and the two need opposite framings.
+POLARITY_Q = "Does item [{i}] forbid something, or require something?"
+POLARITY_CRITERIA = {
+    "forbid": "the rule says not to do or add something",
+    "require": "the rule says something must be present or done a certain way",
+}
+SUBJECT_Q = "What kind of thing in a code diff does item [{i}] govern?"
+SUBJECT_CRITERIA = {
+    "imports_deps": "imports, requires, dependencies, third-party packages",
+    "comments": "comments, docstrings, explanatory text inside code",
+    "naming": "what things are called: identifiers, files, exports, casing",
+    "types": "type annotations, interfaces, type safety, schemas",
+    "tests": "tests, test files, assertions, fixtures",
+    "errors": "error handling, exceptions, failure paths, fallbacks",
+    "literals_constants": "literal values, magic numbers, hardcoded strings, constants",
+    "files_structure": "which files exist, where code lives, file layout",
+    "commands_process": "commands to run, workflow, process, how to work",
+    "other": "anything else, or the rule governs the change as a whole",
+}
+# Below this the choice is a guess, and a guessed subject would gate a real
+# rule out of the request. "other" is never gated out.
+CHOICE_MIN = 0.5
+DEFAULT_SUBJECT = "other"
+DEFAULT_POLARITY = "forbid"
 CLASSIFY_CACHE = os.path.expanduser("~/.claude/jev-rules-cache.json")
 INSTRUCTION_MIN = 0.5
 TURN_MIN = 0.5
-ITEMS_PER_REQUEST = 30  # two questions per item; 60 questions per request
+ITEMS_PER_REQUEST = 15  # four questions per item; 60 questions per request
 
 
 def section_headings(lines: list[str],
@@ -223,17 +278,30 @@ def section_headings(lines: list[str],
     return out
 
 
+def choice_of(answer: dict | None, criteria: dict, default: str) -> str:
+    """A choice answer, or the default when the model is not confident enough
+    or names something outside the set."""
+    a = answer or {}
+    pick, conf = a.get("choice"), a.get("confidence", 0.0)
+    if pick in criteria and isinstance(conf, (int, float)) and conf >= CHOICE_MIN:
+        return pick
+    return default
+
+
 def classify_items(lines: list[str],
-                   items: list[tuple[int, str]]) -> dict[int, str]:
-    """Line number -> "edit" | "turn" for the items Jev judges to be
-    instructions; items that are not instructions are left out. One batched
+                   items: list[tuple[int, str]]) -> dict[int, dict]:
+    """Item index -> {"when", "polarity", "subject"} for the items Jev judges
+    to be instructions; items that are not instructions are left out.
+    Keyed by index, not line: one prose paragraph can yield several items. One batched
     request per file, cached by content hash — the file changes rarely, the
     hook runs on every edit, and a changed file misses the cache and is
     reclassified. This is the whole of what a compiled rubric used to hold
     that markdown parsing couldn't recover: it happens on first use, in
     ~/.claude, with nothing for the user to run or commit."""
     digest = hashlib.sha256(
-        (INSTRUCTION_Q + TURN_Q + json.dumps(TURN_CRITERIA, sort_keys=True)
+        (INSTRUCTION_Q + TURN_Q + POLARITY_Q + SUBJECT_Q
+         + json.dumps([TURN_CRITERIA, POLARITY_CRITERIA, SUBJECT_CRITERIA],
+                      sort_keys=True)
          + "".join(lines)).encode()).hexdigest()
     try:
         with open(CLASSIFY_CACHE) as f:
@@ -242,13 +310,14 @@ def classify_items(lines: list[str],
         cache = {}
     hit = cache.get(digest)
     if isinstance(hit, dict):
-        return {int(k): v for k, v in hit.items() if v in ("edit", "turn")}
+        return {int(k): v for k, v in hit.items()
+                if isinstance(v, dict) and v.get("when") in ("edit", "turn")}
     # Nearest heading above each item. A bullet read alone can pass for a
     # code rule when its section is about something else: "the change is
     # small (<=30 lines)" under a delegation policy was classified as a
     # whole-turn code rule and flagged 7 of 52 live edits.
     headings = section_headings(lines, items)
-    phases: dict[int, str] = {}
+    meta: dict[int, dict] = {}
     for start in range(0, len(items), ITEMS_PER_REQUEST):
         chunk = items[start:start + ITEMS_PER_REQUEST]
         state = "\n\n".join(f"[{i}] ({headings[ln]}) {text}"
@@ -258,21 +327,31 @@ def classify_items(lines: list[str],
             questions[f"q{i}"] = {"type": "noul", "instructions": INSTRUCTION_Q.format(i=i)}
             questions[f"t{i}"] = {"type": "noul", "instructions": TURN_Q.format(i=i),
                                   "criteria": TURN_CRITERIA}
+            questions[f"p{i}"] = {"type": "choice", "instructions": POLARITY_Q.format(i=i),
+                                  "criteria": POLARITY_CRITERIA}
+            questions[f"s{i}"] = {"type": "choice", "instructions": SUBJECT_Q.format(i=i),
+                                  "criteria": SUBJECT_CRITERIA}
         answers = jev.ask(state, questions)
-        for i, (ln, _text) in enumerate(chunk):
+        for i in range(len(chunk)):
             p = (answers.get(f"q{i}") or {}).get("noul")
             if not (isinstance(p, (int, float)) and p >= INSTRUCTION_MIN):
                 continue
             t = (answers.get(f"t{i}") or {}).get("noul")
             turn = isinstance(t, (int, float)) and t >= TURN_MIN
-            phases[ln] = "turn" if turn else "edit"
-    cache[digest] = {str(k): v for k, v in phases.items()}
+            meta[start + i] = {
+                "when": "turn" if turn else "edit",
+                "polarity": choice_of(answers.get(f"p{i}"), POLARITY_CRITERIA,
+                                      DEFAULT_POLARITY),
+                "subject": choice_of(answers.get(f"s{i}"), SUBJECT_CRITERIA,
+                                     DEFAULT_SUBJECT),
+            }
+    cache[digest] = {str(k): v for k, v in meta.items()}
     try:
         with open(CLASSIFY_CACHE, "w") as f:
             json.dump(cache, f)
     except OSError:
         pass
-    return phases
+    return meta
 
 
 def parse_rules(path: str, base_label: str | None = None,
@@ -286,11 +365,16 @@ def parse_rules(path: str, base_label: str | None = None,
     except OSError:
         return rules
     base = base_label or os.path.basename(path)
+    # Calibration is only comparable while the wording is. A rule reworded in
+    # place keeps its id, so stats needs the file's content hash to tell the
+    # two versions apart.
+    file_hash = hashlib.sha256("".join(lines).encode()).hexdigest()[:12]
     scope0 = list(file_scope or []) + frontmatter_paths(lines)
-    items = [(ln, t.strip()) for ln, t in markdown_items(lines) if len(t.strip()) >= 20]
-    phases = classify_items(lines, items)
-    for line_no, text in items:
-        if line_no not in phases:
+    items = [(ln, t.strip()) for ln, t in markdown_items(lines)
+             if len(t.strip()) >= MIN_ITEM_CHARS]
+    meta = classify_items(lines, items)
+    for idx, (line_no, text) in enumerate(items):
+        if idx not in meta:
             continue
         if len(text) > MAX_ITEM_CHARS:
             cut = text.rfind(". ", 0, MAX_ITEM_CHARS)
@@ -306,7 +390,9 @@ def parse_rules(path: str, base_label: str | None = None,
             name, text = nm.group(1), nm.group(2).strip() or text
         rules.append({"id": name or slug(text), "text": text,
                       "file": base, "line": line_no, "scope": scope,
-                      "when": phases[line_no]})
+                      "when": meta[idx]["when"], "file_hash": file_hash,
+                      "polarity": meta[idx]["polarity"],
+                      "subject": meta[idx]["subject"]})
     return rules
 
 
@@ -464,14 +550,164 @@ def edit_hunks(inp: dict, cwd: str | None = None) -> str:
     return content
 
 
+COMMENT = re.compile(r"(^|\s)(#|//|/\*|\*/|<!--)|\"\"\"|\'\'\'")
+IMPORTISH = re.compile(r"(?m)^\s*[-+]?\s*(import\b|from\s+\S+\s+import\b|export\s+\*|"
+                       r"const\s+\w+\s*=\s*require\(|require\(|use\s+\w|#include\b|using\b)")
+MANIFEST = re.compile(r"(^|/)(package\.json|requirements[^/]*\.txt|pyproject\.toml|"
+                      r"go\.mod|Cargo\.toml|Gemfile|setup\.py)$")
+TESTISH = re.compile(r"(?i)\btest|\bspec\b|describe\(|\bit\(|assert|expect\(")
+NUMBER = re.compile(r"(?<![\w.])-?\d[\d_]*(\.\d+)?\b")
+STRINGY = re.compile(r"\"[^\"\n]{4,}\"|\'[^\'\n]{4,}\'|`[^`\n]{4,}`")
+DEFINES = re.compile(r"(?m)^\s*[-+]?\s*(def\b|class\b|function\b|const\b|let\b|var\b|"
+                     r"type\b|interface\b|enum\b|struct\b|fn\b|export\b)")
+TYPEISH = re.compile(r"(?m)(:\s*[A-Z][\w\[\]<>.]*|\bany\b|\bas\b|\binterface\b|\btype\b|"
+                     r"->\s*[\w\[\]]+|\bSchema\b)")
+ERRORISH = re.compile(r"(?i)\b(try|catch|except|finally|throw|raise|Result|Error|Exception|"
+                      r"panic|rescue)\b")
+# Which subjects a hunk can be judged on locally. A rule about imports has
+# nothing to say about an edit that touches no import line, and asking anyway
+# is what produced the 0.4-0.6 middle band on unrelated edits. Every test
+# leans towards True: a wrong False is a missed catch, a wrong True only
+# costs one question.
+SUBJECT_TESTS = {
+    "imports_deps": lambda h, rel: bool(IMPORTISH.search(h) or MANIFEST.search(rel)),
+    "comments": lambda h, rel: bool(COMMENT.search(h)),
+    "tests": lambda h, rel: bool(TESTISH.search(h) or TESTISH.search(rel)),
+    "literals_constants": lambda h, rel: bool(
+        STRINGY.search(h) or any(m.group(0) not in ("0", "1", "-1")
+                                 for m in NUMBER.finditer(h))),
+    "naming": lambda h, rel: bool(DEFINES.search(h)),
+    "types": lambda h, rel: bool(TYPEISH.search(h)),
+    "errors": lambda h, rel: bool(ERRORISH.search(h)),
+}
+
+
+def touches(hunk: str, subject: str, rel: str = "") -> bool:
+    """Could this hunk possibly break a rule about `subject`? Subjects with
+    no cheap test (files_structure, commands_process, other) always can."""
+    test = SUBJECT_TESTS.get(subject)
+    return True if test is None else bool(test(hunk, rel))
+
+
+def split_relevant(in_scope: list[dict], hunk: str,
+                   rel: str = "") -> tuple[list[dict], list[dict]]:
+    """(rules worth a question, rules this hunk cannot break)."""
+    if not RELEVANCE_GATE:
+        return list(in_scope), []
+    keep, drop = [], []
+    for r in in_scope:
+        (keep if touches(hunk, r.get("subject") or DEFAULT_SUBJECT, rel)
+         else drop).append(r)
+    return keep, drop
+
+
+EDIT_FORBID_CRITERIA = {
+    "true": "The new code visibly does the forbidden thing.",
+    "false": "The edit does not do it, or only removes or leaves untouched "
+             "code that did.",
+}
+# "Does the new code lack what the rule requires" reads as a question about
+# an absence, and an absence is arguable on almost any diff: it put 31 real
+# edits in the flag band on one comment rule alone. Asking for both halves —
+# the rule clearly governs this code AND the requirement is plainly missing —
+# is the same judgment stated as a violation.
+EDIT_REQUIRE_CRITERIA = {
+    "true": "A case the rule clearly governs was added, and the required "
+            "element is absent.",
+    "false": "The rule does not govern what changed, the requirement is "
+             "present, or it is a matter of degree or taste.",
+}
+
+
+def needle_of(inp: dict) -> str:
+    """The first line the edit put in the file — the anchor for its context."""
+    new = inp.get("new_string")
+    if new is None and isinstance(inp.get("edits"), list):
+        for e in inp["edits"]:
+            if isinstance(e, dict) and e.get("new_string"):
+                new = e["new_string"]
+                break
+    if new is None:
+        new = inp.get("content") or inp.get("new_source") or ""
+    for line in (new or "").splitlines():
+        if line.strip():
+            return line.strip()
+    return ""
+
+
+MODULE_EXT = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs")
+
+
+def sibling_modules(path: str) -> str:
+    """Names importable from the edited file's own directory. A rule banning
+    third-party imports read `import observed` as third-party and blocked a
+    sibling module at 0.86; the judge cannot tell the two apart without the
+    list."""
+    try:
+        entries = sorted(os.listdir(os.path.dirname(path) or "."))
+    except OSError:
+        return ""
+    names = []
+    for e in entries:
+        full = os.path.join(os.path.dirname(path) or ".", e)
+        stem, ext = os.path.splitext(e)
+        if os.path.isdir(full):
+            if any(os.path.exists(os.path.join(full, f"index{x}"))
+                   for x in MODULE_EXT) or os.path.exists(
+                       os.path.join(full, "__init__.py")):
+                names.append(e)
+        elif ext in MODULE_EXT and not stem.startswith("."):
+            names.append(stem)
+    return ", ".join(dict.fromkeys(names))
+
+
+def file_context(path: str, needle: str) -> str:
+    """CONTEXT_LINES either side of where the edit landed, read from disk
+    after the write. Empty when the file, or the line, cannot be found —
+    context is a help, never a requirement."""
+    if CONTEXT_LINES <= 0 or not path or not needle:
+        return ""
+    try:
+        with open(path, errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return ""
+    for i, line in enumerate(lines):
+        if needle in line:
+            lo = max(0, i - CONTEXT_LINES)
+            return "\n".join(lines[lo:i + CONTEXT_LINES + 1])[:MAX_CONTEXT_CHARS]
+    return ""
+
+
 def rule_question(rule: dict) -> dict:
     """One yes/no question per rule, in the user's own words. The answer is
-    the probability the rule is broken."""
-    what = ("Does this edit" if rule.get("when") == "edit"
-            else "Do these changes")
+    the probability the rule is broken. Asked as one concrete check —
+    does the new code do the forbidden thing, or lack the required one —
+    because "does this edit violate X" invites a judgment on pre-existing
+    code the agent did not write."""
+    edit = rule.get("when") == "edit"
+    subject = "this edit" if edit else "the changes this agent made"
+    scope_note = ("Judge only what the edit itself introduces, not "
+                  "pre-existing code." if edit else
+                  "Judge only what these changes introduce, not pre-existing code.")
+    if (rule.get("polarity") or DEFAULT_POLARITY) == "require":
+        what = ("this edit" if edit else "these changes")
+        return {"type": "noul",
+                "instructions": f"Does {what} add or change code that this rule "
+                                f"clearly covers, and do it WITHOUT what the rule "
+                                f"requires: \"{rule['text']}\"? Answer yes only "
+                                f"when both hold and the requirement is plainly "
+                                f"missing from the new code and the surrounding "
+                                f"lines shown. If the rule does not apply to what "
+                                f"changed, or the requirement is met even "
+                                f"imperfectly, answer no.",
+                "criteria": EDIT_REQUIRE_CRITERIA}
+    added = ("the ADDED or CHANGED code in this edit" if edit
+             else "the ADDED or CHANGED code in these changes")
     return {"type": "noul",
-            "instructions": f"{what} violate the repository rule: "
-                            f"\"{rule['text']}\"?"}
+            "instructions": f"Does {added} do what this rule forbids: "
+                            f"\"{rule['text']}\"? {scope_note}",
+            "criteria": EDIT_FORBID_CRITERIA}
 
 
 def verdict(answer: dict | None) -> float:
@@ -517,8 +753,46 @@ def record_hunk(state: dict, rel: str, hunk: str) -> None:
         state["files"].append(rel)
 
 
+ADDED_HEAD_CHARS = 200
+
+
+def added_head(hunk: str) -> str:
+    """The start of what the edit put in the file. A later pass matches it
+    against the file's next state: an unrelated edit to the same file is not
+    a repair."""
+    marker = "ADDED:\n"
+    if marker in hunk:
+        body = hunk.split(marker, 1)[1]
+    elif hunk.startswith("NEW FILE"):
+        body = hunk.split("\n", 1)[1] if "\n" in hunk else ""
+    elif hunk.lstrip().startswith(("diff --git", "---", "@@", "index ")):
+        body = "\n".join(l[1:] for l in hunk.splitlines()
+                          if l.startswith("+") and not l.startswith("+++"))
+    else:
+        body = hunk
+    return body.strip()[:ADDED_HEAD_CHARS]
+
+
+def input_digest(event: dict) -> str | None:
+    """Fingerprint of the tool input, so a later pass can tell a retry of the
+    same edit (the rule fought the agent) from a repair that landed."""
+    try:
+        payload = json.dumps(event.get("tool_input"), sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return None
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+
+def rule_hashes(in_scope: list[dict]) -> dict:
+    """Rule-file label -> content hash, for the files this call drew on."""
+    return {r["file"]: r["file_hash"] for r in in_scope if r.get("file_hash")}
+
+
 def log_decision(event: dict, answers: dict, probs: dict, violations: list,
-                 n_rules: int, n_scoped_out: int, phase: str) -> None:
+                 n_rules: int, n_scoped_out: int, phase: str,
+                 input_hash: str | None = None, blocked: list | None = None,
+                 hashes: dict | None = None, ms: int | None = None,
+                 n_irrelevant: int = 0, head: str | None = None) -> None:
     try:
         with open(DEFAULT_LOG, "a") as f:
             f.write(json.dumps({
@@ -528,10 +802,16 @@ def log_decision(event: dict, answers: dict, probs: dict, violations: list,
                 "session_id": event.get("session_id"),
                 "cwd": event.get("cwd"),
                 "file": (event.get("tool_input") or {}).get("file_path"),
+                "input_hash": input_hash,
+                "added_head": head,
                 "n_rules": n_rules,
                 "n_scoped_out": n_scoped_out,
+                "n_irrelevant": n_irrelevant,
+                "ms": ms,
                 "probs": probs,
                 "violations": violations,
+                "blocked": blocked or [],
+                "rule_hashes": hashes or {},
                 "answers": answers,
             }) + "\n")
     except OSError:
@@ -543,7 +823,9 @@ def cite(v: dict) -> str:
     if len(text) > 220:
         text = text[:217] + "..."
     where = f"{v['file']} line {v['line']}" if v.get("line") else v["file"]
-    return (f"- Rule \"{v['rule']}\" from {where}: "
+    kind = f"[{v.get('polarity') or DEFAULT_POLARITY}/" \
+           f"{v.get('subject') or DEFAULT_SUBJECT}] "
+    return (f"- {kind}Rule \"{v['rule']}\" from {where}: "
             f"\"{text}\" ({v['prob']:.2f})")
 
 
@@ -574,6 +856,7 @@ def collect_verdicts(rules: list[dict], answers: dict,
         if p >= flag:
             hits.append({"rule": r["id"], "text": r["text"],
                          "file": r["file"], "line": r.get("line", 0),
+                         "polarity": r.get("polarity"), "subject": r.get("subject"),
                          "prob": round(p, 2),
                          "band": "act" if p >= act else "flag"})
     return hits, probs
@@ -605,16 +888,24 @@ def scoped_rules(rules: list[dict], phase: str, files: list[str]) -> list[dict]:
 
 
 def judge_edit(rel: str, hunk: str, task: str, in_scope: list[dict],
-               act: float = ACT, flag: float = FLAG) -> tuple[list[dict], dict, dict]:
-    """One judged edit, no session side effects: (hits, probs, answers).
+               context: str = "", siblings: str = "", act: float = ACT,
+               flag: float = FLAG) -> tuple[list[dict], dict, dict, list[dict]]:
+    """One judged edit, no session side effects:
+    (hits, probs, answers, rules skipped as irrelevant).
     The hook and the eval harness share this so they measure the same thing."""
     parts = [f"File: {rel}"]
     if task:
         parts.append(f"The user's current request: {task}")
     parts.append(f"The edit:\n{hunk[:MAX_STATE_CHARS]}")
-    answers = ask_rules("\n\n".join(parts), in_scope)
+    if context:
+        parts.append(f"Surrounding lines after the edit:\n{context}")
+    asked, skipped = split_relevant(in_scope, hunk, rel)
+    if siblings and any(r.get("subject") == "imports_deps" for r in asked):
+        names = ", ".join(siblings.split(", ")[:SIBLING_CAP])
+        parts.append(f"Local modules importable from this file's directory: {names}")
+    answers = ask_rules("\n\n".join(parts), asked)
     hits, probs = collect_verdicts(in_scope, answers, act, flag)
-    return hits, probs, answers
+    return hits, probs, answers, skipped
 
 
 def handle_edit(event: dict) -> dict:
@@ -639,7 +930,12 @@ def handle_edit(event: dict) -> dict:
         return {}
 
     task = last_user_prompt(event.get("transcript_path"))
-    hits, probs, answers = judge_edit(rel, state, task, in_scope)
+    context = file_context(file_path, needle_of(inp))
+    siblings = sibling_modules(file_path)
+    t0 = time.monotonic()
+    hits, probs, answers, skipped = judge_edit(rel, state, task, in_scope,
+                                               context, siblings)
+    ms = int((time.monotonic() - t0) * 1000)
     acting, flagged = [], []
     for v in hits:
         key = f"{v['rule']}|{rel}"
@@ -652,7 +948,11 @@ def handle_edit(event: dict) -> dict:
     log_decision(event, answers, probs,
                  [{k: v[k] for k in ("rule", "file", "line", "prob", "band")}
                   for v in hits],
-                 len(rules), len(rules) - len(in_scope), "edit")
+                 len(rules), len(rules) - len(in_scope), "edit",
+                 input_hash=input_digest(event),
+                 blocked=[v["rule"] for v in acting],
+                 hashes=rule_hashes(in_scope), ms=ms,
+                 n_irrelevant=len(skipped), head=added_head(state))
 
     out = {}
     if flagged:
@@ -689,7 +989,10 @@ def handle_stop(event: dict) -> dict:
     if task:
         parts.append(f"The user's current request: {task}")
     parts.append(f"The changes:\n{diff[:MAX_TURN_CHARS]}")
-    answers = ask_rules("\n\n".join(parts), turn_rules)
+    asked, skipped = split_relevant(turn_rules, diff, ", ".join(sstate["files"]))
+    t0 = time.monotonic()
+    answers = ask_rules("\n\n".join(parts), asked)
+    ms = int((time.monotonic() - t0) * 1000)
 
     hits, probs = collect_verdicts(turn_rules, answers, ACT, FLAG)
     already = bool(event.get("stop_hook_active"))
@@ -705,7 +1008,10 @@ def handle_stop(event: dict) -> dict:
     log_decision(event, answers, probs,
                  [{k: v[k] for k in ("rule", "file", "line", "prob", "band")}
                   for v in hits],
-                 len(rules), len(rules) - len(turn_rules), "turn")
+                 len(rules), len(rules) - len(turn_rules), "turn",
+                 input_hash=None, blocked=[v["rule"] for v in acting],
+                 hashes=rule_hashes(turn_rules), ms=ms,
+                 n_irrelevant=len(skipped))
 
     out = {}
     if flagged:
