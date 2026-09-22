@@ -3,7 +3,8 @@
 // Loaded only when the host has function hooks on (rollout flag, or
 // CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1) and the workspace is trusted. Older
 // Claude Code versions ignore the `modules` entry in hooks.json that names
-// this file, so the classic hooks keep working there.
+// this file: the four command hooks still run there, but compaction does
+// not, because this module is the only compaction path.
 //
 // One hook: `session.compact`. The engine hands over the conversation as
 // rows ({ role, text, toolUses, toolResults, handle }); this module pipes
