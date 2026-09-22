@@ -27,10 +27,17 @@ is in `docs/claude-code-compaction-research.md`.
    are kept unjudged. The rest are judged in chunks of `BLOCKS_PER_CHUNK = 10`,
    each request carrying a `HEADER_CHARS = 1500` goal header plus only its own
    blocks (`compact_state`), up to `MAX_WORKERS = 16` requests in flight.
-3. `keep_questions` asks two `noul` questions per block: still needed, and
-   needed verbatim. Keep at `KEEP_THRESHOLD = 0.5`; a low "verbatim" answer
-   keeps a `HEAD_CHARS = 400` head plus a re-read pointer. Unscored blocks and
-   failed chunks are kept whole.
+3. `keep_questions` asks five concrete, positively framed `noul` checks per
+   block (`CHECKS`: constraint, decision, error, open, artifact), following
+   `docs/prompt-craft.md`. `verdicts` turns them into a keep score (max of
+   the first four) and a verbatim score (max of constraint and error). Keep
+   at `KEEP_THRESHOLD = 0.5`; a low verbatim score keeps a `HEAD_CHARS = 400`
+   head plus a re-read pointer. Unscored blocks and failed chunks are kept
+   whole. Measured in `eval/planted.py`: a planted user constraint survives
+   100% (was 77% under the two aggregate questions), a restatement buried in
+   a later reply 98% (was 35%). `eval/sweep.py` shows the earlier keep score
+   sat at the 17% base-rate precision at every threshold against a re-fetch
+   label, with 54% of scores in 0.35-0.65; the checks bring that band to 21%.
 4. A kept `tool_result` pulls its `tool_use` in.
 5. `fit_kept` enforces `TARGET_CHARS = 16000`: downgrade lowest-confidence
    whole keeps to heads, then drop the weakest blocks. Pinned blocks are

@@ -218,38 +218,58 @@ def compact_state(blocks: list[dict], lo: int, hi: int, context: str) -> str:
     return "\n".join(header) + "\n\n" + body
 
 
-def keep_questions(n: int, directive: str | None = None) -> dict:
-    """Two judgments per block: whether it is still needed at all, and
-    whether it is needed verbatim — a `no` on the second means a truncated
-    head plus a pointer suffices, which is where most of the bulk is.
+CHECKS = {
+    "constraint": "Does block [{i}] state a requirement, restriction, or preference "
+                  "from the user about how the work must be done: something not "
+                  "to touch, a tool or approach to use, a deadline, a scope limit?",
+    "decision": "Does block [{i}] record a decision about the work together with "
+                "its reason: an approach chosen, an alternative rejected, a root "
+                "cause identified?",
+    "error": "Does block [{i}] contain an exact error message, failing test "
+             "output, or unexpected result that the agent would have to "
+             "reproduce to see again?",
+    "open": "Does block [{i}] name work still to be done: a next step, a pending "
+            "task, or a question waiting for the user's answer?",
+    "artifact": "Does block [{i}] show file contents, a directory listing, or "
+                "command output that the agent could get again by re-running "
+                "the same tool?",
+}
+KEEP_CHECKS = ("constraint", "decision", "error", "open")
+VERBATIM_CHECKS = ("constraint", "error")
 
-    `/compact <text>` is named in the state, not repeated per question, and
-    both judgments defer to it: what the user asked to keep outranks what
-    the block would score on its own."""
-    asked = (" The state names what the user asked this compaction to do; a "
-             "block that request covers is needed, however old or routine."
+
+def keep_questions(n: int, directive: str | None = None) -> dict:
+    """Five concrete yes/no checks per block, each positively framed and
+    settleable by a reader in ten seconds. The policy that turns them into
+    keep / verbatim / head / drop lives in `verdicts`, not in the question.
+
+    `/compact <text>` is named in the state, not repeated per question; the
+    checks defer to it: what the user asked to keep outranks their score."""
+    asked = (" The state names what the user asked this compaction to keep; "
+             "a block that request covers counts as yes here."
              if directive else "")
-    asked_full = (" If that request asks for this block's exact content, "
-                  "answer yes." if directive else "")
     questions = {}
     for i in range(n):
-        questions[f"keep_{i}"] = {
-            "type": "noul",
-            "instructions": f"If this session's history were compacted, would block [{i}] "
-                            f"(marked [{i}] in the state) still be needed to continue the work — "
-                            "a decision, constraint, file path, error cause, or open task the "
-                            "agent would otherwise lose? Answer yes only for lasting information "
-                            "value, not for politeness or because it is recent." + asked,
-        }
-        questions[f"full_{i}"] = {
-            "type": "noul",
-            "instructions": f"Does the agent need block [{i}] in full, verbatim? Answer no if "
-                            "knowing the block happened plus its opening lines is enough — e.g. "
-                            "a file read or command whose output the agent could re-run, versus "
-                            "an exact error message or constraint it could not reconstruct."
-                            + asked_full,
-        }
+        for name, text in CHECKS.items():
+            questions[f"{name}_{i}"] = {"type": "noul",
+                                        "instructions": text.format(i=i) + asked}
     return questions
+
+
+def verdicts(answers: dict, i: int) -> tuple[float | None, float | None, dict]:
+    """(keep, full, checks) for block i from its check scores. keep is the
+    strongest reason to hold the block; full is the strongest reason to hold
+    it byte for byte. None when no check was answered."""
+    checks = {}
+    for name in CHECKS:
+        a = answers.get(f"{name}_{i}")
+        if a and a.get("noul") is not None:
+            checks[name] = a["noul"]
+    if not checks:
+        return None, None, checks
+    keep = max((checks.get(c, 0.0) for c in KEEP_CHECKS), default=0.0)
+    full = max((checks.get(c, 0.0) for c in VERBATIM_CHECKS), default=0.0)
+    return keep, full, checks
 
 
 def ask_chunked(blocks: list[dict], cwd: str | None, n: int,
@@ -267,7 +287,7 @@ def ask_chunked(blocks: list[dict], cwd: str | None, n: int,
     def one(r: tuple[int, int]) -> dict:
         lo, hi = r
         q = {k: questions[k] for i in range(lo, hi)
-             for k in (f"keep_{i}", f"full_{i}")}
+             for k in (f"{name}_{i}" for name in CHECKS)}
 
         try:
             return jev.ask(compact_state(blocks, lo, hi, context), q)
@@ -372,9 +392,9 @@ def block_rows(blocks: list[dict], kept: list[dict], answers: dict,
             verdict = "pinned"
         else:
             verdict = k["kind"]
-        keep = (answers.get(f"keep_{i}") or {}).get("noul") if i < n_judged else None
-        full = (answers.get(f"full_{i}") or {}).get("noul") if i < n_judged else None
+        keep, full, checks = verdicts(answers, i) if i < n_judged else (None, None, {})
         out.append({
+            "checks": checks,
             "i": i,
             "role": b["role"],
             "kind": block_kind(b["text"]),
@@ -411,8 +431,7 @@ def select_blocks(blocks: list[dict], cwd: str | None,
             kept.append({"i": i, "text": cut_marked(b["text"], KEEP_CHARS),
                          "kind": "full", "pinned": True})
             continue
-        keep = (answers.get(f"keep_{i}") or {}).get("noul")
-        full = (answers.get(f"full_{i}") or {}).get("noul")
+        keep, full, _ = verdicts(answers, i)
         if keep is None or keep >= KEEP_THRESHOLD:
 
             kind = "truncated" if keep is not None and full is not None\
