@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Cut a release: version files, changelog, commit, tag, push, GitHub release.
 
-    python3 scripts/release.py 0.16.0            plan only, mutates nothing
-    python3 scripts/release.py 0.16.0 --execute  do it
+    python3 .claude/skills/release/release.py 0.16.0            plan only
+    python3 .claude/skills/release/release.py 0.16.0 --execute  do it
     --trailer "Key: value"                       appended to the release commit
 
 The changelog is the source of the release notes. `CHANGELOG.md` must have a
@@ -28,7 +28,7 @@ import subprocess
 import sys
 import tempfile
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 PLUGIN = os.path.join(ROOT, ".claude-plugin", "plugin.json")
 MARKETPLACE = os.path.join(ROOT, ".claude-plugin", "marketplace.json")
 CHANGELOG = os.path.join(ROOT, "CHANGELOG.md")

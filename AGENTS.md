@@ -17,10 +17,10 @@ explains what each hook decides and why. Read it before changing behavior.
 | `scripts/comparators.py` | ast-grep lookups the rule hook adds to a judgment |
 | `scripts/observed.py` | Scores what a past turn actually did |
 | `scripts/stats.py` | `/claude-jev:stats` — scores live decisions from the three logs under `~/.claude`: `jev-router-log.jsonl` (router, subagent, rules), `jev-compact-log.jsonl`, `jev-calls.jsonl` (every API call, written by `jev.ask`) |
-| `scripts/release.py` | `/claude-jev:release` — changelog section to version bump, tagged commit, push, GitHub release. Plan mode by default. |
 | `scripts/check_no_comments.py` | Hard ban: fails if `scripts/`, `eval/`, or `hooks/` source has a `#` / `//` / `/* */` comment |
 | `eval/` | Offline measurement. See `eval/README.md`. |
-| `skills/` | User-facing entry points. `/claude-jev:<dir name>`. |
+| `skills/` | User-facing entry points shipped with the plugin. `/claude-jev:<dir name>`. |
+| `.claude/skills/` | Maintainer skills for this repository, not shipped. `release` cuts a version: changelog section to bump, tag, push, GitHub release. |
 | `hooks/hooks.json` | Hook registration. New hook means an entry here. `modules` names the function-hooks module; older Claude Code ignores the key. |
 
 ## Invariants
@@ -164,4 +164,5 @@ running a full sweep.
   only with a run behind it, and say which run.
 - Bump `version` in `.claude-plugin/plugin.json` for a behavior change, and
   add the change under `## [Unreleased]` in `CHANGELOG.md`. Releases go
-  through `/claude-jev:release`, which refuses an empty section.
+  through `/release` (`.claude/skills/release`), which refuses an empty
+  section.

@@ -3,14 +3,18 @@ name: release
 description: >
   Cut a claude-jev release: changelog entry, version bump, tagged commit,
   push, GitHub release. Use when the user asks to release, ship, tag, or
-  publish a version, or runs /claude-jev:release. Not for an ordinary
+  publish a version of this plugin, or runs /release. Not for an ordinary
   version bump or changelog edit without a release.
 argument-hint: "<X.Y.Z>"
 ---
 
 # Release
 
-`${CLAUDE_PLUGIN_ROOT}/scripts/release.py X.Y.Z` does the mechanical part.
+Maintainer workflow for this repository. It is a project skill, not part of
+the shipped plugin.
+
+`python3 .claude/skills/release/release.py X.Y.Z`, run from the repository
+root, does the mechanical part.
 Its docstring is the authoritative list of what it checks and changes. It
 plans by default and writes nothing until `--execute`.
 
