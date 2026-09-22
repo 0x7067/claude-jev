@@ -11,7 +11,7 @@ post-compaction context. The built-in summarizer never runs.
 Contract with the module: stdout is one JSON object, either {"messages":
 [...], "summary": "<one line for the debug log>"} to replace the compaction
 or {"fallback": "<reason>"} to let the built-in summary run. Bad input, a
-missing key, a Jev outage, or a weak selection all answer with a fallback and
+missing key, or a Jev outage all answer with a fallback and
 exit 0, so a failure here can never leave a session uncompacted. `judge` and
 the transcript readers stay because `eval/compare.py` replays recorded
 transcripts through them.
@@ -57,8 +57,6 @@ TARGET_CHARS = 16000    # hard cap on digest size, and the lever that decides
                         # how much survives: 66% of re-fetched artifacts held
                         # against 50% at 8k, 21 wins to none. ~3.9k tokens,
                         # still under the summary it replaces; 40k overshoots.
-MIN_REDUCTION = 0.25    # required size reduction; compaction busts the prompt cache,
-                        # so a weak selection must not ship
 STATS_LOG = os.path.expanduser("~/.claude/jev-compact-log.jsonl")
 TAIL_LINES = 5000  # transcript read window for `judge`; a bound, not a target
 ROWS_HEADER = ("This session's history was compacted by Jev. Every message below "
@@ -523,10 +521,6 @@ def rows(stdin) -> int:
         return fallback(f"jev: {e}")
     stats["trigger"] = event.get("trigger")
     stats["rows_in"] = len(incoming)
-    if stats.get("reduction", 0) < MIN_REDUCTION:
-        log_stats(event.get("session_id"), {**stats, "gated": True})
-        return fallback(f"only {stats['reduction']:.0%} smaller; "
-                        "letting the built-in summary run")
     out = rows_out(blocks, kept)
     stats["rows_out"] = len(out)
     stats["passed_through"] = sum(1 for r in out if r.get("handle"))

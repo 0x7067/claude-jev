@@ -372,10 +372,10 @@ def cmd_compact(args) -> int:
             post_tokens = len(default_ctx) // 4
             duration_s = None
             trigger = "synth"
-        # The `rows` bridge falls through to the built-in summary under the
-        # MIN_REDUCTION gate — a gated digest's coverage is what the session
+        # The `rows` bridge falls through to the built-in summary only when
+        # nothing was kept; that fallthrough's coverage is what the session
         # actually got.
-        gated = stats.get("reduction", 0) < compactor.MIN_REDUCTION or not kept
+        gated = not kept
         kept = [] if gated else kept
         digest = "\n".join(kept)
         # A truncated block holds the head plus a re-read pointer — coverage
@@ -493,7 +493,7 @@ def cmd_compact(args) -> int:
               + (f" (+{tot['duration_s']/n:.0f}s summarizing)" if tot['duration_s'] else "")
               + f" vs jev {tot['jev_tokens']/n:.0f} tok (+{tot['jev_ms']/n:.0f}ms judging)")
         if tot["gated"]:
-            print(f"    * {tot['gated']} fell under the min-reduction gate — jev applied nothing")
+            print(f"    * {tot['gated']} kept no rows — jev applied nothing")
         if tot["no_summary"]:
             print(f"    ! {tot['no_summary']} synthetic events have no summary (claude -p failed)")
         if tot["refetch_reads"]:

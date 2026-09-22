@@ -34,7 +34,7 @@ Requires Claude Code 2.1.278 or later with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`
 
 Bytes, not prose: harness rows (slash-command wrappers, caveats) and one-word acks are dropped locally. Each row gets two judgments — needed at all, needed verbatim. Kept plain messages come back byte-identical; kept tool calls and results come back as text, and a no on the second question keeps a truncated head plus a re-read pointer. Unscored rows are kept. A fixed one-line header opens the compacted context. Text typed after `/compact` is named in the state, and both judgments defer to it.
 
-Limits: newest 150 rows judged, kept text capped at 16k chars (lowest-confidence keeps downgraded first), nothing replaced under a 25% shrink — a weak selection falls through to the built-in summary. So does a missing key, a Jev outage, or any error in the bridge.
+Limits: newest 150 rows judged, kept text capped at 16k chars (lowest-confidence keeps downgraded first). Jev's rows replace the summary whatever the shrink; only a missing key, a Jev outage, or an error in the bridge falls through to the built-in summary.
 
 To see which path ran, start Claude Code with `-d` and read `~/.claude/debug/<session-id>.txt` after a compaction: `a hook's N messages stand (hooked by claude-jev); core never ran` means Jev's rows replaced the summary; `jev-compact: ... built-in summary runs` names why it fell through.
 
@@ -71,4 +71,4 @@ python3 eval/rules_eval.py report
 
 `eval/compare.py` replays the pre-compaction blocks at each `compact_boundary` in recorded transcripts (12 real, 60 synthetic) through the same selection the hook runs: 3.2–3.9k tok of kept context vs. the 2.4–5.0k tok summary it replaces, ~0.9–1.1s vs. ~117s to compact. Of 710 artifacts the agent re-fetched post-compaction, the summary mentioned 73–91% and the kept blocks held 76–82% verbatim — a mention isn't the content. The rest fell outside the judgment window or below the keep floor.
 
-Live, through the `session.compact` hook on Claude Code 2.1.278 (one session each, not a sweep): a 15-row session compacted in 0.7s with 7 rows kept, and a 5-row session fell through to the built-in summary at 0% reduction, as the gate intends. The selection is the same code the eval measures; the eval numbers are the ones to trust.
+Live, through the `session.compact` hook on Claude Code 2.1.278 (one session each, not a sweep): a 15-row session compacted in 0.7s with 7 rows kept, and a 5-row session fell through to the built-in summary at 0% reduction under the since-removed 25% shrink gate. The selection is the same code the eval measures; the eval numbers are the ones to trust.
