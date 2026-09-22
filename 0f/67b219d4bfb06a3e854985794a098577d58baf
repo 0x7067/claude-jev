@@ -1,0 +1,31 @@
+scripts/jev.py
+  s_52f08eadac0e76::t_001474adef0a33 110-111,117,120,122
+  s_52f08eadac0e76::t_e2075f5922a3bd 15,19,26-32,39-83
+  s_52f08eadac0e76::t_06e36634f077bb 84-85
+scripts/compactor.py
+  s_52f08eadac0e76::t_0a35c801f55e74 358-408
+  s_52f08eadac0e76::t_751dec207619e5 466-467
+scripts/prompt_router.py
+  s_52f08eadac0e76::t_d1ed976cbd3a29 192-193
+  s_52f08eadac0e76::t_d785e97e76a3f6 206-209,214,217,220
+  s_52f08eadac0e76::t_6baf4079977eb9 156-158
+  s_52f08eadac0e76::t_f279a07952a8f5 22,26,33-42
+  s_52f08eadac0e76::t_8f296056e784a3 175-176
+  s_52f08eadac0e76::t_cfeb964b37d3f6 43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0f67b219d4bfb06a3e854985794a098577d58baf",
+  "prompts": {},
+  "sessions": {
+    "s_52f08eadac0e76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "69b2223e-e573-4c48-b2bf-b154ce12619d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
