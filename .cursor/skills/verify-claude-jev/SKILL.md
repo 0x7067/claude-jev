@@ -37,8 +37,10 @@ control-jev launch
 Teardown is `control-jev cleanup` (see Cleanup). Never drive an instance whose
 `HOME` was not created by `control-jev launch` for this run.
 
-Isolation: each run uses `HOME=/tmp/jev-verify-$RUN_ID`. Do not point two
-drives at the same `HOME`. Do not use the developer's real home.
+Isolation: each run uses `VERIFY_HOME=/tmp/jev-verify-$RUN_ID`; child
+processes see that path as `HOME`. `control-jev` loads its state file itself —
+do not `source` it into your shell (that would replace your real `HOME` and
+break git/ssh). Do not point two drives at the same verify home.
 
 ## Doctor
 

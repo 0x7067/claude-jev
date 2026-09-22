@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Harness for project-local verification of claude-jev.
-# Isolates every run under HOME=/tmp/jev-verify-$RUN_ID so live ~/.claude
-# logs and caches are never touched. Evidence lives under the skill's
+# Isolates every run under VERIFY_HOME=/tmp/jev-verify-$RUN_ID so live
+# ~/.claude logs and caches are never touched. Child processes see that
+# path as HOME; the caller's HOME is left alone (do not source the state
+# file into an interactive shell). Evidence lives under the skill's
 # artifacts/ tree and must survive cleanup.
 set -euo pipefail
 
@@ -15,10 +17,10 @@ usage() {
   cat <<'EOF'
 Usage: control-jev <command> [args]
 
-  launch [--reuse]    Create an isolated HOME and record the run id
+  launch [--reuse]    Create an isolated VERIFY_HOME and record the run id
   doctor              Read-only health check for the active run
-  cleanup             Tear down the disposable HOME; keep evidence
-  status              Print the active RUN_ID, HOME, and evidence dir
+  cleanup             Tear down the disposable home; keep evidence
+  status              Print the active RUN_ID, VERIFY_HOME, and evidence dir
   hook <name> [json]  Drive one hook with a JSON event on stdin or as arg
   rows [json-file]    Drive compactor.py rows (stdin or file)
   jev -- <args...>    Run scripts/jev.py with the isolated env
@@ -30,13 +32,21 @@ Environment:
   JE_VERIFY_RUN_ID     Force the run id on launch (default: timestamp-pid)
   JE_VERIFY_EVIDENCE   Override evidence root (default: skill artifacts/)
   TYPESAFE_API_KEY     Optional; without it hooks fail open and jev exits 2
+
+Note: control-jev loads its own state file. Do not `source` that file into
+your shell — it would replace HOME and break git/ssh for the session.
 EOF
 }
 
 die() { echo "control-jev: $*" >&2; exit 1; }
 
+# Run a command with the disposable home as HOME for that process only.
+with_verify_home() {
+  env HOME="$VERIFY_HOME" CLAUDE_PLUGIN_ROOT="$ROOT" "$@"
+}
+
 require_active() {
-  if [[ -n "${RUN_ID:-}" && -n "${HOME:-}" && -d "$HOME" ]]; then
+  if [[ -n "${RUN_ID:-}" && -n "${VERIFY_HOME:-}" && -d "$VERIFY_HOME" && -n "${EVIDENCE_DIR:-}" ]]; then
     return 0
   fi
   if [[ -f "$STATE_FILE" ]]; then
@@ -44,17 +54,17 @@ require_active() {
     source "$STATE_FILE"
   fi
   [[ -n "${RUN_ID:-}" ]] || die "no active run; run: control-jev launch"
-  [[ -d "${HOME:-}" ]] || die "HOME missing for RUN_ID=$RUN_ID; re-launch"
+  [[ -n "${VERIFY_HOME:-}" && -d "$VERIFY_HOME" ]] || die "VERIFY_HOME missing for RUN_ID=$RUN_ID; re-launch"
+  [[ -n "${EVIDENCE_DIR:-}" ]] || die "EVIDENCE_DIR missing for RUN_ID=$RUN_ID; re-launch"
 }
 
 write_state() {
   mkdir -p "$STATE_DIR" "$EVIDENCE_DIR"
   cat >"$STATE_FILE" <<EOF
-export RUN_ID='$RUN_ID'
-export HOME='$HOME'
-export CLAUDE_PLUGIN_ROOT='$ROOT'
-export EVIDENCE_DIR='$EVIDENCE_DIR'
-export PATH='$SKILL_DIR/bin:$PATH'
+RUN_ID='$RUN_ID'
+VERIFY_HOME='$VERIFY_HOME'
+CLAUDE_PLUGIN_ROOT='$ROOT'
+EVIDENCE_DIR='$EVIDENCE_DIR'
 EOF
 }
 
@@ -64,19 +74,17 @@ cmd_launch() {
   if [[ "${1:-}" == "--reuse" && -f "$STATE_FILE" ]]; then
     # shellcheck disable=SC1090
     source "$STATE_FILE"
-    mkdir -p "$HOME" "$EVIDENCE_DIR"
+    mkdir -p "$VERIFY_HOME" "$EVIDENCE_DIR"
   else
     RUN_ID="${JE_VERIFY_RUN_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
-    HOME="/tmp/jev-verify-$RUN_ID"
+    VERIFY_HOME="/tmp/jev-verify-$RUN_ID"
     EVIDENCE_DIR="$ARTIFACTS_ROOT/$RUN_ID"
-    mkdir -p "$HOME" "$EVIDENCE_DIR"
+    mkdir -p "$VERIFY_HOME" "$EVIDENCE_DIR"
   fi
-  export RUN_ID HOME CLAUDE_PLUGIN_ROOT="$ROOT" EVIDENCE_DIR
-  export PATH="$SKILL_DIR/bin:$PATH"
   write_state
   cat <<EOF
 run_id=$RUN_ID
-home=$HOME
+home=$VERIFY_HOME
 plugin_root=$ROOT
 evidence_dir=$EVIDENCE_DIR
 ready=1
@@ -85,13 +93,12 @@ EOF
 
 cmd_doctor() {
   require_active
-  export HOME CLAUDE_PLUGIN_ROOT="$ROOT"
   local ok=1
   local report="$EVIDENCE_DIR/doctor.txt"
   mkdir -p "$EVIDENCE_DIR"
   {
     echo "run_id=$RUN_ID"
-    echo "home=$HOME"
+    echo "home=$VERIFY_HOME"
     echo "plugin_root=$ROOT"
     echo "python=$(python3 --version 2>&1)"
     echo "typesafe_api_key=$([ -n "${TYPESAFE_API_KEY:-}" ] && echo set || echo unset)"
@@ -105,21 +112,27 @@ cmd_doctor() {
   fi
 
   local exitc out
-  out="$(echo '' | python3 "$ROOT/scripts/prompt_router.py" 2>&1)" || true
+  set +e
+  out="$(printf '' | with_verify_home python3 "$ROOT/scripts/prompt_router.py" 2>&1)"
   exitc=$?
+  set -e
   echo "prompt_router_empty_exit=$exitc" | tee -a "$report"
   [[ "$exitc" -eq 0 && -z "$out" ]] || ok=0
 
-  out="$(echo '' | python3 "$ROOT/scripts/compactor.py" rows 2>&1)" || true
+  set +e
+  out="$(printf '' | with_verify_home python3 "$ROOT/scripts/compactor.py" rows 2>&1)"
   exitc=$?
+  set -e
   echo "compactor_rows_empty_exit=$exitc" | tee -a "$report"
   echo "compactor_rows_empty_out=$out" | tee -a "$report"
   [[ "$exitc" -eq 0 && "$out" == *'"fallback"'* ]] || ok=0
 
-  out="$(python3 "$ROOT/scripts/comparators.py" which 2>&1)" || true
+  set +e
+  out="$(with_verify_home python3 "$ROOT/scripts/comparators.py" which 2>&1)"
+  set -e
   echo "comparators_which=$out" | tee -a "$report"
 
-  if [[ ! -d "$HOME" ]]; then
+  if [[ ! -d "$VERIFY_HOME" ]]; then
     echo "home_missing=1" | tee -a "$report"
     ok=0
   else
@@ -136,13 +149,13 @@ cmd_doctor() {
 
 cmd_cleanup() {
   require_active
-  local home_to_remove="$HOME"
+  local home_to_remove="$VERIFY_HOME"
   local run="$RUN_ID"
   local evidence="$EVIDENCE_DIR"
   if [[ "$home_to_remove" == /tmp/jev-verify-* ]]; then
     rm -rf "$home_to_remove"
   else
-    die "refusing to remove unexpected HOME=$home_to_remove"
+    die "refusing to remove unexpected VERIFY_HOME=$home_to_remove"
   fi
   rm -f "$STATE_FILE"
   cat <<EOF
@@ -157,7 +170,7 @@ cmd_status() {
   require_active
   cat <<EOF
 run_id=$RUN_ID
-home=$HOME
+home=$VERIFY_HOME
 plugin_root=$ROOT
 evidence_dir=$EVIDENCE_DIR
 api_key=$([ -n "${TYPESAFE_API_KEY:-}" ] && echo set || echo unset)
@@ -166,41 +179,37 @@ EOF
 
 cmd_hook() {
   require_active
-  export HOME CLAUDE_PLUGIN_ROOT="$ROOT"
   local name="${1:-}"
   shift || true
   [[ -n "$name" ]] || die "hook name required (prompt_router|subagent_router|rules)"
   local script="$ROOT/scripts/${name}.py"
   [[ -f "$script" ]] || die "unknown hook script: $script"
   if [[ $# -gt 0 ]]; then
-    printf '%s\n' "$1" | python3 "$script"
+    printf '%s\n' "$1" | with_verify_home python3 "$script"
   else
-    python3 "$script"
+    with_verify_home python3 "$script"
   fi
 }
 
 cmd_rows() {
   require_active
-  export HOME CLAUDE_PLUGIN_ROOT="$ROOT"
   if [[ $# -gt 0 ]]; then
-    python3 "$ROOT/scripts/compactor.py" rows <"$1"
+    with_verify_home python3 "$ROOT/scripts/compactor.py" rows <"$1"
   else
-    python3 "$ROOT/scripts/compactor.py" rows
+    with_verify_home python3 "$ROOT/scripts/compactor.py" rows
   fi
 }
 
 cmd_jev() {
   require_active
-  export HOME CLAUDE_PLUGIN_ROOT="$ROOT"
   if [[ "${1:-}" == "--" ]]; then shift; fi
-  python3 "$ROOT/scripts/jev.py" "$@"
+  with_verify_home python3 "$ROOT/scripts/jev.py" "$@"
 }
 
 cmd_stats() {
   require_active
-  export HOME CLAUDE_PLUGIN_ROOT="$ROOT"
   if [[ "${1:-}" == "--" ]]; then shift; fi
-  python3 "$ROOT/scripts/stats.py" "$@"
+  with_verify_home python3 "$ROOT/scripts/stats.py" "$@"
 }
 
 cmd_evidence() {
