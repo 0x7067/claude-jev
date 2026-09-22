@@ -1,0 +1,29 @@
+scripts/prompt_router.py
+  s_a1ee9515e64242::t_72a493e20ed03c 45
+scripts/subagent_router.py
+  s_a1ee9515e64242::t_72a493e20ed03c 35
+.cursor/skills/verify-claude-jev/features/subagent-routing.md
+  s_a1ee9515e64242::t_72a493e20ed03c 31
+scripts/jev.py
+  s_a1ee9515e64242::t_72a493e20ed03c 192-212
+CHANGELOG.md
+  s_a1ee9515e64242::t_79b66208f58537 8
+README.md
+  s_a1ee9515e64242::t_5fc6d0fa82573c 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ae3dbc86e7351086e9ae7eb66f7187466ad69a55",
+  "prompts": {},
+  "sessions": {
+    "s_a1ee9515e64242": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "774f7cd4-36a5-4fed-b6ed-ea9453f77d42",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
