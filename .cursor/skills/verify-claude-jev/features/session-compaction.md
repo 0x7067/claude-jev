@@ -23,7 +23,7 @@ Failures must fall back, never leave the session uncompacted.
 Preconditions:
 
 - `control-jev doctor` reports `doctor=ok` for this run.
-- Disposable `HOME` is set by `control-jev launch`.
+- Disposable verify home is set by `control-jev launch`.
 
 - **Bad input fallback.** Feed empty stdin. Run `printf '' | control-jev rows`. Exit code `0` and stdout is JSON containing `"fallback"`.
 - **Pin-tail keep.** Feed two plain messages (under the pin-tail window). Write the event to a temp file and run `control-jev rows "$EVENT_FILE"` with:

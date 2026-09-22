@@ -8,9 +8,11 @@ feature file as the recipe.
 
 - Run from the repository root with `PATH` including
   `.cursor/skills/verify-claude-jev/bin`.
-- `control-jev launch` created this run's disposable `HOME=/tmp/jev-verify-$RUN_ID`.
+- `control-jev launch` created this run's disposable
+  `VERIFY_HOME=/tmp/jev-verify-$RUN_ID` (child processes see it as `HOME`).
 - `control-jev doctor` printed `doctor=ok` and wrote `$EVIDENCE_DIR/doctor.txt`.
-- Never drive a `HOME` that was not started by this verification run.
+- Never drive a verify home that was not started by this verification run.
+- Do not `source` the control-jev state file into your shell.
 - `TYPESAFE_API_KEY` may be unset. Without it, hooks must fail open (exit 0,
   no stdout) and `jev.py` must exit 2 with `jev: set TYPESAFE_API_KEY`. Live
   classification proofs require the key; feature files say so under Gotchas.

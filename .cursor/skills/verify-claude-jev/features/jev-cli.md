@@ -20,7 +20,7 @@ typed judgment. Without `TYPESAFE_API_KEY` the CLI exits 2 and prints
 Preconditions:
 
 - `control-jev doctor` reports `doctor=ok` for this run.
-- Disposable `HOME` is set by `control-jev launch`.
+- Disposable verify home is set by `control-jev launch`.
 
 - **Missing key.** Unset `TYPESAFE_API_KEY`. Run `control-jev jev -- noul "Is 2 even?" "2"`. Exit code `2` and stderr contains `jev: set TYPESAFE_API_KEY`.
 - **Bad choose.** Run `control-jev jev -- choose "pick" "state" --opt only=one`. Exit code `2` (needs at least two `--opt`).

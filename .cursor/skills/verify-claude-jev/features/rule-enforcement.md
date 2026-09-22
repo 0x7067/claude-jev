@@ -21,7 +21,7 @@ blocking the session.
 Preconditions:
 
 - `control-jev doctor` reports `doctor=ok` for this run.
-- Disposable `HOME` is set by `control-jev launch`.
+- Disposable verify home is set by `control-jev launch`.
 - `TYPESAFE_API_KEY` is unset for the fail-open proof (or the live path is skipped).
 
 - **Malformed.** Feed non-JSON. Run `printf 'not-json\n' | control-jev hook rules`. Exit code `0` and stdout empty.

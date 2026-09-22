@@ -21,7 +21,7 @@ block the session.
 Preconditions:
 
 - `control-jev doctor` reports `doctor=ok` for this run.
-- Disposable `HOME` is set by `control-jev launch`.
+- Disposable verify home is set by `control-jev launch`.
 
 - **Skip short.** Feed a two-character prompt. Run `control-jev hook prompt_router '{"prompt":"hi","transcript_path":""}'`. Exit code `0` and stdout empty.
 - **Skip slash.** Feed a slash command. Run `control-jev hook prompt_router '{"prompt":"/help","transcript_path":""}'`. Exit code `0` and stdout empty.

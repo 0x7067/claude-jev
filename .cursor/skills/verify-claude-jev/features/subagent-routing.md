@@ -21,7 +21,7 @@ block the spawn.
 Preconditions:
 
 - `control-jev doctor` reports `doctor=ok` for this run.
-- Disposable `HOME` is set by `control-jev launch`.
+- Disposable verify home is set by `control-jev launch`.
 
 - **Explicit model.** Pass a model in tool input. Run `control-jev hook subagent_router '{"tool_input":{"prompt":"search for callers","subagent_type":"Explore","model":"haiku"}}'`. Exit code `0` and stdout empty.
 - **Fail open no key.** Unset the key and omit model. Run `control-jev hook subagent_router '{"tool_input":{"prompt":"search for callers of parse_opt","subagent_type":"Explore"}}'`. Exit code `0` and stdout empty.
