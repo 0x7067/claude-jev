@@ -24,7 +24,9 @@ The no-tools hint is gated harder: it fires only on a near-certain yes/no answer
 
 Rules are the instruction files you already keep (`CLAUDE.md`, nested `AGENTS.md`, `.claude/rules/*`, `.cursor/rules/*`, `~/.claude/CLAUDE.md`). Nothing to compile, nothing extra to commit.
 
-Each file is classified once per hash and cached under `~/.claude`: instruction about written code vs. fact/pointer/process rule, and per-edit vs. whole-turn. Each edit is one batched call, one yes/no question per rule in your own wording, scored as probability broken. Jev sees the old→new hunk plus your last prompt. At most 40 questions per edit, path-scoped rules first with files taking turns.
+Each file is classified once per hash and cached under `~/.claude`: instruction about written code vs. fact/pointer/process rule, per-edit vs. whole-turn, and two more fields that shape the question — polarity (forbid or require) and subject (imports, comments, naming, types, tests, errors, literals, files, process, other). Long prose paragraphs are split into sentences first, so a rule at the tail of a paragraph is judged on its own. Before asking, a cheap local test per subject drops rules the hunk cannot break: an import rule is not asked about an edit that touches no import line. On 250 real edits that removed 40% of in-scope checks and cut the median from 10 questions to 4.
+
+Each edit is one batched call, one yes/no question per remaining rule, asked as a concrete check by polarity — does the new code do the forbidden thing, or add a case the rule clearly covers without the required element — with criteria, scored as probability broken. Jev sees the old→new hunk, your last prompt, the surrounding lines after the edit, and for import rules the sibling modules in the file's directory. At most 40 questions per edit, path-scoped rules first with files taking turns.
 
 At 0.80 the edit is blocked with a file:line cite; 0.50–0.80 flags to you only; below that, silence. A rule blocks the same file at most twice per session, then flags — an unlandable repair is a loop. Vendored, generated, and out-of-project paths are never judged. Whole-turn rules (minimal changes, no single-caller abstraction, no unrelated refactoring) skip per-edit and judge accumulated hunks at `Stop`, where scope creep is visible.
 
@@ -55,7 +57,20 @@ Compaction additionally needs Claude Code 2.1.278 or later started with `CLAUDE_
 
 Judged inside real repos against those repos' own rules, on corpora that aren't committed (they need the repos). `eval/rules_eval.py extract` pulls reachable Edits/Writes from `~/.claude/projects`; those were accepted at the time, so any block is a measured false positive.
 
-250-edit sample, 248 judged, each at the commit its repo was on when extracted: **4 blocked (1.6%)**, 32 flagged, median 0.71s at median 10 questions. All four blocks came from two rules in one repo, on its README, AGENTS.md and one source file. Hand-written violations of real rules: 14 of 19 blocked, all by the targeted rule; **0 of 13 near-misses blocked**. Two of those catches came from rewriting prose `AGENTS.md` paragraphs as bullets, not from tuning: a rule at the tail of a 600-character paragraph is truncated before Jev sees it. The remaining misses cluster under the bar (0.56–0.78) or target rules no instruction file states.
+Same 250-edit sample, judged at each edit's commit, before and after the structured-rule change (v0.14.0):
+
+| | v0.13.0 | v0.14.0 |
+|---|---|---|
+| Real edits blocked | 4 (1.6%) | **1 (0.4%)** |
+| Real edits flagged only | 32 | 20 |
+| Hand-written violations blocked | 14/19 | 14/19 |
+| Compliant near-misses blocked | 0/13 | **0/14** |
+| Rules asked per edit, median | 10 | 4 |
+| Latency, median | 0.71s | 0.71s |
+
+The remaining misses cluster under the bar (0.56–0.78) or target rules no instruction file states. The one near-miss added in v0.14.0 is a live false positive: a sibling-module import blocked at 0.86 under a "standard library only" rule; with the sibling list in the state it scores 0.74, flagged but not blocked. `report --sweep` shows the real-block rate flat from 0.70 to 0.85, so `ACT` sits on a plateau, not a cliff.
+
+Both corpora are weak labels. A real edit counts as compliant because nobody objected at the time, and the hand-written set is small enough that one case is a five-point swing. The live decision log now records what happened after each block (repaired, retried identical, ignored, abandoned), which is the signal for growing the case set; see `/claude-jev:stats`.
 
 ```bash
 python3 eval/rules_eval.py extract
