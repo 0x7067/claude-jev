@@ -1,0 +1,34 @@
+eval/rules_eval.py
+  s_52f08eadac0e76::t_dd64a5eacfe99b 274-276,536-537
+  s_52f08eadac0e76::t_9a0d84816d0639 237-239,244-245
+scripts/comparators.py
+  s_52f08eadac0e76::t_bc3238a4184f17 160,167-171,207-208,212,280-282,287-289,298,300-301,307-323,325-326,336-337,347-350,368-369
+  s_52f08eadac0e76::t_7e4f949252b870 232,252-253
+  s_52f08eadac0e76::t_0061bf2eed7449 324,327-335,339-340,352-362
+  s_52f08eadac0e76::t_0ccf6a4e244468 1-159,161-166,172-206,209-211,213-231,233-251,254-279,283-286,290-297,299,302-306,338,341-346,351,363-367,370-396,400-419
+  s_52f08eadac0e76::t_a07477111994e4 397-399
+AGENTS.md
+  s_52f08eadac0e76::t_c68f85581ea7b3 17,31-34
+README.md
+  s_52f08eadac0e76::t_c68f85581ea7b3 32
+  s_52f08eadac0e76::t_a07477111994e4 31
+scripts/rules.py
+  s_52f08eadac0e76::t_9a0d84816d0639 43,82-85,859-860,876-877,996-999,1011-1018,1044,1076-1077
+  s_52f08eadac0e76::t_b2bcb7476c2f3a 1072-1074,1096
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da188909f9aa221903c2a9c8f05deabcf690ed55",
+  "prompts": {},
+  "sessions": {
+    "s_52f08eadac0e76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "69b2223e-e573-4c48-b2bf-b154ce12619d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
