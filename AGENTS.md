@@ -15,7 +15,7 @@ explains what each hook decides and why. Read it before changing behavior.
 | `scripts/compactor.py` | The `rows` bridge behind `session.compact`; `judge` is kept for the eval |
 | `hooks/register.ts` | Experimental function-hooks module: `session.compact` -> `compactor.py rows`. A bridge, not a second implementation. |
 | `scripts/observed.py` | Scores what a past turn actually did |
-| `scripts/stats.py` | `/claude-jev:stats` — scores live decisions |
+| `scripts/stats.py` | `/claude-jev:stats` — scores live decisions from the three logs under `~/.claude`: `jev-router-log.jsonl` (router, subagent, rules), `jev-compact-log.jsonl`, `jev-calls.jsonl` (every API call, written by `jev.ask`) |
 | `eval/` | Offline measurement. See `eval/README.md`. |
 | `skills/` | User-facing entry points. `/claude-jev:<dir name>`. |
 | `hooks/hooks.json` | Hook registration. New hook means an entry here. `modules` names the function-hooks module; older Claude Code ignores the key. |
@@ -93,8 +93,13 @@ against the table in `README.md`:
 
 ```bash
 python3 eval/replay.py run --variant v7_no_unclear --sample 250
-python3 eval/rules_eval.py run --sample 250
+python3 eval/rules_eval.py run --sample 250 --seed 0
+python3 eval/rules_eval.py report --sweep
 ```
+
+`--seed 0 --sample 250` selects the same real edits as the numbers in
+`README.md`; keep it when comparing. A rule-question wording change misses
+the answer cache and re-costs the run.
 
 The rules eval judges each record at its `sha`, and reads
 `eval/global_CLAUDE.md` in place of `~/.claude/CLAUDE.md`. Change a case's
