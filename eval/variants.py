@@ -14,8 +14,6 @@ import json
 from dataclasses import dataclass
 from typing import Callable
 
-# --- question bundles -------------------------------------------------------
-
 INTENT_CRITERIA = {
     "chat": "Conversation or general question — answer directly, no codebase work needed",
     "lookup": "Needs a specific fact from the codebase — a targeted search suffices",
@@ -100,8 +98,6 @@ def binary_bundle() -> dict:
     }
 
 
-# --- state builders ---------------------------------------------------------
-
 def state_plain(rec: dict) -> str:
     return rec["prompt"]
 
@@ -117,8 +113,6 @@ def state_ctx(rec: dict) -> str:
     parts.append(f"Current user message: {rec['prompt']}")
     return "\n\n".join(parts)
 
-
-# --- ground truth -----------------------------------------------------------
 
 def truth_intent(rec: dict) -> str:
     return rec["label"]
@@ -145,8 +139,6 @@ def truth_tier(rec: dict) -> str:
         return "haiku"
     return "sonnet"
 
-
-# --- decision rules ---------------------------------------------------------
 
 def rule_intent(ans: dict, floor: float):
     a = ans.get("intent") or {}
@@ -175,7 +167,7 @@ def rule_binary(ans: dict, floor: float):
     p = (ans.get("needs_tools") or {}).get("noul")
     if p is None:
         return (None, 0.0)
-    conf = abs(p - 0.5) * 2  # distance from the coin flip
+    conf = abs(p - 0.5) * 2
     if conf < floor:
         return (None, conf)
     return ("tools" if p >= 0.5 else "no_tools", conf)
@@ -207,8 +199,6 @@ def rule_tier(ans: dict, floor: float):
     return (c, conf) if c in TIER_CRITERIA and conf >= floor else (None, conf)
 
 
-# --- registry ---------------------------------------------------------------
-
 @dataclass
 class Variant:
     name: str
@@ -218,13 +208,12 @@ class Variant:
     rule: Callable[[dict, float], tuple]
     truth: Callable[[dict], str]
     classes: list
-    quiet_class: str          # the hint meaning "do not use tools"
-    unscorable: tuple = ()    # predictions with no ground truth
+    quiet_class: str
+    unscorable: tuple = ()
 
     @property
     def bundle_hash(self) -> str:
         return hashlib.sha1(json.dumps(self.bundle, sort_keys=True).encode()).hexdigest()[:12]
-
 
 INTENTS = list(INTENT_CRITERIA)
 

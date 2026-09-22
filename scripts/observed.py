@@ -16,8 +16,6 @@ import re
 EDIT_TOOLS = {"Edit", "Write", "NotebookEdit", "MultiEdit"}
 READ_TOOLS = {"Read", "Grep", "Glob", "NotebookRead"}
 
-# A bash-first workflow hides edits and searches inside Bash, so the command
-# string decides the category, not the tool name.
 BASH_WRITE = re.compile(
     r"(^|[;&|]\s*)(rm|mv|cp|mkdir|touch|patch|tee|install)\b"
     r"|sed\s+-i|>>|(?<![0-9&])>(?!&)|<<\s*['\"]?[A-Z]"
@@ -68,10 +66,6 @@ def is_real_prompt(txt: str) -> bool:
         return False
     return not txt.startswith(("<", "/", "#", "Caveat", "[Request interrupted"))
 
-
-# Most "user" turns in these transcripts were not typed by a human: teammate
-# relays, skill preambles, worktree boundaries, resume banners. They would
-# swamp any accuracy number, so they are tagged and excluded by default.
 SYNTHETIC = re.compile(
     r"^(Another Claude session sent a message:"
     r"|Workspace boundary \(important\):"
@@ -93,7 +87,7 @@ SYNTHETIC = re.compile(
 
 
 def is_synthetic(txt: str) -> bool:
-    return bool(SYNTHETIC.match(txt)) or "<teammate-message" in txt[:200] \
+    return bool(SYNTHETIC.match(txt)) or "<teammate-message" in txt[:200]\
         or "<agent-message" in txt[:200]
 
 
@@ -185,7 +179,7 @@ def derive_label(tools: list[dict], s: dict) -> str:
 
 
 def scope_band(n_tools: int) -> str:
-    # Bands come from the corpus itself: median 4 tool calls, p90 29.
+
     if n_tools <= 2:
         return "trivial"
     if n_tools <= 9:

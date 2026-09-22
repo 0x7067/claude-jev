@@ -43,8 +43,8 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
-import compactor  # noqa: E402
-import prompt_router  # noqa: E402
+import compactor
+import prompt_router
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
@@ -57,16 +57,9 @@ CONTINUED = "continued from a previous conversation"
 FILE_TOOLS = {"Read", "Edit", "Write", "MultiEdit", "NotebookEdit", "NotebookRead"}
 SKIP_TOOLS = {"Task", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet", "TodoWrite"}
 
-# Real boundaries fired at 102-305k flattened chars (recorded preTokens
-# 162-200k — the gap is thinking blocks and tool/system overhead block_text
-# drops). 100k sits at the bottom of that range — the smallest sessions in
-# which compaction is a real scenario. A synthetic cut needs enough session
-# left after it for the re-fetch signal to mean anything.
 SYNTH_CHARS = 100_000
 MIN_POST_RETRIEVALS = 5
-# A cut also needs conversation structure: a single giant pasted document
-# crosses SYNTH_CHARS in one block, but with nothing to select there is no
-# compaction to compare. 30 blocks ≈ a real exchange, well past PIN_TAIL.
+
 MIN_BLOCKS = 30
 
 SUMMARY_PROMPT = """Your task is to create a detailed summary of the conversation so far between a user and an AI coding assistant, paying close attention to the user's explicit requests and the assistant's previous actions. This summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing development work without losing context.
@@ -76,8 +69,6 @@ Cover: the primary request and intent; key technical concepts; files and code se
 CONVERSATION:
 """
 
-
-# --- shared transcript bits -------------------------------------------------
 
 def tool_key(name: str, inp: dict) -> str | None:
     """A re-fetchable identity for a tool call: same key later = the agent
@@ -101,9 +92,6 @@ def tool_key(name: str, inp: dict) -> str | None:
         return f"url:{u}" if u else None
     return None
 
-
-# Post-compaction, only retrievals count as re-fetches: re-editing a file is
-# continuation work, re-reading it is context the compaction dropped.
 REFETCH_KINDS = ("file", "grep", "glob", "url")
 
 
@@ -154,8 +142,6 @@ def key_terms(key: str) -> list[str]:
 def covered(key: str, context: str) -> bool:
     return any(t in context for t in key_terms(key))
 
-
-# --- compact ----------------------------------------------------------------
 
 def boundaries(lines) -> list[dict]:
     """Every compaction event in one transcript: boundary line index, its
@@ -309,8 +295,7 @@ def synth_cut(lines) -> int | None:
             d = json.loads(l)
         except ValueError:
             continue
-        # compactor.visible_text — same rules transcript_blocks applies.
-        # Content the judge can't see can't qualify the cut.
+
         text = compactor.visible_text(d)
         if text is None:
             continue
@@ -350,8 +335,7 @@ def cmd_compact(args) -> int:
 
     def analyze(fp, lines, i, end, prev_i, ev, kind):
         pre = tool_calls(lines, prev_i + 1, i)
-        # Real events: i is the boundary line itself. Synth: i is the first
-        # post-cut line — the virtual boundary sits between i-1 and i.
+
         post = tool_calls(lines, i + (1 if kind == "real" else 0), end)
         reads = refetches(pre, post)
         summary = None
@@ -359,9 +343,7 @@ def cmd_compact(args) -> int:
             kept, stats, _ = replay(lines[:i], cache, summaries, cache_f)
             default_ctx = ev["summary"] + "\n" + ev["preserved"]
             meta = ev["meta"]
-            # Same basis as the jev digest: injected content, not the whole
-            # rebuilt context postTokens records (system+tool overhead is
-            # common to both paths).
+
             post_tokens = len(default_ctx) // 4
             duration_s = round((meta.get("durationMs") or 0) / 1000, 1)
             trigger = meta.get("trigger")
@@ -372,14 +354,11 @@ def cmd_compact(args) -> int:
             post_tokens = len(default_ctx) // 4
             duration_s = None
             trigger = "synth"
-        # The `rows` bridge falls through to the built-in summary only when
-        # nothing was kept; that fallthrough's coverage is what the session
-        # actually got.
+
         gated = not kept
         kept = [] if gated else kept
         digest = "\n".join(kept)
-        # A truncated block holds the head plus a re-read pointer — coverage
-        # at full fidelity means the bytes survived in a non-truncated keep.
+
         digest_full = "\n".join(t for t in kept if "elided by jev-compact" not in t)
         return {
             "kind": kind,
@@ -407,9 +386,7 @@ def cmd_compact(args) -> int:
             lines = open(fp, errors="replace").readlines()
         except OSError:
             continue
-        # A standalone subagent transcript flags every line isSidechain —
-        # relative to its parent. For its own compaction those are the
-        # session's blocks; strip the flag so the replay sees them.
+
         if "/subagents/" in fp:
             norm = []
             for l in lines:
@@ -522,8 +499,6 @@ def cmd_compact(args) -> int:
     return 0
 
 
-# --- router -----------------------------------------------------------------
-
 def cmd_router(args) -> int:
     ds = {}
     with open(DATASET) as f:
@@ -599,7 +574,6 @@ def main() -> int:
     r.set_defaults(fn=cmd_router)
     args = p.parse_args()
     return args.fn(args)
-
 
 if __name__ == "__main__":
     sys.exit(main())

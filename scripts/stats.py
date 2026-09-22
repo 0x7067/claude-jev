@@ -23,17 +23,15 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import observed  # noqa: E402
+import observed
 
 DEFAULT_LOG = os.path.expanduser("~/.claude/jev-router-log.jsonl")
 CALLS_LOG = os.path.expanduser("~/.claude/jev-calls.jsonl")
 COMPACT_LOG = os.path.expanduser("~/.claude/jev-compact-log.jsonl")
 PROJECTS = os.path.expanduser("~/.claude/projects")
-NEXT_TOOLS = 40   # tool calls examined after a compaction. A re-fetch happens
-                  # in the first few turns; past that the agent has moved on
-                  # and a match is coincidence.
-CMD_CHARS = 40    # of a Bash command used as a needle — long enough to name
-                  # the script or file, short enough to survive changed flags
+NEXT_TOOLS = 40
+
+CMD_CHARS = 40
 
 
 def load_log(path: str, days: int | None) -> list[dict]:
@@ -84,7 +82,6 @@ def quantile(vals: list[float], q: float) -> float:
 
 def fmt_q(vals: list[float], q: float) -> str:
     return f"{quantile(vals, q):.0f}" if vals else "-"
-
 
 _TOOLS_CACHE: dict[str, list[dict]] = {}
 
@@ -187,7 +184,7 @@ def rule_outcomes(entries: list[dict]) -> list[dict]:
         elif head:
             outcome = "ignored"
         else:
-            outcome = "repaired"  # pre-`added_head` entry: any later edit counts
+            outcome = "repaired"
         out.append({"rules": blocked, "outcome": outcome})
     return out
 
@@ -420,9 +417,7 @@ def main() -> int:
             med = ordered[n // 2] if n % 2 else (ordered[n // 2 - 1]
                                                  + ordered[n // 2]) / 2
             fired_n = sum(1 for p in ps if p >= 0.80)
-            # abide's calibration bands: <5 samples can't be judged; firing
-            # on most hunks means too broad; never reaching the ends means
-            # underspecified; decisive rules answer near 0 or near 1.
+
             if n < 5:
                 verdict = "skipped (need 5)"
             elif fired_n / n >= 0.6:
@@ -452,7 +447,6 @@ def main() -> int:
     print_rule_outcomes(entries)
     print_compaction(args.days)
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
