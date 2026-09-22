@@ -20,7 +20,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import jev  # noqa: E402
+import jev
 
 MIN_CONFIDENCE = 0.75
 DEFAULT_LOG = os.path.expanduser("~/.claude/jev-router-log.jsonl")
@@ -81,8 +81,7 @@ def main() -> None:
             }, sys.stdout)
             sys.stdout.write("\n")
     except Exception:
-        return  # fail open
-
+        return
 
 if __name__ == "__main__":
     main()

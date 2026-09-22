@@ -31,49 +31,38 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import jev  # noqa: E402
+import jev
 
-KEEP_THRESHOLD = 0.5    # noul floor to keep a block
-MAX_BLOCKS = 150        # oldest blocks beyond the cap are dropped unjudged.
-                        # 1200 is affordable but scored worse — 42% of
-                        # re-fetched artifacts held against 50% — because the
-                        # extra candidates crowd a fixed digest budget.
-PIN_TAIL = 4            # newest blocks always kept verbatim — the live working context
-CHUNK = 20              # questions per API call; chunks run in parallel. 40
-                        # halves the requests but judges worse: 61% of
-                        # re-fetched artifacts held against 66% here.
-BLOCKS_PER_CHUNK = CHUNK // 2   # two questions per block
-DIRECTIVE_CHARS = 500   # cap on `/compact <text>`; it rides in every chunk's state
-HEADER_CHARS = 1500     # session goals, repeated in every chunk's state — the
-                        # length compact_state already used for them, and the
-                        # repetition is now the main per-request overhead
-MAX_WORKERS = 16        # socket bound; a long session fans out in waves instead
-BLOCK_CHARS = 1200      # chars of each block shown to Jev
-KEEP_CHARS = 1500       # chars of each kept block in the digest
-HEAD_CHARS = 400        # head retained on a truncated block
-HEAD_SLACK = 200        # a block within this of HEAD_CHARS stays whole: the
-                        # elision note would cost nearly what the cut saves
-TARGET_CHARS = 16000    # hard cap on digest size, and the lever that decides
-                        # how much survives: 66% of re-fetched artifacts held
-                        # against 50% at 8k, 21 wins to none. ~3.9k tokens,
-                        # still under the summary it replaces; 40k overshoots.
+KEEP_THRESHOLD = 0.5
+MAX_BLOCKS = 150
+
+PIN_TAIL = 4
+CHUNK = 20
+
+BLOCKS_PER_CHUNK = CHUNK // 2
+DIRECTIVE_CHARS = 500
+HEADER_CHARS = 1500
+
+MAX_WORKERS = 16
+BLOCK_CHARS = 1200
+KEEP_CHARS = 1500
+HEAD_CHARS = 400
+HEAD_SLACK = 200
+
+TARGET_CHARS = 16000
+
 STATS_LOG = os.path.expanduser("~/.claude/jev-compact-log.jsonl")
-TAIL_LINES = 5000  # transcript read window for `judge`; a bound, not a target
+TAIL_LINES = 5000
 ROWS_HEADER = ("This session's history was compacted by Jev. Every message below "
                "was judged still needed and kept verbatim, or as a head with an "
                "elision note; everything else was dropped. Continue the last task "
                "without asking the user to repeat anything.")
-# Fixed text, not generated: the first message must be a user turn, and the
-# validator refuses an empty result.
 
-# Fallback only: the harness now flags its own injections (see `injected`),
-# but transcripts written before it did have nothing but the tag to go on.
 META_PREFIXES = ("<command-", "<local-command", "<system-reminder", "<caveat",
                  "<bash-", "<task-notification")
-# promptSource values that mean a person drove this turn. Anything else on a
-# user line is the harness speaking through the user channel.
+
 SOURCE_OK = ("typed", "queued", "suggestion_accepted")
-# A user turn that is only an acknowledgement carries nothing to keep.
+
 ACK = re.compile(r"(ok|yes|no|thanks|continue)\.?", re.I)
 
 
@@ -174,8 +163,7 @@ def transcript_blocks(transcript_path: str) -> list[dict]:
             parsed.append(json.loads(line))
         except ValueError:
             continue
-    # An SDK-driven session has no `typed` line at all, and applying the
-    # promptSource rule there would drop every user turn it has.
+
     strict_source = any(d.get("promptSource") == "typed" for d in parsed)
     blocks = []
     cut_at = None
@@ -280,9 +268,7 @@ def ask_chunked(blocks: list[dict], cwd: str | None, n: int,
         lo, hi = r
         q = {k: questions[k] for i in range(lo, hi)
              for k in (f"keep_{i}", f"full_{i}")}
-        # A chunk that fails scores nothing, and unscored blocks are kept —
-        # `ex.map` re-raises on iteration, so without this a single timeout
-        # would throw away the whole selection.
+
         try:
             return jev.ask(compact_state(blocks, lo, hi, context), q)
         except jev.JevError:
@@ -299,7 +285,6 @@ def ask_chunked(blocks: list[dict], cwd: str | None, n: int,
     if not answers:
         raise jev.JevError("every chunk failed")
     return answers
-
 
 ELISION = "[… {n} chars elided by jev-compact — re-read the file or re-run the command if needed]"
 
@@ -341,12 +326,11 @@ def fit_kept(kept: list[dict], blocks: list[dict]) -> list[dict]:
             break
         shorter = truncate_block(blocks[k["i"]]["text"])
         if len(shorter) >= len(k["text"]):
-            continue  # frees nothing; leave it labeled as the whole block it is
+            continue
         total -= len(k["text"]) - len(shorter)
         k["text"], k["kind"] = shorter, "truncated"
         k["escalated"] = True
-    # A block too short to shrink must still be droppable, or the cap goes
-    # unenforced once nothing is left to downgrade.
+
     for k in sorted(movable, key=lambda k: (k["keep"], k["i"])):
         if total <= TARGET_CHARS:
             break
@@ -354,10 +338,7 @@ def fit_kept(kept: list[dict], blocks: list[dict]) -> list[dict]:
         k["kind"] = "dropped"
     return [k for k in kept if k["kind"] != "dropped"]
 
-
-REF_CHARS = 160  # enough of a block to recognize the file or command it names,
-                 # which is all a later pass needs to see whether the agent
-                 # re-fetched what compaction dropped
+REF_CHARS = 160
 
 
 def block_kind(text: str) -> str:
@@ -426,15 +407,15 @@ def select_blocks(blocks: list[dict], cwd: str | None,
     ms = int((time.monotonic() - t0) * 1000)
     kept: list[dict] = []
     for i, b in enumerate(blocks):
-        if i >= n_judged:  # pinned tail — kept verbatim, unjudged
+        if i >= n_judged:
             kept.append({"i": i, "text": cut_marked(b["text"], KEEP_CHARS),
                          "kind": "full", "pinned": True})
             continue
         keep = (answers.get(f"keep_{i}") or {}).get("noul")
         full = (answers.get(f"full_{i}") or {}).get("noul")
         if keep is None or keep >= KEEP_THRESHOLD:
-            # unscored blocks stay whole — dropping by mistake is the costly failure
-            kind = "truncated" if keep is not None and full is not None \
+
+            kind = "truncated" if keep is not None and full is not None\
                 and full < KEEP_THRESHOLD else "full"
             kept.append({
                 "i": i,
@@ -444,8 +425,7 @@ def select_blocks(blocks: list[dict], cwd: str | None,
                 "keep": keep if keep is not None else 1.0,
                 "full": full if full is not None else 1.0,
             })
-    # A kept tool_result without its tool_use is an orphan — pull the call in
-    # at the result's own confidence, or the digest loses the thread.
+
     kept_idx = {k["i"] for k in kept}
     paired: list[dict] = []
     for k in kept:
@@ -552,11 +532,10 @@ def rows(stdin) -> int:
         return fallback(f"unreadable event: {e}")
     if not isinstance(event, dict):
         return fallback("event is not an object")
-    # `/compact <text>`, capped because it rides in every chunk's state.
+
     directive = (event.get("instructions") or "").strip()[:DIRECTIVE_CHARS] or None
     incoming = [r for r in event.get("messages") or [] if isinstance(r, dict)]
-    # Newest first, stopping at the window: rendering rows that fall outside
-    # it is the one cost here that grows with the session.
+
     blocks = []
     for r in reversed(incoming):
         if len(blocks) == MAX_BLOCKS:
@@ -589,12 +568,11 @@ def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "rows":
         try:
             return rows(sys.stdin)
-        except Exception as e:  # the module falls through on any non-{messages} answer
+        except Exception as e:
             return fallback(f"compactor.py: {e}")
     print("usage: compactor.py rows  (reads a session.compact event on stdin)",
           file=sys.stderr)
     return 2
-
 
 if __name__ == "__main__":
     sys.exit(main())

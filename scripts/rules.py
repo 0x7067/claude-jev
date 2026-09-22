@@ -40,48 +40,38 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import comparators  # noqa: E402
-import jev  # noqa: E402
+import comparators
+import jev
 
-# Bands, not a single cut at 0.5: act above, flag the middle, ignore below.
 ACT = 0.80
 FLAG = 0.50
 MAX_RULES = 40
 MAX_STATE_CHARS = 8000
 MAX_TASK_CHARS = 600
-MAX_BLOCKS = 2         # per rule+file per session; then flag-only
-MAX_STOP_BLOCKS = 2    # per session; then flag-only
-MAX_HUNK_CHARS = 2000  # per edit, kept for the turn check
+MAX_BLOCKS = 2
+MAX_STOP_BLOCKS = 2
+MAX_HUNK_CHARS = 2000
 MAX_TURN_CHARS = 16000
 MAX_PROMPT_TAIL = 400
 MAX_NESTED_DEPTH = 4
-# Required-element rules (a comment above a constant, a docstring at the top
-# of a function) are typically satisfied on a neighbouring line the hunk does
-# not show, so the judge saw a violation that was not there.
+
 CONTEXT_LINES = 4
 MAX_CONTEXT_CHARS = 1200
-# Enough for any real source directory; past that the list is noise in the
-# state and the judge stops reading it.
+
 SIBLING_CAP = 40
-# A rule in the flag band is one the judge could not settle from the hunk
-# alone. The second call is where the expensive context goes, so the common
-# case (nothing flagged) still costs one request.
+
 ESCALATE = True
 MAX_BLOCK_CHARS = 3000
 RULE_CONTEXT_CHARS = 400
-# Per-rule act thresholds, learned from how the rule behaves on real edits.
-# A rule that sits near zero on everything it does not govern has earned a
-# lower bar; one that hovers in the middle everywhere has not.
+
 CALIB_FILE = os.path.expanduser("~/.claude/jev-rules-calib.json")
 ACT_DECISIVE = 0.70
 ACT_NOISY = 0.85
-CALIB_MIN_CHECKS = 20   # below this the median is an accident, not a habit
+CALIB_MIN_CHECKS = 20
 CALIB_DECISIVE = 0.10
 CALIB_NOISY = 0.25
-RELEVANCE_GATE = True  # off only to attribute a measurement to this change
-# The judge is reliable on what the hunk shows and unreliable on anything that
-# needs a comparison with code outside it. The comparators run that comparison
-# deterministically; see scripts/comparators.py. Off only to measure.
+RELEVANCE_GATE = True
+
 COMPARATORS = True
 DEFAULT_LOG = os.path.expanduser("~/.claude/jev-router-log.jsonl")
 BLOCK_DIR = os.path.expanduser("~/.claude/jev-rule-blocks")
@@ -155,10 +145,6 @@ def frontmatter_paths(lines: list[str]) -> list[str]:
                 paths += [p.strip().strip("\"'") for p in m.group(1).split(",")]
     return paths
 
-
-# A prose paragraph buries one instruction per sentence, and a rule judged
-# as a whole paragraph asks Jev about several things at once. Bullets are
-# already one instruction each, so only long paragraphs are split.
 SENTENCE = re.compile(r"(?<=\.)\s+(?=[A-Z])")
 MIN_ITEM_CHARS = 20
 
@@ -218,7 +204,6 @@ def markdown_items(lines: list[str]) -> list[tuple[int, str]]:
     flush()
     return items
 
-
 INSTRUCTION_Q = ("Is item [{i}] a rule about the code or files a coding agent writes, "
                  "such that a reviewer looking at one diff could tell whether it was "
                  "followed? Facts, descriptions and pointers are not. Neither are "
@@ -228,19 +213,13 @@ INSTRUCTION_Q = ("Is item [{i}] a rule about the code or files a coding agent wr
                  "heading before each item says what the section is about; an "
                  "item under a heading about workflow, sessions, tools or "
                  "delegation is a process rule even when it mentions code size.")
-# Which phase judges the rule. A per-edit rule can be broken by one hunk on
-# its own; a whole-turn rule is about the change as a whole and has no
-# answer after edit 1 of 12. Misfiling a per-edit rule as whole-turn only
-# delays the catch to Stop, where the accumulated hunks still show it;
-# misfiling a whole-turn rule as per-edit blocks the agent mid-task on a
-# question nobody could answer yet. So the gate leans towards whole-turn.
+
 TURN_Q = ("Does judging item [{i}] need every change the agent made for the task, "
           "not just one edit hunk — because it is about the change as a whole: "
           "its total size, scope creep, edits outside what was asked, an "
           "abstraction with a single caller, or the same code repeated across "
           "files? Answer no for a rule a single hunk can break on its own.")
-# Live, on 15 rules: without criteria the whole-turn rules scored 0.51–0.73
-# and per-edit ones 0.15–0.21; with them 0.53–0.90 and 0.08–0.12.
+
 TURN_CRITERIA = {
     "true": "A rule about the change as a whole: how much was changed, whether "
             "it stayed within the task, whether new code has callers, whether "
@@ -249,10 +228,7 @@ TURN_CRITERIA = {
              "pattern, comment style, naming, error handling, or a required "
              "element in the code being added.",
 }
-# Polarity decides how the rule is asked. "Does this edit violate X?" makes a
-# judge check the whole edit against a whole rule; asking whether the new code
-# *does the forbidden thing* or *lacks the required element* is one concrete
-# check, and the two need opposite framings.
+
 POLARITY_Q = "Does item [{i}] forbid something, or require something?"
 POLARITY_CRITERIA = {
     "forbid": "the rule says not to do or add something",
@@ -271,15 +247,14 @@ SUBJECT_CRITERIA = {
     "commands_process": "commands to run, workflow, process, how to work",
     "other": "anything else, or the rule governs the change as a whole",
 }
-# Below this the choice is a guess, and a guessed subject would gate a real
-# rule out of the request. "other" is never gated out.
+
 CHOICE_MIN = 0.5
 DEFAULT_SUBJECT = "other"
 DEFAULT_POLARITY = "forbid"
 CLASSIFY_CACHE = os.path.expanduser("~/.claude/jev-rules-cache.json")
 INSTRUCTION_MIN = 0.5
 TURN_MIN = 0.5
-ITEMS_PER_REQUEST = 15  # four questions per item; 60 questions per request
+ITEMS_PER_REQUEST = 15
 
 
 def section_headings(lines: list[str],
@@ -332,10 +307,7 @@ def classify_items(lines: list[str],
     if isinstance(hit, dict):
         return {int(k): v for k, v in hit.items()
                 if isinstance(v, dict) and v.get("when") in ("edit", "turn")}
-    # Nearest heading above each item. A bullet read alone can pass for a
-    # code rule when its section is about something else: "the change is
-    # small (<=30 lines)" under a delegation policy was classified as a
-    # whole-turn code rule and flagged 7 of 52 live edits.
+
     headings = section_headings(lines, items)
     meta: dict[int, dict] = {}
     for start in range(0, len(items), ITEMS_PER_REQUEST):
@@ -385,9 +357,7 @@ def parse_rules(path: str, base_label: str | None = None,
     except OSError:
         return rules
     base = base_label or os.path.basename(path)
-    # Calibration is only comparable while the wording is. A rule reworded in
-    # place keeps its id, so stats needs the file's content hash to tell the
-    # two versions apart.
+
     file_hash = hashlib.sha256("".join(lines).encode()).hexdigest()[:12]
     scope0 = list(file_scope or []) + frontmatter_paths(lines)
     items = [(ln, t.strip()) for ln, t in markdown_items(lines)
@@ -538,7 +508,7 @@ def write_hunk(cwd: str, rel: str, content: str) -> str:
             return r.stdout
         tracked = subprocess.run(["git", "ls-files", "--error-unmatch", rel], cwd=cwd,
                                  capture_output=True, timeout=5).returncode == 0
-        if tracked:  # written back identical, or diff unavailable
+        if tracked:
             return ""
     except (OSError, subprocess.SubprocessError):
         pass
@@ -547,7 +517,7 @@ def write_hunk(cwd: str, rel: str, content: str) -> str:
 
 def edit_hunks(inp: dict, cwd: str | None = None) -> str:
     """Old→new per edit: rules about *removing* something need both sides."""
-    if isinstance(inp.get("edits"), list):  # MultiEdit
+    if isinstance(inp.get("edits"), list):
         parts = []
         for e in inp["edits"]:
             if isinstance(e, dict):
@@ -559,7 +529,7 @@ def edit_hunks(inp: dict, cwd: str | None = None) -> str:
                 parts.append(hunk)
         return "\n\n".join(p for p in parts if p)
     old, new = inp.get("old_string"), inp.get("new_string")
-    if old is not None or new is not None:  # Edit
+    if old is not None or new is not None:
         hunk = ""
         if old:
             hunk += f"REMOVED:\n{old}\n"
@@ -570,7 +540,6 @@ def edit_hunks(inp: dict, cwd: str | None = None) -> str:
     if content and cwd and inp.get("file_path"):
         return write_hunk(cwd, relative(inp["file_path"], cwd), content)
     return content
-
 
 COMMENT = re.compile(r"(^|\s)(#|//|/\*|\*/|<!--)|\"\"\"|\'\'\'")
 IMPORTISH = re.compile(r"(?m)^\s*[-+]?\s*(import\b|from\s+\S+\s+import\b|export\s+\*|"
@@ -586,11 +555,7 @@ TYPEISH = re.compile(r"(?m)(:\s*[A-Z][\w\[\]<>.]*|\bany\b|\bas\b|\binterface\b|\
                      r"->\s*[\w\[\]]+|\bSchema\b)")
 ERRORISH = re.compile(r"(?i)\b(try|catch|except|finally|throw|raise|Result|Error|Exception|"
                       r"panic|rescue)\b")
-# Which subjects a hunk can be judged on locally. A rule about imports has
-# nothing to say about an edit that touches no import line, and asking anyway
-# is what produced the 0.4-0.6 middle band on unrelated edits. Every test
-# leans towards True: a wrong False is a missed catch, a wrong True only
-# costs one question.
+
 SUBJECT_TESTS = {
     "imports_deps": lambda h, rel: bool(IMPORTISH.search(h) or MANIFEST.search(rel)),
     "comments": lambda h, rel: bool(COMMENT.search(h)),
@@ -622,17 +587,12 @@ def split_relevant(in_scope: list[dict], hunk: str,
          else drop).append(r)
     return keep, drop
 
-
 EDIT_FORBID_CRITERIA = {
     "true": "The new code visibly does the forbidden thing.",
     "false": "The edit does not do it, or only removes or leaves untouched "
              "code that did.",
 }
-# "Does the new code lack what the rule requires" reads as a question about
-# an absence, and an absence is arguable on almost any diff: it put 31 real
-# edits in the flag band on one comment rule alone. Asking for both halves —
-# the rule clearly governs this code AND the requirement is plainly missing —
-# is the same judgment stated as a violation.
+
 EDIT_REQUIRE_CRITERIA = {
     "true": "A case the rule clearly governs was added, and the required "
             "element is absent.",
@@ -655,7 +615,6 @@ def needle_of(inp: dict) -> str:
         if line.strip():
             return line.strip()
     return ""
-
 
 MODULE_EXT = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs")
 
@@ -699,7 +658,6 @@ def file_context(path: str, needle: str) -> str:
             lo = max(0, i - CONTEXT_LINES)
             return "\n".join(lines[lo:i + CONTEXT_LINES + 1])[:MAX_CONTEXT_CHARS]
     return ""
-
 
 STRICT_PREAMBLE = ("This edit was already judged possibly in breach of this "
                    "rule. Decide it. ")
@@ -773,8 +731,6 @@ def verdict(answer: dict | None) -> float:
     return min(1.0, max(0.0, p)) if isinstance(p, (int, float)) else 0.0
 
 
-# --- per-session state: block counts, accumulated hunks, turn bookkeeping ---
-
 def session_path(session_id: str) -> str:
     safe = re.sub(r"[^\w-]", "_", session_id or "unknown")
     return os.path.join(BLOCK_DIR, f"{safe}.json")
@@ -786,7 +742,7 @@ def session_state(session_id: str) -> dict:
             data = json.load(f)
     except (OSError, ValueError):
         return {"blocks": {}, "hunks": [], "files": [], "stop_blocks": 0}
-    if "blocks" not in data:  # the first format was a bare counts dict
+    if "blocks" not in data:
         return {"blocks": data, "hunks": [], "files": [], "stop_blocks": 0}
     return data
 
@@ -809,7 +765,6 @@ def record_hunk(state: dict, rel: str, hunk: str) -> None:
     state["hunks"].append(f"--- {rel}\n{hunk[:min(MAX_HUNK_CHARS, room)]}")
     if rel not in state["files"]:
         state["files"].append(rel)
-
 
 ADDED_HEAD_CHARS = 200
 
@@ -924,7 +879,6 @@ def load_calib() -> dict:
         return {}
     return data if isinstance(data, dict) else {}
 
-
 CALIB = load_calib()
 
 
@@ -972,9 +926,7 @@ def scoped_rules(rules: list[dict], phase: str, files: list[str]) -> list[dict]:
     crowded out by unscoped ones loaded before it."""
     hit = [r for r in rules if r.get("when") == phase
            and (not r["scope"] or any(glob_match(f, r["scope"]) for f in files))]
-    # A rule written for this path outranks a repo-wide one, and the repo's
-    # own rules outrank the user's global ones. Within a tier the files take
-    # turns, so one long rules file can't crowd out the others.
+
     tiers: dict[tuple, dict[str, list]] = {}
     for r in hit:
         tier = (not r["scope"], r["file"].startswith("~/"))
@@ -1069,8 +1021,7 @@ def handle_edit(event: dict) -> dict:
     context = file_context(file_path, needle_of(inp))
     siblings = sibling_modules(file_path)
     block = enclosing_block(file_path, needle_of(inp)) if ESCALATE else ""
-    # Sampled before the judgment, not after: a miss starts a detached fetch,
-    # and by the time the call returns the binary can already be on disk.
+
     sg = comparators.which()[1]
     t0 = time.monotonic()
     hits, probs, answers, skipped, escalated, cmp_chars = judge_edit(
@@ -1180,8 +1131,7 @@ def main() -> None:
             json.dump(out, sys.stdout)
             sys.stdout.write("\n")
     except Exception:
-        return  # fail open
-
+        return
 
 if __name__ == "__main__":
     main()

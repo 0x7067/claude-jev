@@ -17,6 +17,7 @@ explains what each hook decides and why. Read it before changing behavior.
 | `scripts/comparators.py` | ast-grep lookups the rule hook adds to a judgment |
 | `scripts/observed.py` | Scores what a past turn actually did |
 | `scripts/stats.py` | `/claude-jev:stats` — scores live decisions from the three logs under `~/.claude`: `jev-router-log.jsonl` (router, subagent, rules), `jev-compact-log.jsonl`, `jev-calls.jsonl` (every API call, written by `jev.ask`) |
+| `scripts/check_no_comments.py` | Hard ban: fails if `scripts/`, `eval/`, or `hooks/` source has a `#` / `//` / `/* */` comment |
 | `eval/` | Offline measurement. See `eval/README.md`. |
 | `skills/` | User-facing entry points. `/claude-jev:<dir name>`. |
 | `hooks/hooks.json` | Hook registration. New hook means an entry here. `modules` names the function-hooks module; older Claude Code ignores the key. |
@@ -40,9 +41,16 @@ explains what each hook decides and why. Read it before changing behavior.
   `summary` string Python sends. Keep it that way.
 - **One environment variable:** `TYPESAFE_API_KEY`. Do not add another, and
   do not add a fallback name. Every other tunable is a module-level constant.
-- **A constant carries a comment saying why it has that value.** Thresholds
-  like `ACT`, `MIN_CONFIDENCE`, and `KEEP_THRESHOLD` came out of the evals.
-  Changing one without eval evidence is a guess.
+- **No code comments.** Line, block, and JSDoc comments are banned in
+  `scripts/`, `eval/`, and `hooks/` source (`.py`, `.ts`, `.js`). Shebangs
+  and LICENSE text stay. Python module/function docstrings are documentation
+  strings, not comments, and stay where Conventions require them. Markdown
+  under `docs/`, `skills/`, `README.md`, and `AGENTS.md` is prose, not code
+  comments — leave it. Rationale for thresholds and constants (`ACT`,
+  `MIN_CONFIDENCE`, `KEEP_THRESHOLD`, and the rest) lives in eval results,
+  docs, or PR evidence — not inline comments. Changing a threshold without
+  eval evidence is still a guess. Enforce with
+  `python3 scripts/check_no_comments.py` (exit 1 on any hit).
 - **`scripts/observed.py` is the shared scorer.** `eval/replay.py` and
   `scripts/stats.py` both call it. Editing it moves every accuracy number in
   `README.md`.
@@ -64,12 +72,18 @@ explains what each hook decides and why. Read it before changing behavior.
 
 ## Verify
 
-There is no test suite. After changing a script, run both:
+There is no test suite. The local / script contract for this repo is:
 
 ```bash
 python3 -m compileall -q scripts eval
+python3 scripts/check_no_comments.py
 echo '{"prompt":"hi","transcript_path":""}' | python3 scripts/prompt_router.py; echo "exit=$?"
 ```
+
+`compileall` plus stdin hook smoke (exit 0, fail open) is what a default
+cloud agent or Grok Bot run can claim. Live Claude Code session verification
+is out-of-band: it needs a machine with `claude` and `TYPESAFE_API_KEY`, and
+is not claimed as proved by those local checks alone.
 
 For a scripted launch → doctor → drive → evidence → cleanup loop (isolated
 `HOME`, feature map under `.cursor/skills/verify-claude-jev/features/`), use
@@ -99,8 +113,9 @@ The `rows` bridge answers bad input with `{"fallback": ...}` and exit 0:
 echo '' | python3 scripts/compactor.py rows
 ```
 
-To exercise the function-hooks module end to end, run a session with the
-plugin loaded from disk, compact it, and read the debug log:
+Out-of-band (not claimed on Grok Bot / default cloud agents): exercise the
+function-hooks module end to end on a machine with Claude Code and a real
+key — load the plugin from disk, compact, and read the debug log:
 
 ```bash
 export CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1

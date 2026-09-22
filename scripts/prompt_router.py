@@ -22,8 +22,8 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import jev  # noqa: E402
-import observed  # noqa: E402
+import jev
+import observed
 
 MIN_CONFIDENCE = 0.75
 DEFAULT_LOG = os.path.expanduser("~/.claude/jev-router-log.jsonl")
@@ -31,15 +31,8 @@ MAX_QUIET = 0.10
 CONTEXT_LINES = 400
 
 SILENT_INTENTS = {"feature"}
-# Intents whose choice is still logged but never injected. Live Sep 18-22
-# 2026: 67 prompts were predicted `feature`, 6 sessions actually did feature
-# work — wrong ten times in eleven, and the hint's advice ("outline a plan
-# first") costs real tokens when it is wrong.
 
 COMPACT_PROMPT = "Your task is to create a detailed summary"
-# Claude Code's own compaction request arrives on this hook like a typed
-# prompt. `observed.SYNTHETIC` is the shared scorer's list and not ours to
-# extend, and it does not match this one, so the router checks it locally.
 
 GUIDANCE = {
     "chat": "Answer directly from the conversation. No file reads, no commands.",
@@ -84,7 +77,7 @@ def conversation_tail(transcript_path: str, prompt: str) -> tuple[str, str, str 
                 text = "\n".join(b.get("text", "") for b in content
                                  if isinstance(b, dict) and b.get("type") == "text")
             text = (text or "").strip()
-            # The current prompt may already be appended; it is not context.
+
             if text and text != prompt and not text.startswith("<"):
                 prev_user = text
         elif d.get("type") == "assistant" and isinstance(content, list):
@@ -146,8 +139,6 @@ def decide(answers: dict) -> tuple[str | None, dict]:
     conf = intent.get("confidence", 0.0)
     needs_tools = (answers.get("needs_tools") or {}).get("noul")
 
-    # The intent choice is never allowed to say "no tools" on its own: at that
-    # job it scored 0.65 precision at best, against 0.96 for the gate below.
     if needs_tools is not None and needs_tools <= MAX_QUIET:
         choice, conf = "chat", 1.0 - needs_tools
     elif choice == "chat" or choice not in GUIDANCE or conf < MIN_CONFIDENCE:
@@ -200,11 +191,10 @@ def main() -> None:
     try:
         event = json.load(sys.stdin)
         prompt = (event.get("prompt") or "").strip()
-        # Skip slash commands, #-memorize lines, and near-empty prompts.
+
         if len(prompt) < 3 or prompt[0] in "/#":
             return
-        # Harness-written turns and compaction requests are not user requests:
-        # routing them spends a call and logs a decision nothing will score.
+
         if observed.is_synthetic(prompt) or prompt.startswith(COMPACT_PROMPT):
             return
         tp = event.get("transcript_path")
@@ -230,8 +220,7 @@ def main() -> None:
             json.dump(out, sys.stdout)
             sys.stdout.write("\n")
     except Exception:
-        return  # fail open
-
+        return
 
 if __name__ == "__main__":
     main()
