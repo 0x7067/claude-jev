@@ -16,6 +16,7 @@ import argparse
 import collections
 import datetime
 import glob
+import hashlib
 import json
 import os
 import re
@@ -25,7 +26,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import observed  # noqa: E402
 
 DEFAULT_LOG = os.path.expanduser("~/.claude/jev-router-log.jsonl")
+CALLS_LOG = os.path.expanduser("~/.claude/jev-calls.jsonl")
+COMPACT_LOG = os.path.expanduser("~/.claude/jev-compact-log.jsonl")
 PROJECTS = os.path.expanduser("~/.claude/projects")
+NEXT_TOOLS = 40   # tool calls examined after a compaction. A re-fetch happens
+                  # in the first few turns; past that the agent has moved on
+                  # and a match is coincidence.
+CMD_CHARS = 40    # of a Bash command used as a needle — long enough to name
+                  # the script or file, short enough to survive changed flags
 
 
 def load_log(path: str, days: int | None) -> list[dict]:
@@ -54,6 +62,131 @@ def load_log(path: str, days: int | None) -> list[dict]:
 def transcript_for(session_id: str) -> str | None:
     hits = glob.glob(os.path.join(PROJECTS, "*", f"{session_id}.jsonl"))
     return hits[0] if hits else None
+
+
+def parse_ts(value) -> datetime.datetime | None:
+    """A log or transcript timestamp as an aware datetime, or None. The two
+    files are written by different programs, so one ends in Z and the other
+    carries an offset."""
+    if not isinstance(value, str):
+        return None
+    try:
+        d = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return d if d.tzinfo else d.replace(tzinfo=datetime.timezone.utc)
+
+
+def quantile(vals: list[float], q: float) -> float:
+    s = sorted(vals)
+    return s[min(len(s) - 1, int(round(q * (len(s) - 1))))]
+
+
+def fmt_q(vals: list[float], q: float) -> str:
+    return f"{quantile(vals, q):.0f}" if vals else "-"
+
+
+_TOOLS_CACHE: dict[str, list[dict]] = {}
+
+
+def tool_events(path: str) -> list[dict]:
+    """Every tool call in a transcript with its timestamp, oldest first.
+
+    `observed.walk_session` drops timestamps, and both the rule and compaction
+    sections join on "what did the session do after this log line".
+    """
+    if path in _TOOLS_CACHE:
+        return _TOOLS_CACHE[path]
+    out: list[dict] = []
+    try:
+        with open(path, errors="replace") as f:
+            for line in f:
+                if len(line) > 500_000:
+                    continue
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if d.get("type") != "assistant" or d.get("isSidechain"):
+                    continue
+                ts = parse_ts(d.get("timestamp"))
+                for b in ((d.get("message") or {}).get("content") or []):
+                    if isinstance(b, dict) and b.get("type") == "tool_use":
+                        out.append({"ts": ts, "name": b.get("name", "?"),
+                                    "input": b.get("input") or {}})
+    except OSError:
+        out = []
+    _TOOLS_CACHE[path] = out
+    return out
+
+
+def input_hash(inp: dict) -> str:
+    """The same digest rules.py logs, so a later edit can be compared to the
+    one that was blocked."""
+    try:
+        return hashlib.sha256(
+            json.dumps(inp, sort_keys=True).encode()).hexdigest()[:16]
+    except (TypeError, ValueError):
+        return ""
+
+
+def same_file(a, b) -> bool:
+    if not isinstance(a, str) or not isinstance(b, str):
+        return False
+    return a == b or os.path.basename(a) == os.path.basename(b)
+
+
+def rule_outcomes(entries: list[dict]) -> list[dict]:
+    """What the session did to a file after a rule blocked an edit to it.
+
+    `abandoned` means no later edit; `retried identical` means the same edit
+    came back unchanged, which reads as a false positive the agent worked
+    around; `repaired` means a different edit landed. Entries logged before
+    `blocked` existed are skipped, not counted as anything.
+    """
+    out = []
+    for e in entries:
+        if e.get("kind") != "rules" or e.get("phase") != "edit":
+            continue
+        blocked = e.get("blocked")
+        if not isinstance(blocked, list) or not blocked:
+            continue
+        sid, target, ts = e.get("session_id"), e.get("file"), parse_ts(e.get("ts"))
+        path = transcript_for(sid) if sid else None
+        if not path or not target or ts is None:
+            out.append({"rules": blocked, "outcome": "unknown"})
+            continue
+        nxt = next((t for t in tool_events(path)
+                    if t["name"] in observed.EDIT_TOOLS
+                    and t["ts"] is not None and t["ts"] > ts
+                    and same_file(t["input"].get("file_path"), target)), None)
+        if nxt is None:
+            outcome = "abandoned"
+        elif e.get("input_hash") and input_hash(nxt["input"]) == e["input_hash"]:
+            outcome = "retried identical"
+        else:
+            outcome = "repaired"
+        out.append({"rules": blocked, "outcome": outcome})
+    return out
+
+
+def refetch_needles(path: str, after: datetime.datetime) -> list[str]:
+    """File names and command heads from the tool calls right after a
+    compaction — what the session went back for."""
+    seen = [t for t in tool_events(path)
+            if t["ts"] is not None and t["ts"] > after][:NEXT_TOOLS]
+    needles = []
+    for t in seen:
+        inp = t["input"]
+        if t["name"] == "Bash":
+            cmd = " ".join((inp.get("command") or "").split())[:CMD_CHARS]
+            if cmd:
+                needles.append(cmd)
+            continue
+        arg = inp.get("file_path") or inp.get("pattern")
+        if isinstance(arg, str) and arg:
+            needles.append(os.path.basename(arg) or arg)
+    return needles
 
 
 def predicted_intent(entry: dict) -> tuple[str | None, bool]:
@@ -85,6 +218,109 @@ def match(entries: list[dict]) -> list[dict]:
                 "n_tools": seg["n_tools"] if seg else None,
             })
     return rows
+
+
+def print_calls(days: int | None) -> None:
+    """Latency and failures per hook, from the client's own call log."""
+    calls = [c for c in load_log(CALLS_LOG, days) if isinstance(c.get("ms"), int)]
+    print(f"\nJev calls ({len(calls)} logged at {CALLS_LOG}):")
+    if not calls:
+        print("  no calls logged yet — the log starts with the next hook run.")
+        return
+    per = collections.defaultdict(list)
+    for c in calls:
+        per[c.get("caller") or "?"].append(c)
+    print(f"  {'caller':<16}{'calls':>7}{'median ms':>11}{'p95 ms':>9}"
+          f"{'errors':>8}{'median qs':>11}")
+    for caller, cs in sorted(per.items()):
+        ms = [c["ms"] for c in cs]
+        qs = [c.get("n_questions") for c in cs
+              if isinstance(c.get("n_questions"), int)]
+        errs = sum(1 for c in cs if not c.get("ok", True))
+        print(f"  {caller:<16}{len(cs):>7}{fmt_q(ms, 0.5):>11}{fmt_q(ms, 0.95):>9}"
+              f"{errs:>8}{fmt_q(qs, 0.5):>11}")
+    bad = [c for c in calls if not c.get("ok", True)]
+    if bad:
+        print(f"  last error: {str(bad[-1].get('error'))[:100]}")
+
+
+def print_rule_outcomes(entries: list[dict]) -> None:
+    """Whether a block led to a repair, and how often the same edit came back."""
+    outcomes = rule_outcomes(entries)
+    print("\nRule outcomes (what happened after an edit was blocked):")
+    if not outcomes:
+        print("  no blocked edits logged yet in this window.")
+    else:
+        totals = collections.Counter(o["outcome"] for o in outcomes)
+        print(f"  {len(outcomes)} blocks: " + ", ".join(
+            f"{k} {v}" for k, v in sorted(totals.items())))
+        per_rule = collections.defaultdict(collections.Counter)
+        for o in outcomes:
+            for rid in o["rules"]:
+                per_rule[str(rid)][o["outcome"]] += 1
+        print(f"  {'rule':<34}{'repaired':>9}{'retried':>9}"
+              f"{'abandoned':>11}{'unknown':>9}")
+        for rid, c in sorted(per_rule.items()):
+            print(f"  {rid:<34}{c['repaired']:>9}{c['retried identical']:>9}"
+                  f"{c['abandoned']:>11}{c['unknown']:>9}")
+    flagged = collections.Counter()
+    for e in entries:
+        if e.get("kind") != "rules":
+            continue
+        for v in e.get("violations") or []:
+            if isinstance(v, dict) and v.get("band") == "flag":
+                flagged[str(v.get("rule"))] += 1
+    if flagged:
+        print("  flagged only (below the act threshold, never sent to the agent):")
+        for rid, n in sorted(flagged.items()):
+            print(f"    {rid:<34}{n:>5}")
+
+
+def print_compaction(days: int | None) -> None:
+    """Size and speed of each compaction, then whether the agent went back for
+    what Jev dropped. This is the live form of the offline eval/compare.py."""
+    events = load_log(COMPACT_LOG, days)
+    print(f"\nCompaction ({len(events)} logged at {COMPACT_LOG}):")
+    if not events:
+        print("  no compactions logged yet.")
+        return
+    red = [e["reduction"] for e in events if isinstance(e.get("reduction"), (int, float))]
+    ms = [e["ms"] for e in events if isinstance(e.get("ms"), (int, float))]
+    trig = collections.Counter(e.get("trigger") or "?" for e in events)
+    if red:
+        print(f"  median reduction : {quantile(red, 0.5):.0%}")
+    if ms:
+        print(f"  median ms        : {quantile(ms, 0.5):.0f}")
+    print(f"  triggers         : {dict(sorted(trig.items()))}")
+
+    with_rows = [e for e in events if isinstance(e.get("rows"), list) and e["rows"]]
+    if not with_rows:
+        print("  no per-row records yet — those start with the next compaction.")
+        return
+    n_drop = n_trunc = hit_drop = hit_trunc = 0
+    for e in with_rows:
+        path = transcript_for(e.get("session_id")) if e.get("session_id") else None
+        ts = parse_ts(e.get("ts"))
+        needles = refetch_needles(path, ts) if path and ts else []
+        for r in e["rows"]:
+            if not isinstance(r, dict):
+                continue
+            verdict, ref = r.get("verdict"), r.get("ref") or ""
+            if verdict not in ("dropped", "truncated"):
+                continue
+            back = any(n in ref for n in needles)
+            if verdict == "dropped":
+                n_drop += 1
+                hit_drop += back
+            else:
+                n_trunc += 1
+                hit_trunc += back
+    print(f"  per-row records in {len(with_rows)} compactions "
+          f"(next {NEXT_TOOLS} tool calls examined):")
+    for label, n, hit in (("dropped", n_drop, hit_drop),
+                          ("truncated", n_trunc, hit_trunc)):
+        share = f"{100*hit/n:.0f}%" if n else "-"
+        print(f"    {label:<10}{n:>6} rows, re-fetched {hit:>4} ({share})")
 
 
 def main() -> int:
@@ -189,6 +425,10 @@ def main() -> int:
             for r in wrong:
                 print(f"    said {r['intent']:<8} session did {r['observed']:<8} "
                       f"({r['n_tools']} tools)  {r['prompt'][:60]!r}")
+
+    print_calls(args.days)
+    print_rule_outcomes(entries)
+    print_compaction(args.days)
     return 0
 
 
