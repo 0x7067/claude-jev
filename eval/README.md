@@ -39,9 +39,12 @@ python3 eval/rules_eval.py report
 that commit under `data/pinned/`, so rules edited in a live checkout do not
 move the numbers until you `pin --move <repo>` on purpose (`--move-all` for
 every repo). Each prediction records the `sha` it was judged at. Only
-committed rules are pinned: a dirty tree is reported, and `~/.claude/CLAUDE.md`
-is outside any repo, so it is always read live. Unpinned repos fall back to
-the live checkout.
+committed rules are pinned; a dirty tree is reported. Unpinned repos fall
+back to the live checkout.
+
+`~/.claude/CLAUDE.md` is outside any repo, so `pin` snapshots it to
+`eval/global_CLAUDE.md` (committed) and `run` reads the snapshot instead of
+the live file. `pin --move global` refreshes it.
 
 Answers cache in `data/rules_cache.jsonl`, keyed by model, state and questions,
 so re-running after an unrelated change costs nothing.

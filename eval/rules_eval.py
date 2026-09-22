@@ -33,6 +33,7 @@ import hashlib
 import json
 import os
 import random
+import shutil
 import statistics
 import subprocess
 import sys
@@ -59,6 +60,12 @@ PRED = os.path.join(DATA, "rules_pred.jsonl")
 # mid-experiment does not change what an old run would have measured.
 PINS = os.path.join(HERE, "private", "pins.json")
 PINNED = os.path.join(DATA, "pinned")
+# ~/.claude/CLAUDE.md is outside any repo, so it cannot be pinned to a
+# commit. `pin` snapshots it here instead, and `run` reads the snapshot in
+# place of the live file. It is committed: the cases that target its rules
+# are meaningless without the wording they were written against.
+GLOBAL = os.path.join(HERE, "global_CLAUDE.md")
+LIVE_GLOBAL = os.path.expanduser("~/.claude/CLAUDE.md")
 CACHE = os.path.join(DATA, "rules_cache.jsonl")
 PROJECTS = os.path.expanduser("~/.claude/projects")
 
@@ -271,6 +278,11 @@ def cmd_run(args) -> int:
     rules.jev.ask = jev.ask
     rule_cache: dict = {}
     pins = load_pins()
+    if os.path.isfile(GLOBAL):
+        rules.GLOBAL_RULE_FILES = (GLOBAL,)
+    else:
+        print(f"  no {os.path.relpath(GLOBAL, HERE)}; reading the live ~/.claude/CLAUDE.md",
+              file=sys.stderr)
     repos = {repo_root(r["cwd"]) or r["cwd"] for r in recs}
     print(f"  {len(repos & set(pins))}/{len(repos)} repos pinned"
           + ("" if pins else f" (no {os.path.relpath(PINS, HERE)}; run `pin`)"),
@@ -446,6 +458,12 @@ def cmd_pin(args) -> int:
         print(f"  {'move' if top in pins else 'pin '}  {sha[:12]}  {top}"
               + ("  (working tree dirty; uncommitted rules are not pinned)" if dirty else ""))
         pins[top] = sha
+    if os.path.isfile(LIVE_GLOBAL) and (
+            not os.path.isfile(GLOBAL) or args.move_all or "global" in args.move):
+        shutil.copyfile(LIVE_GLOBAL, GLOBAL)
+        print(f"  snap  ~/.claude/CLAUDE.md -> {os.path.relpath(GLOBAL, HERE)}")
+    else:
+        print(f"  keep  {os.path.relpath(GLOBAL, HERE)}")
     os.makedirs(os.path.dirname(PINS), exist_ok=True)
     with open(PINS, "w") as f:
         json.dump(pins, f, indent=2, sort_keys=True)
@@ -478,7 +496,8 @@ def main() -> int:
     pn = sub.add_parser("pin", help="record repo HEADs so runs judge a fixed commit")
     pn.add_argument("--cases", default=CASES)
     pn.add_argument("--move", nargs="*", default=[], metavar="CWD",
-                    help="re-pin these repos at their current HEAD")
+                    help="re-pin these repos at their current HEAD; "
+                         "`global` re-snapshots ~/.claude/CLAUDE.md")
     pn.add_argument("--move-all", action="store_true")
     pn.set_defaults(fn=cmd_pin)
     args = p.parse_args()
