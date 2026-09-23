@@ -51,7 +51,7 @@ claude plugin marketplace add 0x7067/claude-jev
 claude plugin install claude-jev@claude-jev
 ```
 
-Set `TYPESAFE_API_KEY` — the plugin's only variable, required; without it hooks disable silently. Needs `python3`, stdlib only.
+Set `TYPESAFE_API_KEY` — the plugin's only variable, required; without it hooks disable silently. It takes a TypeSafe key or an [OpenRouter](https://openrouter.ai/docs/guides/community/jev) key; an `sk-or-` key sends every call to OpenRouter's System One API instead of `api.typesafe.ai`. Needs `python3`, stdlib only.
 
 The rule hook's comparators use [ast-grep](https://ast-grep.github.io) 0.45.3. If it is not on your PATH the plugin fetches the pinned release once to `~/.claude/jev-bin`, verified by sha256, in a detached process the first time an edit needs it; every hook works without it. To warm it up or see which binary would run:
 

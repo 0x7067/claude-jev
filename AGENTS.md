@@ -41,7 +41,8 @@ explains what each hook decides and why. Read it before changing behavior.
   and the fail-open fallthrough to `next(e)`. Even its debug-log line is the
   `summary` string Python sends. Keep it that way.
 - **One environment variable:** `TYPESAFE_API_KEY`. Do not add another, and
-  do not add a fallback name. Every other tunable is a module-level constant.
+  do not add a fallback name. The key's prefix picks the provider
+  (`PROVIDERS` in `scripts/jev.py`); a new provider is a new entry there. Every other tunable is a module-level constant.
   `CLAUDE_CONFIG_DIR` is Claude Code's own variable, not a plugin tunable:
   `jev.config_dir()` honors it and every path under the user's config
   directory goes through that helper, never through a literal `~/.claude`.

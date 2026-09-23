@@ -6,12 +6,16 @@ Used by the prompt-router hook and callable directly by the agent
 instead of reasoning through them with generated text.
 
 Env:
-  TYPESAFE_API_KEY   API key (required)
+  TYPESAFE_API_KEY   API key (required). Its prefix picks the provider:
+                     `sk-or-...` is OpenRouter, anything else is TypeSafe.
+                     Both serve the same System One request, model IDs,
+                     and answers.
 """
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime
 import json
 import os
@@ -20,7 +24,18 @@ import time
 import urllib.error
 import urllib.request
 
-API_URL = "https://api.typesafe.ai/v1/systemone"
+
+@dataclasses.dataclass(frozen=True)
+class Provider:
+    name: str
+    url: str
+    key_prefix: str
+
+
+PROVIDERS = (
+    Provider("typesafe", "https://api.typesafe.ai/v1/systemone", ""),
+    Provider("openrouter", "https://openrouter.ai/api/v1/systemone", "sk-or-"),
+)
 DEFAULT_MODEL = "jev-latest"
 DEFAULT_TIMEOUT = 8.0
 
@@ -66,7 +81,8 @@ def caller_name() -> str:
     return name[:-3] if name.endswith(".py") else (name or "jev")
 
 
-def log_call(model: str, n_questions: int, t0: float, error: str | None) -> None:
+def log_call(provider: Provider, model: str, n_questions: int, t0: float,
+             error: str | None) -> None:
     """Append one call record. Never raises: the caller is mid-request and a
     log failure must not change what `ask` returns or what it raises."""
     try:
@@ -75,6 +91,7 @@ def log_call(model: str, n_questions: int, t0: float, error: str | None) -> None
             "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "caller": caller_name(),
             "n_questions": n_questions,
+            "provider": provider.name,
             "model": model,
             "ms": int((time.monotonic() - t0) * 1000),
             "ok": error is None,
@@ -95,6 +112,12 @@ def api_key() -> str:
     return key
 
 
+def provider_for(key: str) -> Provider:
+    """The provider whose key prefix is the longest match for `key`."""
+    return max((p for p in PROVIDERS if key.startswith(p.key_prefix)),
+               key=lambda p: len(p.key_prefix))
+
+
 def ask(state, questions: dict, model: str | None = None, timeout: float | None = None) -> dict:
     """Evaluate `questions` against `state`. Returns the `answers` map."""
     body = {
@@ -102,11 +125,13 @@ def ask(state, questions: dict, model: str | None = None, timeout: float | None 
         "model": model or DEFAULT_MODEL,
         "questions": questions,
     }
+    key = api_key()
+    provider = provider_for(key)
     req = urllib.request.Request(
-        API_URL,
+        provider.url,
         data=json.dumps(body).encode(),
         headers={
-            "Authorization": f"Bearer {api_key()}",
+            "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
         },
         method="POST",
@@ -119,12 +144,12 @@ def ask(state, questions: dict, model: str | None = None, timeout: float | None 
             payload = json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
         detail = e.read().decode(errors="replace")[:500]
-        log_call(body["model"], n, t0, f"HTTP {e.code}: {detail}")
+        log_call(provider, body["model"], n, t0, f"HTTP {e.code}: {detail}")
         raise JevError(f"HTTP {e.code}: {detail}") from e
     except (urllib.error.URLError, TimeoutError, OSError) as e:
-        log_call(body["model"], n, t0, str(e))
+        log_call(provider, body["model"], n, t0, str(e))
         raise JevError(str(e)) from e
-    log_call(body["model"], n, t0, None)
+    log_call(provider, body["model"], n, t0, None)
     return payload.get("answers", {})
 
 
