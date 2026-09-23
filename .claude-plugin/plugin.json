@@ -1,7 +1,7 @@
 {
   "name": "claude-jev",
   "version": "0.18.0",
-  "description": "Hands the small judgments in a session to TypeSafe's Jev, a System One model that returns typed answers instead of generating text: what kind of request each prompt is, which model tier a subagent needs, whether an edit breaks a rule already written in your CLAUDE.md or AGENTS.md, and which transcript blocks survive compaction. Kept blocks carry over verbatim \u2014 no LLM writes a summary.",
+  "description": "Hands the small judgments in a session to TypeSafe's Jev, a System One model that returns typed answers instead of generating text: what kind of request each prompt is, which model tier a subagent needs, whether an edit breaks a rule already written in your CLAUDE.md or AGENTS.md, and which transcript blocks survive compaction. Kept blocks carry over verbatim — no LLM writes a summary.",
   "author": {
     "name": "0x7067"
   },
@@ -15,5 +15,37 @@
     "compaction",
     "token-savings"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "userConfig": {
+    "typesafeApiKey": {
+      "type": "string",
+      "title": "TypeSafe or OpenRouter API key",
+      "description": "Saved from /claude-jev and hidden in /config so the value is never shown. A non-empty TYPESAFE_API_KEY in the launch environment wins. An sk-or- key calls OpenRouter.",
+      "default": ""
+    },
+    "promptRouter": {
+      "type": "boolean",
+      "title": "Prompt routing hints",
+      "description": "Classify each prompt and add a routing hint.",
+      "default": true
+    },
+    "subagentRouter": {
+      "type": "boolean",
+      "title": "Subagent model routing",
+      "description": "Pick a subagent's model and check its brief before the spawn.",
+      "default": true
+    },
+    "rules": {
+      "type": "boolean",
+      "title": "Rule checks",
+      "description": "Check edits and turn ends against the rules in CLAUDE.md and AGENTS.md.",
+      "default": true
+    },
+    "compaction": {
+      "type": "boolean",
+      "title": "Compaction",
+      "description": "Replace the compaction summary with the transcript blocks Jev keeps. Needs CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1.",
+      "default": true
+    }
+  }
 }

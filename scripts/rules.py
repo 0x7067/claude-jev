@@ -28,6 +28,8 @@ corrupt a session.
 
 Env:
   TYPESAFE_API_KEY   required (else silently disabled)
+
+Off when `rules` ("Rule checks" in /claude-jev or /config) is off.
 """
 
 import datetime
@@ -1124,6 +1126,8 @@ def handle_stop(event: dict) -> dict:
 
 def main() -> None:
     try:
+        if not jev.enabled("rules"):
+            return
         event = json.load(sys.stdin)
         name = event.get("hook_event_name") or "PostToolUse"
         out = handle_stop(event) if name == "Stop" else handle_edit(event)

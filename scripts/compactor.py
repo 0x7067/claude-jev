@@ -18,6 +18,9 @@ transcripts through them.
 
 Env:
   TYPESAFE_API_KEY   required (the bridge falls back silently without it)
+
+`hooks/register.ts` skips the bridge when `compaction` is off, and passes a
+key saved in /claude-jev as `CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY`.
 """
 
 from __future__ import annotations

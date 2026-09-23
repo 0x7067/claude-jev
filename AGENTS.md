@@ -13,7 +13,7 @@ explains what each hook decides and why. Read it before changing behavior.
 | `scripts/subagent_router.py` | `PreToolUse` on `Agent\|Task` — sets subagent model, denies a file-changing brief that omits paths, acceptance, verification, or commit policy |
 | `scripts/rules.py` | `PostToolUse` on edits, and `Stop` — rule enforcement |
 | `scripts/compactor.py` | The `rows` bridge behind `session.compact`; `judge` is kept for the eval |
-| `hooks/register.ts` | Experimental function-hooks module: `session.compact` -> `compactor.py rows`. A bridge, not a second implementation. |
+| `hooks/register.ts` | Experimental function-hooks module: `session.compact` -> `compactor.py rows`, and the `/claude-jev` settings pane. A bridge, not a second implementation. |
 | `scripts/comparators.py` | ast-grep lookups the rule hook adds to a judgment |
 | `scripts/observed.py` | Scores what a past turn actually did |
 | `scripts/stats.py` | `/claude-jev:stats` — scores live decisions from the three logs under `~/.claude`: `jev-router-log.jsonl` (router, subagent, rules), `jev-compact-log.jsonl`, `jev-calls.jsonl` (every API call, written by `jev.ask`) |
@@ -37,12 +37,19 @@ explains what each hook decides and why. Read it before changing behavior.
 - **Python 3 standard library only.** No dependency file, no third-party
   imports. `urllib.request` is the HTTP client. The one non-Python file,
   `hooks/register.ts`, exists because Claude Code loads function-hook modules
-  as JavaScript; it holds no judgment, only the call into `compactor.py rows`
-  and the fail-open fallthrough to `next(e)`. Even its debug-log line is the
-  `summary` string Python sends. Keep it that way.
+  as JavaScript; it holds no judgment, only the call into `compactor.py rows`,
+  the fail-open fallthrough to `next(e)`, and the `/claude-jev` pane. Even its
+  debug-log line is the `summary` string Python sends, and the pane's key
+  source, provider, and last call come from `jev.py status`. Keep it that way.
 - **One environment variable:** `TYPESAFE_API_KEY`. Do not add another, and
   do not add a fallback name. The key's prefix picks the provider
-  (`PROVIDERS` in `scripts/jev.py`); a new provider is a new entry there. Every other tunable is a module-level constant.
+  (`PROVIDERS` in `scripts/jev.py`); a new provider is a new entry there.
+  Every other tunable is a module-level constant, or a `userConfig` field in
+  `.claude-plugin/plugin.json` when the user sets it from `/claude-jev` or
+  `/config`. Claude Code hands those fields to hooks as
+  `CLAUDE_PLUGIN_OPTION_<FIELD>`, its own variables, read only through
+  `jev.plugin_option()`; `hooks/register.ts` passes the saved key to
+  `compactor.py` under the same name.
   `CLAUDE_CONFIG_DIR` is Claude Code's own variable, not a plugin tunable:
   `jev.config_dir()` honors it and every path under the user's config
   directory goes through that helper, never through a literal `~/.claude`.
