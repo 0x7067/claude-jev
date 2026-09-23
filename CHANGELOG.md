@@ -4,6 +4,8 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+- OpenRouter as a second Jev provider. Set `TYPESAFE_API_KEY` to an OpenRouter key (`sk-or-...`) and every call goes to `https://openrouter.ai/api/v1/systemone`, which takes the same request, model IDs, and answer shape. A TypeSafe key still calls `api.typesafe.ai`. Each `jev-calls.jsonl` line records its `provider`.
+
 ## [0.17.0] - 2026-09-22
 
 - Subagent briefs are checked before the spawn: a brief that changes files but omits paths, acceptance criteria, a verification command, or a commit policy is denied once per session with the missing parts listed, then goes through with a `systemMessage`. Read-only briefs are exempt. Live, a thin rename brief scored 0.06–0.16 on all four parts and a complete one 0.97+.
