@@ -9,6 +9,7 @@ block the session.
 - `router-skip-short` ignores prompts under three characters with no stdout.
 - `router-skip-slash` ignores slash commands with no stdout.
 - `router-fail-open` exits 0 with empty stdout on malformed input or missing API key.
+- `router-toggle-off` makes no Jev call when `promptRouter` ("Prompt routing hints" in `/claude-jev` or `/config`) is off.
 
 ## How to get to it (user POV)
 
@@ -28,6 +29,7 @@ Preconditions:
 - **Skip slash.** Feed a slash command. Run `control-jev hook prompt_router '{"prompt":"/help","transcript_path":""}'`. Exit code `0` and stdout empty.
 - **Fail open empty.** Feed empty stdin. Run `printf '' | control-jev hook prompt_router`. Exit code `0` and stdout empty.
 - **Fail open no key.** With `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY` unset, feed a classifiable prompt. Run `control-jev hook prompt_router '{"prompt":"where is the retry timeout set?","transcript_path":""}'`. Exit code `0` and stdout empty (Jev call fails and the hook swallows it).
+- **Toggle off.** Set a fake key so a call, if made, is logged: `OPENROUTER_API_KEY=sk-or-v1-fake`. Count lines in `$VERIFY_HOME/.claude/jev-calls.jsonl`, run `CLAUDE_PLUGIN_OPTION_PROMPTROUTER=false control-jev hook prompt_router '{"prompt":"where is the retry timeout set?","transcript_path":""}'`, and count again. Exit code `0`, stdout empty, and no line added. The same run without the variable adds one line (a failed call on the fake key), which proves the count can move. Save both counts as `prompt-routing/toggle-off.txt`.
 - **Proof.** Save the four transcripts. Run `control-jev save prompt-routing/skip-short.txt -` (and likewise for the other three) with each command's `exit=` line and stdout length. Artifacts show exit `0` and empty bodies for every case.
 
 ## Gotchas

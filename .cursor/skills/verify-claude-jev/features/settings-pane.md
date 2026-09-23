@@ -24,7 +24,7 @@ disk, which `control-jev` cannot drive headlessly.
 - Run `/claude-jev` in an interactive Claude Code session with
   `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` and `--plugin-dir` pointing at this
   checkout.
-- Enter on API key or Stats opens its view; Enter on an On/Off row flips it;
+- Enter on API key, Provider, or Stats opens its view; Enter on an On/Off row flips it;
   Status prints version, key source, and the last call under the list.
 
 ## Driving it with control-jev

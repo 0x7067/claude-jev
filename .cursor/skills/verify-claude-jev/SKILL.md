@@ -30,7 +30,9 @@ gotchas when hooks or skills drift.
 - `compactor.py rows` bad-input fallback, pin-tail keep (no Jev call), and
   no-key multi-row Jev-error fallback (`fallback` when >`PIN_TAIL` rows need
   judging and both `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY` are unset)
-- `jev.py` missing-key exit `2`
+- `jev.py` missing-key exit `2`, `status`, and the pinned-provider key rule
+- Each hook's on/off toggle (`CLAUDE_PLUGIN_OPTION_<FIELD>=false`): no Jev call
+- `stats.py` on an empty home
 
 **Out-of-band (not proved on a ship without Claude Code + API key):**
 

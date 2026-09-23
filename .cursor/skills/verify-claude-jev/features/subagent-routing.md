@@ -10,6 +10,7 @@ block the spawn.
 - `subagent-fail-open` exits 0 with empty stdout when the key is missing or input is bad.
 - `subagent-route` (out-of-band; live key) may emit `hookSpecificOutput.updatedInput.model`.
 - `subagent-brief` (out-of-band; live key) denies a file-changing brief missing paths, acceptance criteria, verification command, or commit policy: `permissionDecision: deny` once per session per brief, then `systemMessage` only.
+- `subagent-toggle-off` makes no Jev call when `subagentRouter` ("Subagent model routing" in `/claude-jev` or `/config`) is off.
 
 ## How to get to it (user POV)
 
@@ -30,6 +31,7 @@ Preconditions:
 - **Malformed.** Feed non-JSON. Run `printf 'not-json\n' | control-jev hook subagent_router`. Exit code `0` and stdout empty.
 - **Live route (out-of-band).** Needs `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` on a machine that can call Jev. Omit model and run the Explore prompt above. Exit code `0`; if confidence ≥ 0.75, stdout is JSON containing `updatedInput.model` in `haiku|sonnet|opus|fable`.
 - **Live brief check (out-of-band).** Omit model and pass a writing brief with no paths or commit policy, e.g. `"Rename the helper in the parser module and update callers"`. First run: stdout JSON with `permissionDecision: "deny"` and a reason naming the missing parts. Same input again with the same `session_id`: no deny, `systemMessage` says "spawned anyway".
+- **Toggle off.** Set a fake key so a call, if made, is logged: `OPENROUTER_API_KEY=sk-or-v1-fake`. Count lines in `$VERIFY_HOME/.claude/jev-calls.jsonl`, run `CLAUDE_PLUGIN_OPTION_SUBAGENTROUTER=false control-jev hook subagent_router '{"tool_input":{"prompt":"search for callers of parse_opt","subagent_type":"Explore"}}'`, and count again. Exit code `0`, stdout empty, and no line added. The same run without the variable adds one line (a failed call on the fake key), which proves the count can move. Save both counts as `subagent-routing/toggle-off.txt`.
 - **Proof.** Save stdout/stderr/exit for explicit and fail-open cases under `subagent-routing/`. Both no-key cases show empty stdout and exit `0`.
 
 ## Gotchas

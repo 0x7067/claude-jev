@@ -9,6 +9,7 @@ blocking the session.
 - `rules-fail-open` exits 0 with empty stdout on bad input or missing API key.
 - `rules-stop-shape` accepts `hook_event_name=Stop` without crashing.
 - `rules-edit-shape` accepts a PostToolUse edit event without crashing.
+- `rules-toggle-off` makes no Jev call when `rules` ("Rule checks" in `/claude-jev` or `/config`) is off.
 
 ## How to get to it (user POV)
 
@@ -28,6 +29,7 @@ Preconditions:
 - **Malformed.** Feed non-JSON. Run `printf 'not-json\n' | control-jev hook rules`. Exit code `0` and stdout empty.
 - **Edit event no key.** Feed a PostToolUse-shaped edit. Run `control-jev hook rules '{"hook_event_name":"PostToolUse","cwd":"'"$CLAUDE_PLUGIN_ROOT"'","tool_input":{"file_path":"'"$CLAUDE_PLUGIN_ROOT"'/scripts/jev.py","old_string":"DEFAULT_TIMEOUT","new_string":"DEFAULT_TIMEOUT"}}'`. Exit code `0` and stdout empty when the key is unset.
 - **Stop event no key.** Feed Stop. Run `control-jev hook rules '{"hook_event_name":"Stop","cwd":"'"$CLAUDE_PLUGIN_ROOT"'","transcript_path":""}'`. Exit code `0` and stdout empty when the key is unset.
+- **Toggle off.** Set a fake key so a call, if made, is logged: `OPENROUTER_API_KEY=sk-or-v1-fake`. Count lines in `$VERIFY_HOME/.claude/jev-calls.jsonl`, run `CLAUDE_PLUGIN_OPTION_RULES=false control-jev hook rules '{"hook_event_name":"PostToolUse","cwd":"'"$CLAUDE_PLUGIN_ROOT"'","tool_input":{"file_path":"'"$CLAUDE_PLUGIN_ROOT"'/scripts/jev.py","old_string":"DEFAULT_TIMEOUT","new_string":"DEFAULT_TIMEOUT"}}'`, and count again. Use the edit event: a Stop event with no transcript makes no call either way. Exit code `0`, stdout empty, and no line added. The same run without the variable adds one line (a failed call on the fake key), which proves the count can move. Save both counts as `rule-enforcement/toggle-off.txt`.
 - **Proof.** Save the three transcripts under `rule-enforcement/`. Each shows exit `0` and empty stdout for the no-key path.
 
 ## Gotchas
