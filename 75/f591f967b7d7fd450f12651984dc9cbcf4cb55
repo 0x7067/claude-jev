@@ -1,0 +1,21 @@
+.claude-plugin/marketplace.json
+  s_de229a02ddbf56::t_5f360ed0507c4a 12
+CHANGELOG.md
+  s_de229a02ddbf56::t_33220f3faa61f1 7-8,19-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "75f591f967b7d7fd450f12651984dc9cbcf4cb55",
+  "prompts": {},
+  "sessions": {
+    "s_de229a02ddbf56": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "43b0e719-b911-45c0-9e20-603bab45e304",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
