@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Zero-dependency TypeSafe/Jev client and CLI.
 
-Used by the prompt-router hook and callable directly by the agent
-(via the jev skill) to offload small decisions to a System One model
-instead of reasoning through them with generated text.
+Every hook imports it to hand small decisions to a System One model
+instead of reasoning through them with generated text. The CLI serves the
+evals, manual checks, and the `/claude-jev` pane (`status`).
 
 Env:
   TYPESAFE_API_KEY   API key, read first.

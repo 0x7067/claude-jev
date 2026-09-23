@@ -16,10 +16,9 @@ explains what each hook decides and why. Read it before changing behavior.
 | `hooks/register.ts` | Experimental function-hooks module: `session.compact` -> `compactor.py rows`, and the `/claude-jev` settings pane. A bridge, not a second implementation. |
 | `scripts/comparators.py` | ast-grep lookups the rule hook adds to a judgment |
 | `scripts/observed.py` | Scores what a past turn actually did |
-| `scripts/stats.py` | `/claude-jev:stats` — scores live decisions from the three logs under `~/.claude`: `jev-router-log.jsonl` (router, subagent, rules), `jev-compact-log.jsonl`, `jev-calls.jsonl` (every API call, written by `jev.ask`) |
+| `scripts/stats.py` | The Stats row in `/claude-jev`, or `python3 scripts/stats.py` — scores live decisions from the three logs under `~/.claude`: `jev-router-log.jsonl` (router, subagent, rules), `jev-compact-log.jsonl`, `jev-calls.jsonl` (every API call, written by `jev.ask`) |
 | `scripts/check_no_comments.py` | Hard ban: fails if `scripts/`, `eval/`, or `hooks/` source has a `#` / `//` / `/* */` comment |
 | `eval/` | Offline measurement. See `eval/README.md`. |
-| `skills/` | User-facing entry points shipped with the plugin. `/claude-jev:<dir name>`. |
 | `.claude/skills/` | Maintainer skills for this repository, not shipped. `release` cuts a version: changelog section to bump, tag, push, GitHub release. |
 | `hooks/hooks.json` | Hook registration. New hook means an entry here. `modules` names the function-hooks module; older Claude Code ignores the key. |
 
@@ -58,7 +57,7 @@ explains what each hook decides and why. Read it before changing behavior.
   `scripts/`, `eval/`, and `hooks/` source (`.py`, `.ts`, `.js`). Shebangs
   and LICENSE text stay. Python module/function docstrings are documentation
   strings, not comments, and stay where Conventions require them. Markdown
-  under `docs/`, `skills/`, `README.md`, and `AGENTS.md` is prose, not code
+  under `docs/`, `README.md`, and `AGENTS.md` is prose, not code
   comments — leave it. Rationale for thresholds and constants (`ACT`,
   `MIN_CONFIDENCE`, `KEEP_THRESHOLD`, and the rest) lives in eval results,
   docs, or PR evidence — not inline comments. Changing a threshold without
@@ -80,8 +79,9 @@ explains what each hook decides and why. Read it before changing behavior.
 - Write rules in this file as bullets, one instruction each. `rules.py` parses
   instruction files bullet by bullet, and a rule buried inside a prose
   paragraph classifies poorly.
-- User-facing entry points are skills under `skills/`, not commands. There is
-  no `commands/` directory; do not add one.
+- The user-facing entry point is the `/claude-jev` pane in `hooks/register.ts`.
+  There is no `skills/` or `commands/` directory; do not add one. A new
+  setting or report is a row in that pane.
 
 ## Verify
 
