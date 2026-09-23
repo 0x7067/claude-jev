@@ -20,7 +20,7 @@
     "typesafeApiKey": {
       "type": "string",
       "title": "TypeSafe or OpenRouter API key",
-      "description": "Saved from /claude-jev and hidden in /config so the value is never shown. A non-empty TYPESAFE_API_KEY in the launch environment wins. An sk-or- key calls OpenRouter.",
+      "description": "Saved from /claude-jev and hidden in /config so the value is never shown. A non-empty TYPESAFE_API_KEY or OPENROUTER_API_KEY in the launch environment wins. An sk-or- key calls OpenRouter.",
       "default": ""
     },
     "promptRouter": {

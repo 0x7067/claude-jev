@@ -193,7 +193,7 @@ function drawPane($, e, rows) {
         dimColor: true,
         wrap: "wrap",
         children:
-          "TypeSafe or OpenRouter key; an sk-or- key calls OpenRouter. TYPESAFE_API_KEY in the launch environment wins over a saved key.",
+          "TypeSafe or OpenRouter key; an sk-or- key calls OpenRouter. TYPESAFE_API_KEY or OPENROUTER_API_KEY in the launch environment wins over a saved key.",
       }),
       Input({
         key: "key:input",

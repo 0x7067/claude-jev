@@ -13,7 +13,7 @@ wrong "answer directly" hint is the only mistake that costs real work, so it
 requires a near-certain yes/no answer rather than the intent choice alone.
 
 Env:
-  TYPESAFE_API_KEY   required (else silently disabled)
+  TYPESAFE_API_KEY or OPENROUTER_API_KEY   required (else silently disabled)
 
 Off when `promptRouter` ("Prompt routing hints" in /claude-jev or /config) is off.
 """
