@@ -1,0 +1,19 @@
+.cursor/skills/verify-claude-jev/bin/control-jev
+  s_b556f8bd72cd88::t_ac36eb6c9418e3 9-10,13,100-101,124-125,129-131,202-203,303-304
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bed7bf84cfa567af05f280b833f57d6b297c1691",
+  "prompts": {},
+  "sessions": {
+    "s_b556f8bd72cd88": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4b55e89-eed6-4dce-98d7-46139e3f38b5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
