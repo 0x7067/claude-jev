@@ -6,9 +6,11 @@
 # skill's artifacts/ tree and must survive cleanup.
 set -euo pipefail
 
+resolve() { python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$1"; }
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ARTIFACTS_ROOT="$(realpath -m "${JE_VERIFY_EVIDENCE:-$SKILL_DIR/artifacts}")"
+ARTIFACTS_ROOT="$(resolve "${JE_VERIFY_EVIDENCE:-$SKILL_DIR/artifacts}")"
 
 usage() {
   cat <<'EOF'
@@ -95,8 +97,8 @@ ensure_verify_home() {
     [[ -d "$VERIFY_HOME" ]] || die "VERIFY_HOME exists and is not a directory: $VERIFY_HOME"
     owner="$(stat -c '%u' "$VERIFY_HOME" 2>/dev/null || stat -f '%u' "$VERIFY_HOME")"
     [[ "$owner" == "$uid" ]] || die "VERIFY_HOME not owned by current user: $VERIFY_HOME (owner=$owner)"
-    resolved="$(realpath "$VERIFY_HOME")"
-    [[ "$resolved" == "$expected" ]] || die "resolved VERIFY_HOME $resolved != $expected"
+    resolved="$(resolve "$VERIFY_HOME")"
+    [[ "$resolved" == "$(resolve /tmp)/jev-verify-$RUN_ID" ]] || die "resolved VERIFY_HOME $resolved != $expected"
     chmod 700 "$VERIFY_HOME"
   else
     mkdir -m 700 "$VERIFY_HOME"
@@ -119,14 +121,14 @@ assert_run_paths() {
     [[ -d "$VERIFY_HOME" ]] || die "VERIFY_HOME exists and is not a directory: $VERIFY_HOME"
     owner="$(stat -c '%u' "$VERIFY_HOME" 2>/dev/null || stat -f '%u' "$VERIFY_HOME")"
     [[ "$owner" == "$uid" ]] || die "VERIFY_HOME not owned by current user: $VERIFY_HOME (owner=$owner)"
-    resolved="$(realpath "$VERIFY_HOME")"
-    [[ "$resolved" == "$expected" ]] || die "resolved VERIFY_HOME $resolved != $expected"
+    resolved="$(resolve "$VERIFY_HOME")"
+    [[ "$resolved" == "$(resolve /tmp)/jev-verify-$RUN_ID" ]] || die "resolved VERIFY_HOME $resolved != $expected"
     chmod 700 "$VERIFY_HOME"
   fi
   local expected_ev artifacts_resolved ev_resolved
-  artifacts_resolved="$(realpath -m "$ARTIFACTS_ROOT")"
-  expected_ev="$(realpath -m "$ARTIFACTS_ROOT/$RUN_ID")"
-  ev_resolved="$(realpath -m "$EVIDENCE_DIR")"
+  artifacts_resolved="$(resolve "$ARTIFACTS_ROOT")"
+  expected_ev="$(resolve "$ARTIFACTS_ROOT/$RUN_ID")"
+  ev_resolved="$(resolve "$EVIDENCE_DIR")"
   [[ "$ev_resolved" == "$expected_ev" ]] || die "EVIDENCE_DIR must be $expected_ev (got: $EVIDENCE_DIR -> $ev_resolved)"
   path_under "$ev_resolved" "$artifacts_resolved" || die "EVIDENCE_DIR escapes ARTIFACTS_ROOT"
 }
@@ -197,8 +199,8 @@ evidence_dest() {
   esac
   local dest="$base/$rel"
   local resolved base_resolved
-  resolved="$(realpath -m "$dest")"
-  base_resolved="$(realpath -m "$base")"
+  resolved="$(resolve "$dest")"
+  base_resolved="$(resolve "$base")"
   path_under "$resolved" "$base_resolved" || die "evidence path escapes $base (got: $rel)"
   printf '%s\n' "$dest"
 }
@@ -298,8 +300,8 @@ cmd_cleanup() {
   [[ -d "$home_to_remove" ]] || die "VERIFY_HOME missing before cleanup: $home_to_remove"
   owner="$(stat -c '%u' "$home_to_remove" 2>/dev/null || stat -f '%u' "$home_to_remove")"
   [[ "$owner" == "$uid" ]] || die "refusing to remove VERIFY_HOME not owned by current user (owner=$owner)"
-  resolved="$(realpath "$home_to_remove")"
-  [[ "$resolved" == "$expected" ]] || die "resolved VERIFY_HOME $resolved != $expected (symlink escape?)"
+  resolved="$(resolve "$home_to_remove")"
+  [[ "$resolved" == "$(resolve /tmp)/jev-verify-$RUN_ID" ]] || die "resolved VERIFY_HOME $resolved != $expected (symlink escape?)"
   chmod 700 "$home_to_remove"
   rm -rf -- "$home_to_remove"
   rm -f -- "$STATE_FILE"
