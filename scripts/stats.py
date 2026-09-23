@@ -229,6 +229,8 @@ def match(entries: list[dict]) -> list[dict]:
         segs = observed.segments(path) if path else []
         for e in es:
             prefix = (e.get("prompt") or "").strip()
+            if observed.is_synthetic(prefix):
+                continue
             seg = next((s for s in segs if s["text"].startswith(prefix[:120])), None) if prefix else None
             intent, fired = predicted_intent(e)
             rows.append({

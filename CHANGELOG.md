@@ -4,6 +4,9 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+- `scripts/stats.py` no longer scores Claude Code's own pre-compact request ("Your task is to create a detailed summary…") as a user prompt. Older plugin versions logged 73 of them with a hint, and the session that followed used no tools, so the report counted them as wrong `feature` hints against an inflated always-`chat` baseline. On the same log (1,316 decisions), the report moved from 72/195 agreed (36.9%) against 48.7% for always `chat`, to 58/122 (47.5%) against 26.2% for always `lookup`. The weak class is now `ops`: 60 hints, 20 observed.
+- The prefix lives in `SYNTHETIC` in `scripts/observed.py`, so the router, stats, and `eval/replay.py` share one filter; `COMPACT_PROMPT` in `scripts/prompt_router.py` is gone. `eval/replay.py report --variant v7_no_unclear` is unchanged (1,613 scored, 33.7% accuracy, +4.4 lift): none of its predictions were compaction prompts. Derived labels still agree with `eval/audit_labels.json` on 63/120.
+
 ## [0.18.0] - 2026-09-23
 
 - OpenRouter as a second Jev provider. Set `OPENROUTER_API_KEY`, or `TYPESAFE_API_KEY` to an OpenRouter key (`sk-or-...`), and every call goes to `https://openrouter.ai/api/v1/systemone`, which takes the same request, model IDs, and answer shape. `TYPESAFE_API_KEY` is read first. A TypeSafe key still calls `api.typesafe.ai`. The Provider row in `/claude-jev` (`provider` in `/config`: `auto`, `typesafe`, `openrouter`) pins one provider and reads only its variable, so OpenRouter works with both variables set. Live through OpenRouter: a `noul` answered 0.99, and the prompt router answered in 472 ms. Each `jev-calls.jsonl` line records its `provider`.
