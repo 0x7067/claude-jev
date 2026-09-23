@@ -51,9 +51,9 @@ claude plugin marketplace add 0x7067/claude-jev
 claude plugin install claude-jev@claude-jev
 ```
 
-Set `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` — required; without a key hooks disable silently. `TYPESAFE_API_KEY` is read first. Either takes a TypeSafe key or an [OpenRouter](https://openrouter.ai/docs/guides/community/jev) key; an `sk-or-` key sends every call to OpenRouter's System One API instead of `api.typesafe.ai`. Needs `python3`, stdlib only.
+Set `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` — required; without a key hooks disable silently. With both set, `TYPESAFE_API_KEY` is read first, and an `sk-or-` key in either sends every call to [OpenRouter](https://openrouter.ai/docs/guides/community/jev)'s System One API instead of `api.typesafe.ai`. To use OpenRouter while both are set, pick OpenRouter in the Provider row of `/claude-jev` (or `/config`); a pinned provider reads only its own variable. Needs `python3`, stdlib only.
 
-With `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`, `/claude-jev` opens a settings pane. It saves an API key for all sessions, shows which provider that key calls, turns each hook on or off, and shows the last Jev call. A key in the launch environment wins over the saved key. Without the flag, the four on/off rows are in `/config`. The pane's Stats row shows the report from `scripts/stats.py`: how the router's hints matched what sessions did, rule calibration, and compaction.
+With `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`, `/claude-jev` opens a settings pane. It saves an API key for all sessions, picks or shows the provider, turns each hook on or off, and shows the last Jev call. A key in the launch environment wins over the saved key. Without the flag, the four on/off rows are in `/config`. The pane's Stats row shows the report from `scripts/stats.py`: how the router's hints matched what sessions did, rule calibration, and compaction.
 
 The rule hook's comparators use [ast-grep](https://ast-grep.github.io) 0.45.3. If it is not on your PATH the plugin fetches the pinned release once to `~/.claude/jev-bin`, verified by sha256, in a detached process the first time an edit needs it; every hook works without it. To warm it up or see which binary would run:
 

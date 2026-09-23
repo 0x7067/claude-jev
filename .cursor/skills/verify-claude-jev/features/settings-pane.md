@@ -7,7 +7,8 @@ disk, which `control-jev` cannot drive headlessly.
 
 ## Sub-features
 
-- `pane-rows` lists API key (source · provider), Prompt routing hints,
+- `pane-rows` lists API key (source · provider), Provider (Auto, TypeSafe,
+  OpenRouter; a pinned one reads only its own key variable), Prompt routing hints,
   Subagent model routing, Rule checks, Compaction, Stats, Status, and Close.
 - `pane-toggles` flips Prompt routing hints, Subagent model routing, Rule
   checks, or Compaction On/Off on Enter and saves it to `settings.json` under

@@ -6,14 +6,17 @@ instead of reasoning through them with generated text. The CLI serves the
 evals, manual checks, and the `/claude-jev` pane (`status`).
 
 Env:
-  TYPESAFE_API_KEY   API key, read first.
-  OPENROUTER_API_KEY API key, read when TYPESAFE_API_KEY is unset.
+  TYPESAFE_API_KEY   TypeSafe's key variable.
+  OPENROUTER_API_KEY OpenRouter's key variable.
                      Either wins over a key saved in the `/claude-jev` pane,
                      which Claude Code hands to hooks as
-                     `CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY`. The key's prefix
-                     picks the provider: `sk-or-...` is OpenRouter, anything
-                     else is TypeSafe. Both serve the same System One
-                     request, model IDs, and answers.
+                     `CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY`. The pane's
+                     Provider row (`CLAUDE_PLUGIN_OPTION_PROVIDER`) pins one
+                     provider and its variable. On `auto`, TYPESAFE_API_KEY is
+                     read first and the key's prefix picks the provider:
+                     `sk-or-...` is OpenRouter, anything else is TypeSafe.
+                     Both serve the same System One request, model IDs, and
+                     answers.
 """
 
 from __future__ import annotations
@@ -34,13 +37,14 @@ class Provider:
     name: str
     url: str
     key_prefix: str
+    key_var: str
 
 
 PROVIDERS = (
-    Provider("typesafe", "https://api.typesafe.ai/v1/systemone", ""),
-    Provider("openrouter", "https://openrouter.ai/api/v1/systemone", "sk-or-"),
+    Provider("typesafe", "https://api.typesafe.ai/v1/systemone", "", "TYPESAFE_API_KEY"),
+    Provider("openrouter", "https://openrouter.ai/api/v1/systemone", "sk-or-",
+             "OPENROUTER_API_KEY"),
 )
-KEY_VARS = ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY")
 DEFAULT_MODEL = "jev-latest"
 DEFAULT_TIMEOUT = 8.0
 
@@ -121,22 +125,30 @@ def enabled(field: str) -> bool:
     return plugin_option(field).lower() not in ("false", "0")
 
 
-def key_source() -> tuple[str, str]:
-    """Where the key in effect comes from, and the key: `env`, `saved`, or
-    `missing` with an empty key."""
-    for name in KEY_VARS:
-        env = os.environ.get(name, "").strip()
+def pinned_provider() -> Provider | None:
+    """The provider the `provider` `userConfig` field names; None for `auto`."""
+    return next((p for p in PROVIDERS if p.name == plugin_option("provider")), None)
+
+
+def resolve() -> tuple[str, str, Provider | None]:
+    """Where the key in effect comes from (`env`, `saved`, or `missing`), the
+    key, and the provider it calls. A pinned provider reads only its own
+    variable; `auto` reads each provider's variable in `PROVIDERS` order and
+    lets the key's prefix pick."""
+    pinned = pinned_provider()
+    for p in (pinned,) if pinned else PROVIDERS:
+        env = os.environ.get(p.key_var, "").strip()
         if env:
-            return "env", env
+            return "env", env, pinned or provider_for(env)
     saved = plugin_option("typesafeApiKey")
-    return ("saved", saved) if saved else ("missing", "")
+    if saved:
+        return "saved", saved, pinned or provider_for(saved)
+    return "missing", "", pinned
 
 
-def api_key() -> str:
-    source, key = key_source()
-    if source == "missing":
-        raise JevError("set TYPESAFE_API_KEY or OPENROUTER_API_KEY")
-    return key
+def missing_key_message(pinned: Provider | None) -> str:
+    names = [pinned.key_var] if pinned else [p.key_var for p in PROVIDERS]
+    return "set " + " or ".join(names)
 
 
 def provider_for(key: str) -> Provider:
@@ -152,8 +164,9 @@ def ask(state, questions: dict, model: str | None = None, timeout: float | None 
         "model": model or DEFAULT_MODEL,
         "questions": questions,
     }
-    key = api_key()
-    provider = provider_for(key)
+    source, key, provider = resolve()
+    if source == "missing":
+        raise JevError(missing_key_message(provider))
     req = urllib.request.Request(
         provider.url,
         data=json.dumps(body).encode(),
@@ -195,11 +208,12 @@ def last_call() -> dict | None:
 def status() -> dict:
     """What the `/claude-jev` pane shows: version, key source and provider,
     and the last call. Never the key."""
-    source, key = key_source()
+    source, _, provider = resolve()
     return {
         "version": version(),
         "key": source,
-        "provider": provider_for(key).name if key else None,
+        "provider": provider.name if provider else None,
+        "pinned": plugin_option("provider") or "auto",
         "last_call": last_call(),
     }
 

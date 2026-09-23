@@ -12,6 +12,11 @@ const TOGGLES = [
 ];
 const KEY_LABELS = { env: "from the environment", saved: "saved", missing: "missing" };
 const PROVIDER_LABELS = { typesafe: "TypeSafe", openrouter: "OpenRouter" };
+const PROVIDER_CHOICES = [
+  ["auto", "Auto (from the key)"],
+  ["typesafe", "TypeSafe"],
+  ["openrouter", "OpenRouter"],
+];
 const OFF_TERMINAL = "Open /claude-jev in the terminal, or change the claude-jev rows in /config.";
 
 let loaded = {};
@@ -29,9 +34,18 @@ function savedKey() {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function pinnedProvider(rows) {
+  const row = rows?.find((candidate) => candidate.key === rowKey("provider"));
+  const value = row ? row.value : loaded.provider;
+  return PROVIDER_CHOICES.some(([name]) => name === value) ? value : "auto";
+}
+
 function pythonEnv() {
   const key = savedKey();
-  return key ? { CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY: key } : {};
+  return {
+    CLAUDE_PLUGIN_OPTION_PROVIDER: pinnedProvider(),
+    ...(key ? { CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY: key } : {}),
+  };
 }
 
 function runPython($, args, stdin) {
@@ -103,6 +117,7 @@ async function save($, field, value, message) {
     return false;
   }
   loaded = { ...loaded, [field]: value };
+  info = undefined;
   return true;
 }
 
@@ -195,6 +210,35 @@ function drawPane($, e, rows) {
     void redraw(menuRow);
   };
 
+  if (view === "provider") {
+    const current = pinnedProvider(rows);
+    return column([
+      heading("Provider"),
+      Text({
+        dimColor: true,
+        wrap: "wrap",
+        children:
+          "Auto reads TYPESAFE_API_KEY, then OPENROUTER_API_KEY, and lets the key pick. A pinned provider reads only its own variable, or the saved key.",
+      }),
+      list(
+        [
+          ...PROVIDER_CHOICES.map(([name, label]) => ({
+            key: `provider:${name}`,
+            label: `${name === current ? "●" : " "} ${label}`,
+            onPress: () => {
+              showMenu();
+              if (name === current) void redraw(menuRow);
+              else run(() => save($, "provider", name, `Provider: ${label} (all sessions).`), menuRow);
+            },
+          })),
+          { key: "provider:back", label: "  Back", dim: true, onPress: back },
+        ],
+        `provider:${current}`,
+      ),
+      hint("back"),
+    ]);
+  }
+
   if (view === "stats") {
     return column([
       heading("Stats"),
@@ -266,6 +310,15 @@ function drawPane($, e, rows) {
             view = "key";
             menuRow = "menu:key";
             void redraw("key:input");
+          },
+        },
+        {
+          key: "menu:provider",
+          label: setting("Provider", Object.fromEntries(PROVIDER_CHOICES)[pinnedProvider(rows)]),
+          onPress: () => {
+            view = "provider";
+            menuRow = "menu:provider";
+            void redraw(`provider:${pinnedProvider(rows)}`);
           },
         },
         ...TOGGLES.map(([field, label]) => {
