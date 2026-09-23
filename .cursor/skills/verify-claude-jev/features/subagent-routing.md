@@ -15,7 +15,7 @@ block the spawn.
 
 - Spawn an Agent/Task tool without an explicit model in Claude Code.
 - Spawn one with `model` already set (explicit wins).
-- Run the plugin without `TYPESAFE_API_KEY`.
+- Run the plugin without `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY`.
 
 ## Driving it with control-jev
 
@@ -28,7 +28,7 @@ Preconditions:
 - **Explicit model.** Pass a model in tool input. Run `control-jev hook subagent_router '{"tool_input":{"prompt":"search for callers","subagent_type":"Explore","model":"haiku"}}'`. Exit code `0` and stdout empty.
 - **Fail open no key.** Unset the key and omit model. Run `control-jev hook subagent_router '{"tool_input":{"prompt":"search for callers of parse_opt","subagent_type":"Explore"}}'`. Exit code `0` and stdout empty.
 - **Malformed.** Feed non-JSON. Run `printf 'not-json\n' | control-jev hook subagent_router`. Exit code `0` and stdout empty.
-- **Live route (out-of-band).** Needs `TYPESAFE_API_KEY` on a machine that can call Jev. Omit model and run the Explore prompt above. Exit code `0`; if confidence ≥ 0.75, stdout is JSON containing `updatedInput.model` in `haiku|sonnet|opus|fable`.
+- **Live route (out-of-band).** Needs `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` on a machine that can call Jev. Omit model and run the Explore prompt above. Exit code `0`; if confidence ≥ 0.75, stdout is JSON containing `updatedInput.model` in `haiku|sonnet|opus|fable`.
 - **Live brief check (out-of-band).** Omit model and pass a writing brief with no paths or commit policy, e.g. `"Rename the helper in the parser module and update callers"`. First run: stdout JSON with `permissionDecision: "deny"` and a reason naming the missing parts. Same input again with the same `session_id`: no deny, `systemMessage` says "spawned anyway".
 - **Proof.** Save stdout/stderr/exit for explicit and fail-open cases under `subagent-routing/`. Both no-key cases show empty stdout and exit `0`.
 
