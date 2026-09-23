@@ -40,10 +40,12 @@ explains what each hook decides and why. Read it before changing behavior.
   the fail-open fallthrough to `next(e)`, and the `/claude-jev` pane. Even its
   debug-log line is the `summary` string Python sends, and the pane's key
   source, provider, and last call come from `jev.py status`. Keep it that way.
-- **One API key, two names:** `TYPESAFE_API_KEY`, then `OPENROUTER_API_KEY`
-  (`KEY_VARS` in `scripts/jev.py`). Do not add another variable. The key's
-  prefix picks the provider
-  (`PROVIDERS` in `scripts/jev.py`); a new provider is a new entry there.
+- **One key variable per provider:** each entry in `PROVIDERS`
+  (`scripts/jev.py`) names its URL, key prefix, and variable
+  (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`). A new provider is a new entry
+  there; do not add any other variable. The `provider` `userConfig` field pins
+  one; on `auto` the variables are read in `PROVIDERS` order and the key's
+  prefix picks.
   Every other tunable is a module-level constant, or a `userConfig` field in
   `.claude-plugin/plugin.json` when the user sets it from `/claude-jev` or
   `/config`. Claude Code hands those fields to hooks as

@@ -23,6 +23,17 @@
       "description": "Saved from /claude-jev and hidden in /config so the value is never shown. A non-empty TYPESAFE_API_KEY or OPENROUTER_API_KEY in the launch environment wins. An sk-or- key calls OpenRouter.",
       "default": ""
     },
+    "provider": {
+      "type": "string",
+      "title": "Jev provider",
+      "description": "auto reads TYPESAFE_API_KEY, then OPENROUTER_API_KEY, and lets the key's prefix pick. typesafe or openrouter pins that provider and reads only its variable, or the saved key.",
+      "options": [
+        "auto",
+        "typesafe",
+        "openrouter"
+      ],
+      "default": "auto"
+    },
     "promptRouter": {
       "type": "boolean",
       "title": "Prompt routing hints",
