@@ -17,7 +17,7 @@ the transcript readers stay because `eval/compare.py` replays recorded
 transcripts through them.
 
 Env:
-  TYPESAFE_API_KEY   required (the bridge falls back silently without it)
+  TYPESAFE_API_KEY or OPENROUTER_API_KEY   required (the bridge falls back silently without it)
 
 `hooks/register.ts` skips the bridge when `compaction` is off, and passes a
 key saved in /claude-jev as `CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY`.

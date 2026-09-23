@@ -16,7 +16,7 @@ Always exits 0 and prints nothing on any failure — routing must never block
 a spawn.
 
 Env:
-  TYPESAFE_API_KEY   required (else silently disabled)
+  TYPESAFE_API_KEY or OPENROUTER_API_KEY   required (else silently disabled)
 
 Off when `subagentRouter` ("Subagent model routing" in /claude-jev or /config) is off.
 """

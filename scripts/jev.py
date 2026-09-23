@@ -6,12 +6,14 @@ Used by the prompt-router hook and callable directly by the agent
 instead of reasoning through them with generated text.
 
 Env:
-  TYPESAFE_API_KEY   API key. Wins over a key saved in the `/claude-jev`
-                     pane, which Claude Code hands to hooks as
-                     `CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY`. Its prefix picks
-                     the provider: `sk-or-...` is OpenRouter, anything else
-                     is TypeSafe. Both serve the same System One request,
-                     model IDs, and answers.
+  TYPESAFE_API_KEY   API key, read first.
+  OPENROUTER_API_KEY API key, read when TYPESAFE_API_KEY is unset.
+                     Either wins over a key saved in the `/claude-jev` pane,
+                     which Claude Code hands to hooks as
+                     `CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY`. The key's prefix
+                     picks the provider: `sk-or-...` is OpenRouter, anything
+                     else is TypeSafe. Both serve the same System One
+                     request, model IDs, and answers.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ PROVIDERS = (
     Provider("typesafe", "https://api.typesafe.ai/v1/systemone", ""),
     Provider("openrouter", "https://openrouter.ai/api/v1/systemone", "sk-or-"),
 )
+KEY_VARS = ("TYPESAFE_API_KEY", "OPENROUTER_API_KEY")
 DEFAULT_MODEL = "jev-latest"
 DEFAULT_TIMEOUT = 8.0
 
@@ -121,9 +124,10 @@ def enabled(field: str) -> bool:
 def key_source() -> tuple[str, str]:
     """Where the key in effect comes from, and the key: `env`, `saved`, or
     `missing` with an empty key."""
-    env = os.environ.get("TYPESAFE_API_KEY", "").strip()
-    if env:
-        return "env", env
+    for name in KEY_VARS:
+        env = os.environ.get(name, "").strip()
+        if env:
+            return "env", env
     saved = plugin_option("typesafeApiKey")
     return ("saved", saved) if saved else ("missing", "")
 
@@ -131,7 +135,7 @@ def key_source() -> tuple[str, str]:
 def api_key() -> str:
     source, key = key_source()
     if source == "missing":
-        raise JevError("set TYPESAFE_API_KEY")
+        raise JevError("set TYPESAFE_API_KEY or OPENROUTER_API_KEY")
     return key
 
 

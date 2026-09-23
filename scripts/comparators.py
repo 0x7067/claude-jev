@@ -17,7 +17,7 @@ once, in a detached process that cannot delay an edit, and until it lands
 every comparator answers "".
 
 Env:
-  none. `TYPESAFE_API_KEY` is the plugin's one variable and this module never
+  none. `TYPESAFE_API_KEY` (or `OPENROUTER_API_KEY`) is the plugin's one key and this module never
   reads it — no question here reaches the API.
 """
 

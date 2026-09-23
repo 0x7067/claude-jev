@@ -41,8 +41,9 @@ explains what each hook decides and why. Read it before changing behavior.
   the fail-open fallthrough to `next(e)`, and the `/claude-jev` pane. Even its
   debug-log line is the `summary` string Python sends, and the pane's key
   source, provider, and last call come from `jev.py status`. Keep it that way.
-- **One environment variable:** `TYPESAFE_API_KEY`. Do not add another, and
-  do not add a fallback name. The key's prefix picks the provider
+- **One API key, two names:** `TYPESAFE_API_KEY`, then `OPENROUTER_API_KEY`
+  (`KEY_VARS` in `scripts/jev.py`). Do not add another variable. The key's
+  prefix picks the provider
   (`PROVIDERS` in `scripts/jev.py`); a new provider is a new entry there.
   Every other tunable is a module-level constant, or a `userConfig` field in
   `.claude-plugin/plugin.json` when the user sets it from `/claude-jev` or

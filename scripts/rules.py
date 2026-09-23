@@ -27,7 +27,7 @@ Always exits 0 and prints nothing on any failure — enforcement must never
 corrupt a session.
 
 Env:
-  TYPESAFE_API_KEY   required (else silently disabled)
+  TYPESAFE_API_KEY or OPENROUTER_API_KEY   required (else silently disabled)
 
 Off when `rules` ("Rule checks" in /claude-jev or /config) is off.
 """
