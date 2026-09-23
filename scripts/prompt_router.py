@@ -34,8 +34,6 @@ CONTEXT_LINES = 400
 
 SILENT_INTENTS = {"feature"}
 
-COMPACT_PROMPT = "Your task is to create a detailed summary"
-
 GUIDANCE = {
     "chat": "Answer directly from the conversation. No file reads, no commands.",
     "lookup": "Fact-finding — one targeted search, concise answer, then stop.",
@@ -199,7 +197,7 @@ def main() -> None:
         if len(prompt) < 3 or prompt[0] in "/#":
             return
 
-        if observed.is_synthetic(prompt) or prompt.startswith(COMPACT_PROMPT):
+        if observed.is_synthetic(prompt):
             return
         tp = event.get("transcript_path")
         prev_user, prev_assistant, model_now = "", "", None

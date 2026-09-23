@@ -78,6 +78,7 @@ SYNTHETIC = re.compile(
     r"|\[Image:"
     r"|\[Request interrupted"
     r"|This session is being continued from"
+    r"|Your task is to create a detailed summary"
     r"|Please continue the conversation from where"
     r"|Permission granted for:"
     r"|\[Your previous response had no visible output"
