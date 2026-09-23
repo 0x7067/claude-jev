@@ -9,7 +9,7 @@
     {
       "name": "claude-jev",
       "source": "./",
-      "version": "0.18.0",
+      "version": "0.19.0",
       "description": "Five hooks, one batched API call each. Classifies every prompt into a one-line routing hint; sets the model tier a subagent spawns on; judges each edit against the rules already in your CLAUDE.md, AGENTS.md and .claude/rules, citing the one it breaks; and on compaction judges 150 transcript blocks keep, truncate or drop so the survivors carry over verbatim instead of through a generated summary. Fails open everywhere. Shaped by evals over 1,613 real prompts and 250 real edits; see eval/.",
       "category": "productivity",
       "tags": [
