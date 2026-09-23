@@ -5,3 +5,6 @@ rules_cases.jsonl
 
 # verify-claude-jev proof runs (skill keeps the directory; agents write run dirs here)
 .cursor/skills/verify-claude-jev/artifacts/*/
+
+# Claude Code agent worktrees
+.claude/worktrees/
