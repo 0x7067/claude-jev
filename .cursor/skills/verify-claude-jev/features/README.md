@@ -16,9 +16,11 @@ feature file as the recipe.
   those assignments without replacing your shell `HOME`.
 - Never drive a verify home that was not started by this verification run.
 - Do not `source` the control-jev state file into your shell.
-- `TYPESAFE_API_KEY` may be unset. Without it, hooks must fail open (exit 0,
-  no stdout) and `jev.py` must exit 2 with `jev: set TYPESAFE_API_KEY`. That
-  is the **in-band** contract for this skill.
+- `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY` may both be unset. Without them,
+  hooks must fail open (exit 0, no stdout) and `jev.py` must exit 2 with
+  `jev: set TYPESAFE_API_KEY or OPENROUTER_API_KEY`. That is the **in-band**
+  contract for this skill. A key saved in the `/claude-jev` settings pane does
+  not apply here: Claude Code hands it to hooks as `CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY`, and `control-jev` runs the scripts directly.
 - Put evidence under `.cursor/skills/verify-claude-jev/artifacts/$RUN_ID/` via
   `control-jev save`.
 
@@ -28,8 +30,9 @@ feature file as the recipe.
 hook stdin fail-open / skip, `rows` bad-input fallback, pin-tail keep, and
 no-key multi-row Jev-error fallback, `jev.py` missing-key.
 
-**Out-of-band** (needs a machine with Claude Code + `TYPESAFE_API_KEY`): live
-classify/route/block answers, a real plugin session, function-hook `/compact`.
+**Out-of-band** (needs a machine with Claude Code + `TYPESAFE_API_KEY` or
+`OPENROUTER_API_KEY`): live classify/route/block answers, a real plugin
+session, function-hook `/compact`, and the `/claude-jev` settings pane.
 Feature bullets labeled out-of-band are recipes for that machine only — never
 count an in-band fail-open pass as verifying them.
 
@@ -78,4 +81,5 @@ handles, required state, commands, and observable proof.
 - [Subagent routing](./subagent-routing.md) covers PreToolUse model picking and fail-open.
 - [Rule enforcement](./rule-enforcement.md) covers PostToolUse / Stop fail-open and event shape.
 - [Session compaction](./session-compaction.md) covers the `rows` bridge: bad-input fallback, pin-tail keep, and no-key multi-row Jev-error fallback.
-- [Jev CLI](./jev-cli.md) covers the agent skill CLI missing-key and ask surfaces.
+- [Jev CLI](./jev-cli.md) covers the `scripts/jev.py` CLI missing-key and ask surfaces.
+- [Settings pane](./settings-pane.md) covers the `/claude-jev` pane (out-of-band only).

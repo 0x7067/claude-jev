@@ -4,16 +4,17 @@ description: >
   Drive and prove claude-jev (Claude Code plugin) the way a user/session would:
   isolated HOME, stdin JSON hooks, jev CLI, and compaction rows bridge. Use for
   /verify-claude-jev, verifying hook fail-open, routing, rules, compaction, or
-  the jev/stats skills after changing scripts/.
+  the jev CLI and stats script after changing scripts/.
 ---
 
 # Verify claude-jev
 
 claude-jev is a Claude Code plugin. Users do not open a web UI; they install the
 plugin and Claude Code invokes Python hooks on stdin JSON. Agents also call
-`scripts/jev.py` and `/claude-jev:stats`. This skill drives those surfaces from
-the shell with an isolated `HOME` so a verification run never shares
-`~/.claude` logs and caches with a live session.
+`scripts/jev.py`, and `scripts/stats.py` scores live decisions (driven here
+via `control-jev stats`). This skill drives those surfaces from the shell with
+an isolated `HOME` so a verification run never shares `~/.claude` logs and
+caches with a live session.
 
 Maintain the feature map under `features/` as the app changes. Use
 `/maintain-verification-skill` to refresh entry points, selectors/commands, and
@@ -28,7 +29,7 @@ gotchas when hooks or skills drift.
   without live classify (silent stdout)
 - `compactor.py rows` bad-input fallback, pin-tail keep (no Jev call), and
   no-key multi-row Jev-error fallback (`fallback` when >`PIN_TAIL` rows need
-  judging and `TYPESAFE_API_KEY` is unset)
+  judging and both `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY` are unset)
 - `jev.py` missing-key exit `2`
 
 **Out-of-band (not proved on a ship without Claude Code + API key):**
@@ -36,6 +37,8 @@ gotchas when hooks or skills drift.
 - A real Claude Code session with the plugin loaded (`claude`, function hooks,
   trusted workspace)
 - Live Jev classification / routing / rule blocks that need `TYPESAFE_API_KEY`
+  or `OPENROUTER_API_KEY`
+- The `/claude-jev` settings pane (see `features/settings-pane.md`)
 - End-to-end `/compact` through `hooks/register.ts`
 
 Do not report an out-of-band path as verified because the in-band fail-open
@@ -50,7 +53,8 @@ There is no long-lived server. Launch means: create a disposable home, point
 
 ```bash
 export PATH="$PWD/.cursor/skills/verify-claude-jev/bin:$PATH"
-# TYPESAFE_API_KEY is out-of-band for live classify; without it hooks fail open
+# TYPESAFE_API_KEY / OPENROUTER_API_KEY are out-of-band for live classify;
+# without either, hooks fail open
 control-jev launch
 # prints run_id=... home=/tmp/jev-verify-... evidence_dir=... ready=1
 # subsequent control-jev commands read the active run from the control state file
@@ -83,9 +87,10 @@ Requires: `python3` compiles `scripts/` and `eval/`; empty stdin to
 `compactor.py rows` exits 0 with a JSON `fallback`; disposable verify home
 exists. Writes `$EVIDENCE_DIR/doctor.txt`. Fail the run if `doctor=fail`.
 
-`TYPESAFE_API_KEY` may be unset. Doctor reports `typesafe_api_key=unset` and
-still passes — fail-open without a key is the in-band expectation. Live
-classification is out-of-band; see feature files.
+`TYPESAFE_API_KEY` and `OPENROUTER_API_KEY` may both be unset. Doctor reports
+`typesafe_api_key=unset` and `openrouter_api_key=unset` and still passes —
+fail-open without a key is the in-band expectation. Live classification is
+out-of-band; see feature files.
 
 ## Drive
 
@@ -113,15 +118,16 @@ control-jev hook rules '{"hook_event_name":"PostToolUse","cwd":"'"$CLAUDE_PLUGIN
 control-jev rows /path/to/event.json
 # or: control-jev rows < event.json
 
-# Jev CLI missing-key (in-band). Live noul needs TYPESAFE_API_KEY (out-of-band).
+# Jev CLI missing-key (in-band). Live noul needs TYPESAFE_API_KEY or
+# OPENROUTER_API_KEY (out-of-band).
 control-jev jev -- noul "Is this a yes/no check?" "state text"
 control-jev stats -- --days 7
 ```
 
 Stable handles: script paths under `scripts/`, JSON field names Claude Code
 sends (`prompt`, `tool_input`, `hook_event_name`, `messages`), and CLI
-subcommands documented in `skills/jev/SKILL.md`. Prefer those over scraping
-log prose.
+subcommands listed by `python3 scripts/jev.py --help`. Prefer those over
+scraping log prose.
 
 Feature recipes live in `features/`. Start from the baseline in
 `features/README.md`, then follow one feature file end to end.
@@ -150,17 +156,21 @@ control-jev save session-compaction/rows-out.json -
 Standards: exercise the real stdin/CLI path Claude Code or the agent uses —
 not internal setters. Capture the action and the resulting state. Mocks only
 at the production boundary already used by the plugin (missing
-`TYPESAFE_API_KEY` → fail open / `jev: set TYPESAFE_API_KEY`). When proving a
-no-key path, observe the real surface: hooks stay silent at exit 0; `jev` CLI
-exits 2 with the set-key message; `rows` no-key multi-row fallback exits 0 with
-JSON `{"fallback":…}` (e.g. `jev: every chunk failed`) — not silence or exit 2.
+`TYPESAFE_API_KEY` and `OPENROUTER_API_KEY` → fail open / `jev: set
+TYPESAFE_API_KEY or OPENROUTER_API_KEY`). When proving a no-key path, observe
+the real surface: hooks stay silent at exit 0; `jev` CLI exits 2 with the
+set-key message; `rows` no-key multi-row fallback exits 0 with JSON
+`{"fallback":…}` (e.g. `jev: every chunk failed`) — not silence or exit 2. A
+key saved in the `/claude-jev` settings pane does not apply here:
+Claude Code hands it to hooks as `CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY`, and `control-jev` runs the scripts directly.
 
 In-band evidence proves compile + fail-open / pin-tail / no-key multi-row
 Jev-error fallback / missing-key. That Jev-error fallback still has no API
 key and is not live classify.
 Out-of-band evidence (live classify, real `claude` session, function-hook
-compaction) belongs on a machine with Claude Code and `TYPESAFE_API_KEY`; do
-not treat an empty fail-open transcript as that proof.
+compaction, the `/claude-jev` settings pane) belongs on a machine with
+Claude Code and `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY`; do not treat an
+empty fail-open transcript as that proof.
 
 ## Cleanup
 

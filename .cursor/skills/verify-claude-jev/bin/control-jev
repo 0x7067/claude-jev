@@ -32,7 +32,10 @@ Environment:
   JE_VERIFY_RUN_ID     Force the run id on launch (default: timestamp-pid);
                        must match [A-Za-z0-9._-]+
   JE_VERIFY_EVIDENCE   Override evidence root (default: skill artifacts/)
-  TYPESAFE_API_KEY     Optional; without it hooks fail open and jev exits 2
+  TYPESAFE_API_KEY     Optional; without it (and OPENROUTER_API_KEY) hooks
+                       fail open and jev exits 2
+  OPENROUTER_API_KEY   Optional fallback key; same fail-open/exit-2 behavior
+                       applies when both are unset
   XDG_RUNTIME_DIR      Preferred private dir for the active-run state file;
                        if unset, uses /tmp/jev-verify-control-<uid> mode 0700
 
@@ -241,6 +244,7 @@ cmd_doctor() {
     echo "plugin_root=$ROOT"
     echo "python=$(python3 --version 2>&1)"
     echo "typesafe_api_key=$([ -n "${TYPESAFE_API_KEY:-}" ] && echo set || echo unset)"
+    echo "openrouter_api_key=$([ -n "${OPENROUTER_API_KEY:-}" ] && echo set || echo unset)"
   } >"$report"
 
   if ! python3 -m compileall -q "$ROOT/scripts" "$ROOT/eval"; then
@@ -320,7 +324,7 @@ run_id=$RUN_ID
 home=$VERIFY_HOME
 plugin_root=$ROOT
 evidence_dir=$EVIDENCE_DIR
-api_key=$([ -n "${TYPESAFE_API_KEY:-}" ] && echo set || echo unset)
+api_key=$([ -n "${TYPESAFE_API_KEY:-}${OPENROUTER_API_KEY:-}" ] && echo set || echo unset)
 EOF
 }
 
