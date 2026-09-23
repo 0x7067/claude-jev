@@ -14,6 +14,8 @@ import json
 from dataclasses import dataclass
 from typing import Callable
 
+import prompt_router
+
 INTENT_CRITERIA = {
     "chat": "Conversation or general question — answer directly, no codebase work needed",
     "lookup": "Needs a specific fact from the codebase — a targeted search suffices",
@@ -193,6 +195,13 @@ def rule_combined(ans: dict, floor: float):
     return (None, conf) if c == "chat" else (c, conf)
 
 
+def rule_shipped(ans: dict, floor: float):
+    """`rule_combined`, then only the intents `prompt_router.GUIDANCE` has a
+    hint for, as the hook does."""
+    c, conf = rule_combined(ans, floor)
+    return (c, conf) if c in prompt_router.GUIDANCE else (None, conf)
+
+
 def rule_tier(ans: dict, floor: float):
     a = ans.get("model_tier") or {}
     c, conf = a.get("choice"), a.get("confidence", 0.0)
@@ -246,6 +255,10 @@ VARIANTS = {
     "v7_no_unclear": Variant(
         "v7_no_unclear", "v6 minus the unclear class, which never earns its precision",
         combined_bundle(unclear=False), state_ctx, rule_combined, truth_intent,
+        [i for i in INTENTS if i not in ("refactor", "unclear")], "chat"),
+    "v9_hinted_only": Variant(
+        "v9_hinted_only", "v7 answers, scored only where the hook shows a hint",
+        combined_bundle(unclear=False), state_ctx, rule_shipped, truth_intent,
         [i for i in INTENTS if i not in ("refactor", "unclear")], "chat"),
     "v8_shipped": Variant(
         "v8_shipped", "shipped bundle with model_tier — does intent still hold?",

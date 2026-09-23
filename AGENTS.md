@@ -92,7 +92,7 @@ There is no test suite. The local / script contract for this repo is:
 ```bash
 python3 -m compileall -q scripts eval
 python3 scripts/check_no_comments.py
-echo '{"prompt":"hi","transcript_path":""}' | python3 scripts/prompt_router.py; echo "exit=$?"
+echo '{"prompt":"hi","transcript_path":""}' | CLAUDE_CONFIG_DIR="$(mktemp -d)" python3 scripts/prompt_router.py; echo "exit=$?"
 ```
 
 `compileall` plus stdin hook smoke (exit 0, fail open) is what a default
@@ -121,6 +121,10 @@ would run, or `(none)`; `fetch` downloads the pinned one. The hook must exit
 
 Every hook must exit 0 on a malformed or empty event. Feed the script you
 changed a matching JSON event on stdin and check the exit code.
+
+- Run a hand-fed hook event with `CLAUDE_CONFIG_DIR="$(mktemp -d)"`. Hooks
+  log under the config directory, and a test event in the real one lands in
+  the `/claude-jev` stats with no transcript behind it.
 
 The `rows` bridge answers bad input with `{"fallback": ...}` and exit 0:
 
