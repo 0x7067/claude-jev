@@ -6,10 +6,12 @@ Used by the prompt-router hook and callable directly by the agent
 instead of reasoning through them with generated text.
 
 Env:
-  TYPESAFE_API_KEY   API key (required). Its prefix picks the provider:
-                     `sk-or-...` is OpenRouter, anything else is TypeSafe.
-                     Both serve the same System One request, model IDs,
-                     and answers.
+  TYPESAFE_API_KEY   API key. Wins over a key saved in the `/claude-jev`
+                     pane, which Claude Code hands to hooks as
+                     `CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY`. Its prefix picks
+                     the provider: `sk-or-...` is OpenRouter, anything else
+                     is TypeSafe. Both serve the same System One request,
+                     model IDs, and answers.
 """
 
 from __future__ import annotations
@@ -105,9 +107,30 @@ def log_call(provider: Provider, model: str, n_questions: int, t0: float,
         pass
 
 
+def plugin_option(field: str) -> str:
+    """A `userConfig` value from `.claude-plugin/plugin.json`, as Claude Code
+    exports it to hook processes."""
+    return os.environ.get(f"CLAUDE_PLUGIN_OPTION_{field.upper()}", "").strip()
+
+
+def enabled(field: str) -> bool:
+    """Whether a hook's on/off `userConfig` field is on. Unset means on."""
+    return plugin_option(field).lower() not in ("false", "0")
+
+
+def key_source() -> tuple[str, str]:
+    """Where the key in effect comes from, and the key: `env`, `saved`, or
+    `missing` with an empty key."""
+    env = os.environ.get("TYPESAFE_API_KEY", "").strip()
+    if env:
+        return "env", env
+    saved = plugin_option("typesafeApiKey")
+    return ("saved", saved) if saved else ("missing", "")
+
+
 def api_key() -> str:
-    key = os.environ.get("TYPESAFE_API_KEY")
-    if not key:
+    source, key = key_source()
+    if source == "missing":
         raise JevError("set TYPESAFE_API_KEY")
     return key
 
@@ -151,6 +174,30 @@ def ask(state, questions: dict, model: str | None = None, timeout: float | None 
         raise JevError(str(e)) from e
     log_call(provider, body["model"], n, t0, None)
     return payload.get("answers", {})
+
+
+def last_call() -> dict | None:
+    """The newest `jev-calls.jsonl` record, or None when there is none."""
+    try:
+        with open(CALL_LOG, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 4096))
+            lines = f.read().decode(errors="replace").splitlines()
+        return json.loads(lines[-1]) if lines else None
+    except (OSError, ValueError):
+        return None
+
+
+def status() -> dict:
+    """What the `/claude-jev` pane shows: version, key source and provider,
+    and the last call. Never the key."""
+    source, key = key_source()
+    return {
+        "version": version(),
+        "key": source,
+        "provider": provider_for(key).name if key else None,
+        "last_call": last_call(),
+    }
 
 
 def read_state_arg(value: str):
@@ -305,9 +352,13 @@ def main() -> int:
     intent_p = sub.add_parser("intent", help="preset routing bundle for a user request")
     intent_p.add_argument("state", help="request text, @file, or - for stdin")
 
+    sub.add_parser("status", help="key source, provider, version, and last call as JSON")
+
     try:
         args = p.parse_args()
-        if args.cmd == "ask":
+        if args.cmd == "status":
+            out = status()
+        elif args.cmd == "ask":
             req = json.load(sys.stdin)
             out = ask(req.get("state"), req["questions"], model=req.get("model"))
         elif args.cmd == "choose":

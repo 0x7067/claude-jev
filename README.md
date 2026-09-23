@@ -53,6 +53,8 @@ claude plugin install claude-jev@claude-jev
 
 Set `TYPESAFE_API_KEY` — the plugin's only variable, required; without it hooks disable silently. It takes a TypeSafe key or an [OpenRouter](https://openrouter.ai/docs/guides/community/jev) key; an `sk-or-` key sends every call to OpenRouter's System One API instead of `api.typesafe.ai`. Needs `python3`, stdlib only.
 
+With `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`, `/claude-jev` opens a settings pane. It saves an API key for all sessions, shows which provider that key calls, turns each hook on or off, and shows the last Jev call. A `TYPESAFE_API_KEY` in the launch environment wins over the saved key. Without the flag, the four on/off rows are in `/config`. The saved key reaches the hooks, not the `jev.py` CLI that `/claude-jev:jev` runs; that path still needs the environment variable.
+
 The rule hook's comparators use [ast-grep](https://ast-grep.github.io) 0.45.3. If it is not on your PATH the plugin fetches the pinned release once to `~/.claude/jev-bin`, verified by sha256, in a detached process the first time an edit needs it; every hook works without it. To warm it up or see which binary would run:
 
 ```bash

@@ -14,6 +14,8 @@ requires a near-certain yes/no answer rather than the intent choice alone.
 
 Env:
   TYPESAFE_API_KEY   required (else silently disabled)
+
+Off when `promptRouter` ("Prompt routing hints" in /claude-jev or /config) is off.
 """
 
 import json
@@ -189,6 +191,8 @@ def log_decision(event: dict, answers: dict, hint: str | None,
 
 def main() -> None:
     try:
+        if not jev.enabled("promptRouter"):
+            return
         event = json.load(sys.stdin)
         prompt = (event.get("prompt") or "").strip()
 

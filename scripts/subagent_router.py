@@ -17,6 +17,8 @@ a spawn.
 
 Env:
   TYPESAFE_API_KEY   required (else silently disabled)
+
+Off when `subagentRouter` ("Subagent model routing" in /claude-jev or /config) is off.
 """
 
 import datetime
@@ -120,6 +122,8 @@ def log_decision(event: dict, inp: dict, answers: dict, routed: str | None,
 
 def main() -> None:
     try:
+        if not jev.enabled("subagentRouter"):
+            return
         event = json.load(sys.stdin)
         inp = event.get("tool_input") or {}
         explicit = inp.get("model")

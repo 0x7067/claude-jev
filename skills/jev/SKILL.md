@@ -14,7 +14,7 @@ description: >
 Jev evaluates a `state` (any text or JSON) against typed questions and returns
 typed answers. No text generation, no output parsing.
 
-Requires `TYPESAFE_API_KEY` (a TypeSafe or OpenRouter key) and `python3`. If the key is unset the CLI exits 2
+Requires `TYPESAFE_API_KEY` (a TypeSafe or OpenRouter key) in the environment and `python3`. A key saved in `/claude-jev` reaches the hooks but not this CLI. If the key is unset the CLI exits 2
 with `jev: set TYPESAFE_API_KEY` — make the judgment yourself and carry on.
 Never block on this.
 
