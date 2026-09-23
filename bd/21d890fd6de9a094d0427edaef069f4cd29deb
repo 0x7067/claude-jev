@@ -1,0 +1,47 @@
+AGENTS.md
+  s_14fb29cccff59e::t_c00326932f4c95 95,125-127
+  s_14fb29cccff59e::t_c3239fa51ac261 128
+scripts/stats.py
+  s_14fb29cccff59e::t_944d156caa94f8 28,172,237,240,282-284,290,293,375-379,403-406,408-412
+  s_da6395512c8c84::t_98c0cc1674c2e1 380-381
+  s_14fb29cccff59e::t_17cccde42e25a5 367-368,373-374
+  s_14fb29cccff59e::t_43ad84570c0fc4 382-383,407
+eval/replay.py
+  s_14fb29cccff59e::t_33a9e47a5a33de 35,335,340
+scripts/check_no_comments.py
+  s_14fb29cccff59e::t_941632a31bb815 4-6,17,219-224
+eval/variants.py
+  s_14fb29cccff59e::t_43ad84570c0fc4 17-18,198-204,259-261
+  s_14fb29cccff59e::t_8670e6e8ea0b96 262
+.claude-plugin/plugin.json
+  s_14fb29cccff59e::t_6007f8b7a61a1d 3
+CHANGELOG.md
+  s_14fb29cccff59e::t_6007f8b7a61a1d 7,9-13
+  s_14fb29cccff59e::t_dd1312ea9132cf 8
+README.md
+  s_14fb29cccff59e::t_6007f8b7a61a1d 19,96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bd21d890fd6de9a094d0427edaef069f4cd29deb",
+  "prompts": {},
+  "sessions": {
+    "s_14fb29cccff59e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2141dfa9-ff49-44ab-abd6-af0f48c85bd8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    },
+    "s_da6395512c8c84": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2717e5ea-cf65-4ec4-a0e1-c5fb5800340d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
