@@ -4,6 +4,8 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-09-23
+
 - The prompt router no longer shows an `ops` hint. Live, 18 of 60 were right; on the 120 hand-labeled prompts humans agreed with 6 of 18. With `feature` already silent, replaying 1,613 prompts through the shipped rule goes from 31.1% accuracy and −0.9 lift to 50.2% and +18.4, at 13.8% coverage. The cleaned live log goes from 49.5% (111 hints) to 72.5% (51 hints). An intent is silent by having no entry in `GUIDANCE`; `SILENT_INTENTS` is gone. `eval/variants.py` gains `v9_hinted_only`, which scores v7 answers only where the hook shows a hint.
 - The `feature` silence (commit 0f67b21) cited 67 predictions against 6 observed; most of those predictions were compaction requests. It stays silent on current evidence: 8 of 28 right in the cleaned live log.
 - `scripts/stats.py` scores only prompt-router entries; rule checks and subagent decisions were counted as suppressed prompts (1,040 reported, 351 real). It prints how many entries were Claude Code's own requests, reports the confidence floor as held-back count and hit rate (35 held back, 15 of them right, against 72.5% for the hints the router now shows) instead of counting `chat` predictions that never show, and calls a block with no transcript `unscorable` instead of `unknown`.
@@ -13,6 +15,8 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 - `scripts/stats.py` no longer scores Claude Code's own pre-compact request ("Your task is to create a detailed summary…") as a user prompt. Older plugin versions logged 73 of them with a hint, and the session that followed used no tools, so the report counted them as wrong `feature` hints against an inflated always-`chat` baseline. On the same log (1,316 decisions), the report moved from 72/195 agreed (36.9%) against 48.7% for always `chat`, to 58/122 (47.5%) against 26.2% for always `lookup`. The weak class is now `ops`: 60 hints, 20 observed.
 - The prefix lives in `SYNTHETIC` in `scripts/observed.py`, so the router, stats, and `eval/replay.py` share one filter; `COMPACT_PROMPT` in `scripts/prompt_router.py` is gone. `eval/replay.py report --variant v7_no_unclear` is unchanged (1,613 scored, 33.7% accuracy, +4.4 lift): none of its predictions were compaction prompts. Derived labels still agree with `eval/audit_labels.json` on 63/120.
+
+[0.19.0]: https://github.com/0x7067/claude-jev/compare/v0.18.0...v0.19.0
 
 ## [0.18.0] - 2026-09-23
 
