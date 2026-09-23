@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Fail if any scanned source file contains a code comment.
 
-Scans `scripts/`, `eval/`, and `hooks/` for `.py`, `.ts`, and `.js`.
+Scans the files git tracks or would track (gitignored paths such as
+`eval/data/` are skipped) under `scripts/`, `eval/`, and `hooks/` for
+`.py`, `.ts`, and `.js`.
 Shebangs (`#!...`) are allowed. Python docstrings and string/URL contents
 are not comments. Markdown and LICENSE are out of scope.
 
@@ -12,6 +14,7 @@ Stdlib only. Invoked from the Verify section of AGENTS.md.
 from __future__ import annotations
 
 import io
+import subprocess
 import sys
 import tokenize
 from pathlib import Path
@@ -213,15 +216,12 @@ def _self_check() -> None:
 
 
 def iter_targets() -> list[Path]:
-    out: list[Path] = []
-    for name in SCAN_DIRS:
-        base = ROOT / name
-        if not base.is_dir():
-            continue
-        for path in sorted(base.rglob("*")):
-            if path.is_file() and path.suffix in SCAN_SUFFIXES:
-                out.append(path)
-    return out
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", *SCAN_DIRS],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    ).stdout
+    paths = (ROOT / name for name in listed.split("\0") if name)
+    return sorted(p for p in paths if p.suffix in SCAN_SUFFIXES and p.is_file())
 
 
 def main() -> int:

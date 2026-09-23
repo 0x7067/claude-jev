@@ -16,7 +16,7 @@ All five fail open: any error, missing key, or timeout produces no output and ne
 
 ### Routing
 
-One API call per prompt — intent, scope, needs-tools, tier — plus the previous turn, since most prompts are follow-ups. `lookup` → one search. `fix` → focused edit, narrow verification. `feature` → brief plan first. `ops` → run it and report. Below 0.75 confidence, nothing.
+One API call per prompt — intent, scope, needs-tools, tier — plus the previous turn, since most prompts are follow-ups. `lookup` → one search. `fix` → focused edit, narrow verification. `feature` and `ops` get no hint: they were wrong more often than right, live and replayed. Below 0.75 confidence, nothing.
 
 On subagent spawn the same call also checks the brief. If Jev is confident the task changes files, four yes/no checks ask whether the brief names the paths, states acceptance criteria, names a verification command, and states a commit policy. A part scored at or below 0.25 is missing, and the spawn is denied once with the list so the parent rewrites the prompt; the same brief spawned again in that session goes through with a `systemMessage` only. Read-only briefs skip the checks. The tier question has four options; `fable` is described as rare, for work where a cheaper tier would likely return a confident wrong answer, and never for implementation. Tier criteria come from a `## Delegating to sub-agents` section in `~/.claude/CLAUDE.md` when it has `- haiku: …`, `- sonnet: …`, `- opus: …`, `- fable: …` bullets; the shipped text is the fallback.
 
@@ -93,7 +93,7 @@ python3 eval/rules_eval.py report
 
 ### Router
 
-`eval/replay.py` replays your past prompts, scored by `scripts/observed.py` (change it and every number moves). On 1,613 prompts the shipped taxonomy (v7) gives 42% coverage, 34.6% accuracy, **+6.0 lift** over always guessing, and **8 harmful hints** — "no tools" followed by 5+ tool calls. Coarser taxonomies score higher and help less (talk/read/act: 58.8% vs. a 64.7% constant guess). 34.6% is a floor: labels come from transcripts, and on 120 hand-labeled prompts (`eval/audit_labels.json`) humans agreed with derived labels only 52.5% of the time.
+`eval/replay.py` replays your past prompts, scored by `scripts/observed.py` (change it and every number moves). On 1,613 prompts the shipped taxonomy (v7) gives 42% coverage, 34.6% accuracy, **+6.0 lift** over always guessing, and **8 harmful hints** — "no tools" followed by 5+ tool calls. Coarser taxonomies score higher and help less (talk/read/act: 58.8% vs. a 64.7% constant guess). 34.6% is a floor: labels come from transcripts, and on 120 hand-labeled prompts (`eval/audit_labels.json`) humans agreed with derived labels only 52.5% of the time. v7 counts `feature` and `ops` hints the hook never shows; scored as shipped (`eval/replay.py report --variant v9_hinted_only --preds eval/data/pred_v7_no_unclear.jsonl`), the same 1,613 prompts give 13.8% coverage, 50.2% accuracy, **+18.4 lift**, and the same 8 harmful hints. On the 16 of those hints that humans labeled, they agreed with 11.
 
 ### Jev selection vs. default summary
 

@@ -32,6 +32,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
 import jev
+import prompt_router
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import variants
@@ -331,12 +332,12 @@ def main() -> int:
     rp = sub.add_parser("report", help="score one variant")
     rp.add_argument("--variant", default="v0_shipped", choices=list(variants.VARIANTS))
     rp.add_argument("--preds")
-    rp.add_argument("--floor", type=float, default=0.55)
+    rp.add_argument("--floor", type=float, default=prompt_router.MIN_CONFIDENCE)
     rp.add_argument("--sweep", action="store_true")
     rp.set_defaults(fn=cmd_report)
 
     cp = sub.add_parser("compare", help="one table across every variant already run")
-    cp.add_argument("--floor", type=float, default=0.55)
+    cp.add_argument("--floor", type=float, default=prompt_router.MIN_CONFIDENCE)
     cp.set_defaults(fn=cmd_compare)
 
     args = p.parse_args()

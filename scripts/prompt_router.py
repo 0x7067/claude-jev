@@ -32,14 +32,10 @@ DEFAULT_LOG = os.path.join(jev.config_dir(), "jev-router-log.jsonl")
 MAX_QUIET = 0.10
 CONTEXT_LINES = 400
 
-SILENT_INTENTS = {"feature"}
-
 GUIDANCE = {
     "chat": "Answer directly from the conversation. No file reads, no commands.",
     "lookup": "Fact-finding — one targeted search, concise answer, then stop.",
     "fix": "Small change — locate the code, make a focused edit, run the narrowest verification.",
-    "feature": "Multi-step implementation — outline a brief plan before editing; verify with build/tests.",
-    "ops": "Likely a command/build/git task — run it and report the output.",
 }
 
 TIER_ORDER = ["haiku", "sonnet", "opus", "fable"]
@@ -142,9 +138,6 @@ def decide(answers: dict) -> tuple[str | None, dict]:
     if needs_tools is not None and needs_tools <= MAX_QUIET:
         choice, conf = "chat", 1.0 - needs_tools
     elif choice == "chat" or choice not in GUIDANCE or conf < MIN_CONFIDENCE:
-        return None, answers
-
-    if choice in SILENT_INTENTS:
         return None, answers
 
     scope = (answers.get("scope") or {}).get("score")

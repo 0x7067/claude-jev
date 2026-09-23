@@ -25,6 +25,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import jev
 import observed
+import prompt_router
 
 DEFAULT_LOG = os.path.join(jev.config_dir(), "jev-router-log.jsonl")
 CALLS_LOG = os.path.join(jev.config_dir(), "jev-calls.jsonl")
@@ -168,7 +169,7 @@ def rule_outcomes(entries: list[dict]) -> list[dict]:
         sid, target, ts = e.get("session_id"), e.get("file"), parse_ts(e.get("ts"))
         path = transcript_for(sid) if sid else None
         if not path or not target or ts is None:
-            out.append({"rules": blocked, "outcome": "unknown"})
+            out.append({"rules": blocked, "outcome": "unscorable"})
             continue
         later = [t for t in tool_events(path)
                  if t["name"] in observed.EDIT_TOOLS
@@ -233,8 +234,10 @@ def match(entries: list[dict]) -> list[dict]:
                 continue
             seg = next((s for s in segs if s["text"].startswith(prefix[:120])), None) if prefix else None
             intent, fired = predicted_intent(e)
+            conf = ((e.get("answers") or {}).get("intent") or {}).get("confidence", 0.0)
             rows.append({
                 "ts": e.get("ts"), "prompt": prefix, "intent": intent, "fired": fired,
+                "conf": conf,
                 "matched": seg is not None,
                 "observed": seg["label"] if seg else None,
                 "n_tools": seg["n_tools"] if seg else None,
@@ -276,15 +279,18 @@ def print_rule_outcomes(entries: list[dict]) -> None:
         totals = collections.Counter(o["outcome"] for o in outcomes)
         print(f"  {len(outcomes)} blocks: " + ", ".join(
             f"{k} {v}" for k, v in sorted(totals.items())))
+        if totals["unscorable"]:
+            print("  unscorable: no transcript for the session, as with a hand-fed "
+                  "test event, or no file path on the edit")
         per_rule = collections.defaultdict(collections.Counter)
         for o in outcomes:
             for rid in o["rules"]:
                 per_rule[str(rid)][o["outcome"]] += 1
         print(f"  {'rule':<34}{'repaired':>9}{'retried':>9}{'ignored':>9}"
-              f"{'abandoned':>11}{'unknown':>9}")
+              f"{'abandoned':>11}{'unscorable':>11}")
         for rid, c in sorted(per_rule.items()):
             print(f"  {rid:<34}{c['repaired']:>9}{c['retried identical']:>9}"
-                  f"{c['ignored']:>9}{c['abandoned']:>11}{c['unknown']:>9}")
+                  f"{c['ignored']:>9}{c['abandoned']:>11}{c['unscorable']:>11}")
     flagged = collections.Counter()
     for e in entries:
         if e.get("kind") != "rules":
@@ -358,15 +364,23 @@ def main() -> int:
         print("The hook writes one line per prompt. Use Claude Code for a while, then re-run.")
         return 0
 
-    rows = match(entries)
+    router_entries = [e for e in entries if not e.get("kind")]
+    rows = match(router_entries)
     fired = [r for r in rows if r["fired"]]
     scored = [r for r in fired if r["matched"] and r["observed"]]
     span = f"{entries[0].get('ts','?')[:10]} to {entries[-1].get('ts','?')[:10]}"
 
-    print(f"{len(entries)} decisions logged, {span}")
-    print(f"  hints injected : {len(fired)} ({100*len(fired)/len(rows):.0f}% of prompts)")
-    print(f"  suppressed     : {len(rows)-len(fired)} (below the confidence floor, or the "
-          f"no-tools gate stayed shut)")
+    print(f"{len(entries)} decisions logged, {span}; {len(router_entries)} from the "
+          f"prompt router")
+    skipped = sum(1 for e in router_entries
+                  if observed.is_synthetic((e.get("prompt") or "").strip()))
+    if skipped:
+        print(f"  not user prompts : {skipped} (Claude Code's own requests, "
+              f"skipped)")
+    print(f"  hints injected : {len(fired)} ({100*len(fired)/max(1, len(rows)):.0f}% "
+          f"of prompts)")
+    print(f"  suppressed     : {len(rows)-len(fired)} (an intent with no hint, or "
+          f"below the confidence floor)")
 
     unmatched = len(fired) - len(scored)
     if unmatched:
@@ -386,12 +400,16 @@ def main() -> int:
                    if r["intent"] == "chat" and (r["n_tools"] or 0) >= 5]
         print(f"  said 'no tools', session used 5+  : {len(harmful)}")
 
-        quiet_missed = [r for r in rows
-                        if not r["fired"] and r["matched"]
-                        and r["observed"] == r["intent"]]
-        if quiet_missed:
-            print(f"\n{len(quiet_missed)} suppressed hints would have been "
-                  f"correct — the floor may be too high.")
+        floor = prompt_router.MIN_CONFIDENCE
+        floored = [r for r in rows
+                   if not r["fired"] and r["matched"] and r["conf"] < floor
+                   and r["intent"] in prompt_router.GUIDANCE
+                   and r["intent"] != "chat"]
+        if floored:
+            right = sum(1 for r in floored if r["observed"] == r["intent"])
+            print(f"\n  held back by the {floor} confidence floor: {len(floored)}, "
+                  f"of which {right} ({100*right/len(floored):.1f}%) would have "
+                  f"been correct")
     else:
         print("\nNothing scorable yet — come back after a few more sessions.")
 
