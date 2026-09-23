@@ -20,6 +20,7 @@ let menuRow = "menu:key";
 let keyDraft;
 let info;
 let statusLine;
+let statsReport;
 
 const rowKey = (field) => `${PLUGIN}.${field}`;
 
@@ -55,6 +56,15 @@ function keyLabel() {
   if (info.error) return "unknown";
   const provider = PROVIDER_LABELS[info.provider];
   return provider ? `${KEY_LABELS[info.key]} · ${provider}` : KEY_LABELS[info.key];
+}
+
+async function loadStats($) {
+  try {
+    const run = await runPython($, ["stats.py"]);
+    statsReport = run.exitCode === 0 ? run.stdout.trimEnd() : `stats.py failed: ${run.stderr.trim().slice(0, 300)}`;
+  } catch (err) {
+    statsReport = `stats.py failed: ${String(err)}`;
+  }
 }
 
 function describeStatus() {
@@ -185,6 +195,15 @@ function drawPane($, e, rows) {
     void redraw(menuRow);
   };
 
+  if (view === "stats") {
+    return column([
+      heading("Stats"),
+      Text({ dimColor: true, children: "PgUp/PgDn scroll · Esc back" }),
+      list([{ key: "stats:back", label: "Back", dim: true, onPress: back }], "stats:back"),
+      ...(statsReport ?? "Reading the logs…").split("\n").map((line) => Text({ wrap: "wrap", children: line || " " })),
+    ]);
+  }
+
   if (view === "key") {
     const saved = savedKey() !== "";
     return column([
@@ -260,6 +279,16 @@ function drawPane($, e, rows) {
             },
           };
         }),
+        {
+          key: "menu:stats",
+          label: "Stats",
+          onPress: () => {
+            view = "stats";
+            menuRow = "menu:stats";
+            statsReport = undefined;
+            run(() => loadStats($), "stats:back");
+          },
+        },
         {
           key: "menu:status",
           label: "Status",

@@ -5,7 +5,8 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 ## [Unreleased]
 
 - OpenRouter as a second Jev provider. Set `OPENROUTER_API_KEY`, or `TYPESAFE_API_KEY` to an OpenRouter key (`sk-or-...`), and every call goes to `https://openrouter.ai/api/v1/systemone`, which takes the same request, model IDs, and answer shape. `TYPESAFE_API_KEY` is read first. A TypeSafe key still calls `api.typesafe.ai`. Each `jev-calls.jsonl` line records its `provider`.
-- `/claude-jev` settings pane (needs `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`): save an API key for all sessions, see which provider it calls, turn the prompt router, subagent router, rule checks, and compaction on or off, and see the last Jev call. The on/off rows also appear in `/config`. A key in the environment wins over a saved key. `jev.py status` prints what the pane shows.
+- `/claude-jev` settings pane (needs `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`): save an API key for all sessions, see which provider it calls, turn the prompt router, subagent router, rule checks, and compaction on or off, and see the last Jev call. The on/off rows also appear in `/config`. A key in the environment wins over a saved key. `jev.py status` prints what the pane shows. The pane's Stats row shows the `scripts/stats.py` report.
+- Removed the `/claude-jev:jev` and `/claude-jev:stats` skills. No session outside this repository ever called the first, and it could not see a key saved in the pane. Stats moved into the pane; `python3 scripts/stats.py` still prints the full report.
 
 ## [0.17.0] - 2026-09-22
 
