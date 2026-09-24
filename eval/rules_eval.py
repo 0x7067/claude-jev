@@ -73,6 +73,7 @@ def cmd_extract(args) -> int:
     with open(EDITS, "w") as out:
         for fp in sorted(glob.glob(os.path.join(PROJECTS, "*", "*.jsonl"))):
             task = ""
+            answers: list[str] = []
             for line in open(fp, errors="replace"):
                 if len(line) > 500_000:
                     continue
@@ -86,6 +87,9 @@ def cmd_extract(args) -> int:
                     t = (prompt_text(d.get("message") or {}) or "").strip()
                     if t and not t.startswith(("<", "/", "#")):
                         task = t[: rules.MAX_TASK_CHARS]
+                        answers = []
+                    else:
+                        answers += rules.question_answers(d)
                     continue
                 if d.get("type") != "assistant":
                     continue
@@ -110,6 +114,7 @@ def cmd_extract(args) -> int:
                         "id": f"{os.path.basename(fp)[:8]}#{n}", "kind": "real",
                         "cwd": cwd, "file_path": inp["file_path"], "sha": head_sha(cwd),
                         "tool_name": b["name"], "tool_input": inp, "task": task,
+                        "answers": answers,
                         "ts": d.get("timestamp"),
                     }) + "\n")
     print(f"{n} real edits -> {EDITS}"
@@ -199,7 +204,7 @@ def at_commit(cwd: str, sha: str) -> str:
 def judge(rec: dict, rule_cache: dict) -> dict:
     cwd = rec["cwd"]
     rel = rules.relative(rec["file_path"], cwd)
-    out = {k: rec.get(k) for k in ("id", "kind", "cwd", "sha", "task", "violates", "expect", "note", "tags")}
+    out = {k: rec.get(k) for k in ("id", "kind", "cwd", "sha", "task", "violates", "expect", "note", "tags", "answers")}
     out["rel"] = rel
     if rec.get("sha"):
         with _lock:
@@ -228,8 +233,10 @@ def judge(rec: dict, rule_cache: dict) -> dict:
     t0 = time.time()
     try:
         hits, probs, _, skipped, escalated, cmp_chars = rules.judge_edit(
-            rel, hunk, rec.get("task") or "", in_scope, context, siblings,
-            block, cwd)
+            rel, hunk,
+            rules.request_with_answers(rec.get("task") or "",
+                                       rec.get("answers") or []),
+            in_scope, context, siblings, block, cwd)
         out.update(hits=[{k: h.get(k) for k in
                           ("rule", "prob", "band", "text", "file", "line",
                            "polarity", "subject")} for h in hits],
@@ -475,6 +482,10 @@ def cmd_report(args) -> int:
         if any(ctx):
             print(f"  context     : {sum(1 for c in ctx if c)}/{len(real)} edits "
                   f"carried surrounding lines")
+        carried = sum(1 for r in real if r.get("answers"))
+        if carried:
+            print(f"  answers     : {carried}/{len(real)} edits carried "
+                  f"AskUserQuestion answers")
         by_rule = collections.Counter(h["rule"] for r in blocked for h in r["hits"]
                                       if h["band"] == "act")
         if by_rule:

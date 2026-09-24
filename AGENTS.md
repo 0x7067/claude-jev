@@ -68,6 +68,13 @@ explains what each hook decides and why. Read it before changing behavior.
 - **`scripts/observed.py` is the shared scorer.** `eval/replay.py` and
   `scripts/stats.py` both call it. Editing it moves every accuracy number in
   `README.md`.
+- **Probes pay for live calls.** `jev.ask` is assigned in exactly one
+  place, the `cached_ask` wiring in `eval/rules_eval.py`'s `cmd_run`, which
+  wraps the real client with the cache. Eval and hook verification never
+  stubs, mocks, or monkeypatches the ask path — a stub proves wiring, not
+  behavior — and cost is bounded by shrinking the sample, never by faking
+  the client. Enforce with `python3 scripts/check_no_stubs.py` (exit 1 on
+  any `.ask =` assignment outside the sanctioned wiring).
 - Hook scripts import siblings through `sys.path.insert(0, dirname(__file__))`.
   Keep that, because Claude Code runs them from arbitrary directories.
 
@@ -92,6 +99,7 @@ There is no test suite. The local / script contract for this repo is:
 ```bash
 python3 -m compileall -q scripts eval
 python3 scripts/check_no_comments.py
+python3 scripts/check_no_stubs.py
 echo '{"prompt":"hi","transcript_path":""}' | CLAUDE_CONFIG_DIR="$(mktemp -d)" python3 scripts/prompt_router.py; echo "exit=$?"
 ```
 

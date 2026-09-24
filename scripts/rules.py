@@ -471,17 +471,28 @@ def outside(rel: str) -> bool:
     return rel.startswith(os.pardir + os.sep) or rel == os.pardir
 
 
-def last_user_prompt(transcript_path: str | None) -> tuple[str, str]:
-    """The uuid of the user's last request and its text — rules like "don't
-    touch generated files" only mean something against the task, and the
-    uuid marks which turn a hunk belongs to."""
+def request_with_answers(task: str, answers: list[str]) -> str:
+    """The request the hook sends: the typed prompt plus, when the user
+    answered the agent's questions since it, each pick with its option's
+    description. Takes answers oldest first; caps the whole section."""
+    if not answers:
+        return task
+    return (task + "\nThe user's answers to the agent's questions since "
+            f"that request:\n" + "\n".join(answers)[:MAX_ANSWER_CHARS])
+
+
+def last_user_prompt(transcript_path: str | None) -> tuple[str, str, int]:
+    """The uuid of the user's last request, its text, and how many of the
+    user's answers ride in it — rules like "don't touch generated files"
+    only mean something against the task, and the uuid marks which turn a
+    hunk belongs to."""
     if not transcript_path:
-        return "", ""
+        return "", "", 0
     try:
         with open(transcript_path, errors="replace") as f:
             lines = f.readlines()[-400:]
     except OSError:
-        return "", ""
+        return "", "", 0
     answers: list[str] = []
     for line in reversed(lines):
         if len(line) > 500_000:
@@ -492,14 +503,11 @@ def last_user_prompt(transcript_path: str | None) -> tuple[str, str]:
             continue
         text = user_prompt(d)
         if text:
-            task = text[:MAX_TASK_CHARS]
-            if answers:
-                picked = "\n".join(reversed(answers))[:MAX_ANSWER_CHARS]
-                task += ("\nThe user's answers to the agent's questions since "
-                         f"that request:\n{picked}")
-            return d.get("uuid") or "", task
+            request = request_with_answers(text[:MAX_TASK_CHARS],
+                                           list(reversed(answers)))
+            return d.get("uuid") or "", request, len(answers)
         answers.extend(reversed(question_answers(d)))
-    return "", ""
+    return "", "", 0
 
 
 def question_answers(d: dict) -> list[str]:
@@ -877,7 +885,7 @@ def log_decision(event: dict, answers: dict, probs: dict, violations: list,
                  hashes: dict | None = None, ms: int | None = None,
                  n_irrelevant: int = 0, head: str | None = None,
                  escalated: list | None = None, cmp_chars: dict | None = None,
-                 sg: str | None = None) -> None:
+                 sg: str | None = None, user_answers: int = 0) -> None:
     try:
         with open(DEFAULT_LOG, "a") as f:
             f.write(json.dumps({
@@ -901,6 +909,7 @@ def log_decision(event: dict, answers: dict, probs: dict, violations: list,
                 "blocked": blocked or [],
                 "rule_hashes": hashes or {},
                 "answers": answers,
+                "user_answers": user_answers,
             }) + "\n")
     except OSError:
         pass
@@ -1076,7 +1085,7 @@ def handle_edit(event: dict) -> dict:
     if not state:
         return {}
     sid = event.get("session_id") or "unknown"
-    turn, task = last_user_prompt(event.get("transcript_path"))
+    turn, task, n_answers = last_user_prompt(event.get("transcript_path"))
     update_state(sid, lambda st: record_hunk(st, turn, rel, state))
     if not in_scope:
         return {}
@@ -1108,7 +1117,8 @@ def handle_edit(event: dict) -> dict:
                  blocked=[v["rule"] for v in acting],
                  hashes=rule_hashes(in_scope), ms=ms,
                  n_irrelevant=len(skipped), head=added_head(state),
-                 escalated=escalated, cmp_chars=cmp_chars, sg=sg)
+                 escalated=escalated, cmp_chars=cmp_chars, sg=sg,
+                 user_answers=n_answers)
 
     out = {}
     if flagged:
@@ -1166,7 +1176,7 @@ def handle_bash_before(event: dict) -> dict:
     diff as partial."""
     sid = event.get("session_id") or "unknown"
     cwd = event.get("cwd") or os.getcwd()
-    turn, _ = last_user_prompt(event.get("transcript_path"))
+    turn, _, _ = last_user_prompt(event.get("transcript_path"))
     if not turn:
         return {}
     try:
@@ -1188,7 +1198,7 @@ def handle_bash_after(event: dict) -> dict:
     """Record each file a shell command changed as a hunk, like an edit."""
     sid = event.get("session_id") or "unknown"
     cwd = event.get("cwd") or os.getcwd()
-    turn, _ = last_user_prompt(event.get("transcript_path"))
+    turn, _, _ = last_user_prompt(event.get("transcript_path"))
     key = snapshot_key(event)
     before = update_state(sid, lambda st: st.get("snapshots", {}).pop(key, None)
                           if st.get("turn") == turn else None)
@@ -1226,7 +1236,7 @@ def handle_stop(event: dict) -> dict:
     a file that grew past its cap)."""
     sid = event.get("session_id") or "unknown"
     sstate = session_state(sid)
-    turn, task = last_user_prompt(event.get("transcript_path"))
+    turn, task, n_answers = last_user_prompt(event.get("transcript_path"))
     if (not turn or sstate.get("turn") != turn
             or not (sstate["hunks"] or sstate.get("partial"))):
         return {}
@@ -1268,7 +1278,7 @@ def handle_stop(event: dict) -> dict:
                  len(rules), len(rules) - len(turn_rules), "turn",
                  input_hash=None, blocked=[v["rule"] for v in acting],
                  hashes=rule_hashes(turn_rules), ms=ms,
-                 n_irrelevant=len(skipped))
+                 n_irrelevant=len(skipped), user_answers=n_answers)
 
     out = {}
     if flagged:
