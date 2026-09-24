@@ -1,0 +1,18 @@
+.claude-plugin/marketplace.json
+  h_29be57c0addd47 12
+.claude-plugin/plugin.json
+  h_29be57c0addd47 3
+CHANGELOG.md
+  h_29be57c0addd47 7-8,11-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0315dd3db58e0d817ccac484d553065d003326f8",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
