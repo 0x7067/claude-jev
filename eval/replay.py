@@ -219,7 +219,7 @@ def join(variant, preds_path: str, floor: float):
     return rows
 
 
-def metrics(variant, rows, floor: float) -> dict:
+def metrics(variant, rows) -> dict:
     fired = [(r, c, cf) for r, c, cf, _a in rows if c is not None]
     n = len(fired)
     ok = sum(1 for r, c, _ in fired if c == variant.truth(r))
@@ -245,7 +245,7 @@ def cmd_report(args) -> int:
     variant = variants.VARIANTS[args.variant]
     path = args.preds or pred_path(variant.name)
     rows = join(variant, path, args.floor)
-    m = metrics(variant, rows, args.floor)
+    m = metrics(variant, rows)
     fired = [(r, c) for r, c, _cf, _a in rows if c is not None]
     print(f"{variant.name} — {variant.why}")
     print(
@@ -287,7 +287,7 @@ def cmd_report(args) -> int:
         rows_ = []
         for f in [i / 20 for i in range(20)]:
             rr = join(variant, path, f)
-            mm = metrics(variant, rr, f)
+            mm = metrics(variant, rr)
             if mm["n_fired"]:
                 rows_.append(
                     [
@@ -335,7 +335,7 @@ def cmd_compare(args) -> int:
         path = pred_path(name)
         if not os.path.exists(path):
             continue
-        m = metrics(v, join(v, path, args.floor), args.floor)
+        m = metrics(v, join(v, path, args.floor))
         rows.append(
             [
                 name,
