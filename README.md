@@ -6,7 +6,7 @@ A coding agent makes dozens of quick calls every turn. What kind of prompt is th
 
 What you get:
 
-- **Rules that hold.** Edits that break your instruction files get blocked with a file:line citation. The v0.21.0 run over the current corpus blocked 22 of 247 real edits (8.9%), 17 of them under a single repo's own comment-ban rule; the v0.15.0-era sample measured 1 in 250 (0.4%).
+- **Rules that hold.** Edits that break your instruction files get blocked with a file:line citation. The v0.21.0 run over the current corpus blocked 22 of 247 real edits (8.9%), 17 of them under a single repo's own comment-ban rule.
 - **Compaction in about a second instead of a minute or two.** Jev keeps the exact rows that matter instead of writing a summary. Planted user constraints survived 100% of the time.
 - **Right-sized subagents.** Each spawn gets a model tier. A brief that changes files but leaves out paths, acceptance criteria, verification, or commit policy is sent back once.
 - **Routing hints.** Each prompt gets a one-line hint such as "one search" or "focused edit, narrow verification."
@@ -103,9 +103,9 @@ The hook splits long prose paragraphs into sentences first, so a rule at the end
 2. **Look up context with ast-grep.** Some violations can't be seen in a hunk. Three subjects get a deterministic search of the repository first. The search finds the constant that already holds a literal the edit inlines, an assertion whose two sides are identical, and the callers of a function whose error handling changed.
 3. **Ask Jev once.** One batched call asks a yes/no question per remaining rule. Polarity picks the question: does the new code do the forbidden thing, or does it add a case the rule clearly covers without the required element? Jev scores each one as the probability the rule is broken. It sees the old→new hunk, your last prompt, and the lines around the edit. For import rules it also sees the sibling modules in the file's directory. An edit gets at most 40 questions, with path-scoped rules first and files taking turns.
 4. **Decide.** At 0.80 the hook blocks the edit and cites file:line. Below 0.50 it says nothing.
-5. **Escalate the unsure ones.** A rule between 0.50 and 0.80 gets a second call, with all such rules in one request. That call adds the enclosing function, read from disk after the edit, and the sentences around the rule in its instruction file. The second answer decides. Anything still uncertain is flagged to you only. About 8% of edits pay for that second call.
+5. **Escalate the unsure ones.** A rule between 0.50 and 0.80 gets a second call, with all such rules in one request. That call adds the enclosing function, read from disk after the edit, and the sentences around the rule in its instruction file. The second answer decides. Anything still uncertain is flagged to you only. About 14% of edits pay for that second call.
 
-About the lookups: on the hand-written cases, they moved a swallowed error from 0.54 to 0.82 and turned a tautological test from silent to flagged. No compliant edit moved. A fourth lookup, the declaration of the type a cast names, was measured and dropped, because Jev read it as evidence the cast was sound. The lookups reach 7 of 250 real edits and cost a median 0.05 s on those. The binary is 51 MB, pinned by sha256, and fetched once in a detached process. Until it lands, or if anything fails, every lookup returns nothing.
+The ast-grep binary is 51 MB, pinned by sha256, and fetched once in a detached process. Until it lands, or if anything fails, every lookup returns nothing.
 
 ### Limits and whole-turn rules
 
@@ -169,24 +169,18 @@ Any part scored at or below 0.25 counts as missing. The hook denies the spawn on
 
 The rule eval judges edits inside real repos, against those repos' own rules, so its corpora aren't committed. `eval/rules_eval.py extract` pulls the reachable Edits and Writes from `~/.claude/projects`. Those edits were accepted at the time, so any block counts as a measured false positive.
 
-The table compares the same 250-edit sample, judged at each edit's commit, before and after the structured-rule change in v0.15.0. The v0.21.0 column is a fresh extract of all transcripts — a different sample, so its column is not sample-matched with the older two. That corpus carries AskUserQuestion answers for 22 of its 247 edits, composed into the request the way the hook sends them.
+The v0.21.0 run judged a fresh 250-edit extract, each edit at its own commit, with the AskUserQuestion answers of the 22 edits that had them composed into the request the way the hook sends them:
 
-| | v0.13.0 | v0.15.0 | v0.21.0 |
-|---|---|---|---|
-| Real edits blocked | 4 (1.6%) | **1 (0.4%)** | 22 (8.9%) |
-| Real edits flagged only | 32 | 20 | 8 |
-| Hand-written violations blocked | 14/19 | 14/19 | 17/29 |
-| Compliant near-misses blocked | 0/13 | **0/14** | 0/24 |
-| Rules asked per edit, median | 10 | 4 | 8 |
-| Latency, median | 0.71s | 0.71s | 0.80s |
+| | v0.21.0 |
+|---|---|
+| Real edits blocked | 22 (8.9%) |
+| Real edits flagged only | 8 |
+| Hand-written violations blocked | 17/29 |
+| Compliant near-misses blocked | 0/24 |
+| Rules asked per edit, median | 8 |
+| Latency, median | 0.80s |
 
 Most of the v0.21.0 blocks come from one repo's own `code-comments-are-banned-in` rule firing on 17 accepted edits (0.82–0.91): the current corpus reaches repos the old sample never did, so conflicts between a rule and the practice it governs are now visible in the number instead of hidden by the sample.
-
-With escalation on, real flags drop from 20 to 14 and p90 latency from 0.85s to 0.73s, at 2 real blocks. `report --sweep` shows the real-block rate flat from 0.70 to 0.85, so `ACT` sits on a plateau, not a cliff. The remaining misses either score just under the bar (0.56–0.78) or break rules that no instruction file states.
-
-On 20 more hand-written pairs from three repos, the judge caught every violation visible in the added text: a bare constant, a missing annotation, a hand-rolled mock, a narrating comment. It caught none of the ones that need a comparison with something outside the hunk: a literal that duplicates an existing constant, an unsound `as` cast, a swallowed error, a test that can't fail. Slicing the hunk by subject didn't help and cost a catch, so it's out. Per-rule thresholds didn't help either. They're opt-in via `report --write-calib`.
-
-The one near-miss added in v0.15.0 is a live false positive. A sibling-module import was blocked at 0.86 under a "standard library only" rule. With the sibling list in the state, it scores 0.74, which flags it without blocking.
 
 Both corpora are weak labels. A real edit counts as compliant because nobody objected at the time. The hand-written set is small enough that one case swings the score five points. The live decision log now records what happened after each block: repaired, retried identical, ignored, or abandoned. That's the signal for growing the case set. See the Stats row in `/claude-jev`, or run `python3 scripts/stats.py`.
 
@@ -231,4 +225,4 @@ A mention isn't the content. The artifacts the kept blocks lacked fell outside t
 
 `eval/planted.py` tests whether what the user said survives. On 56 recorded sessions, it plants a constraint mid-transcript and buries a restatement at the end of a later reply. The planted prompt survived 100% of the time, up from 77% under the earlier two aggregate questions. The buried restatement survived 98%, up from 35%.
 
-The live hook has run on Claude Code 2.1.278, one session each rather than a sweep. A 15-row session compacted in 0.7s with 7 rows kept. A 5-row session fell through to the built-in summary at 0% reduction, under a 25% shrink gate that has since been removed. The live hook runs the same selection code the eval measures, so trust the eval numbers.
+The live hook has run on Claude Code 2.1.278, one session each rather than a sweep. A 15-row session compacted in 0.7s with 7 rows kept. The live hook runs the same selection code the eval measures, so trust the eval numbers.
