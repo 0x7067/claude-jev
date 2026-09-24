@@ -87,11 +87,25 @@ RULE_DIRS = (".claude/rules", ".cursor/rules")
 GLOBAL_RULE_FILES = (os.path.join(jev.config_dir(), "CLAUDE.md"),)
 MAX_ITEM_CHARS = 600
 
-EXCLUDED = re.compile(r"(^|/)(node_modules|\.git|dist|build|\.next|coverage|"
-                      r"\.claude|vendor|target)(/|$)|\.lock$|"
-                      r"package-lock\.json$|pnpm-lock\.yaml$|yarn\.lock$")
-SKIP_DIRS = {"node_modules", ".git", "dist", "build", "out", ".next",
-             "vendor", "coverage", ".turbo", ".cache", "target", ".claude"}
+EXCLUDED = re.compile(
+    r"(^|/)(node_modules|\.git|dist|build|\.next|coverage|"
+    r"\.claude|vendor|target)(/|$)|\.lock$|"
+    r"package-lock\.json$|pnpm-lock\.yaml$|yarn\.lock$"
+)
+SKIP_DIRS = {
+    "node_modules",
+    ".git",
+    "dist",
+    "build",
+    "out",
+    ".next",
+    "vendor",
+    "coverage",
+    ".turbo",
+    ".cache",
+    "target",
+    ".claude",
+}
 
 BULLET = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+(.*)")
 HEADING = re.compile(r"^\s*#{1,6}\s+")
@@ -107,6 +121,7 @@ def slug(text: str) -> str:
 def glob_match(path: str, globs: list[str]) -> bool:
     """Repo-relative posix path vs `**`/`*`/`?` globs (stdlib only).
     `**/` matches zero or more directories, like picomatch."""
+
     def rx(g: str) -> str:
         out = []
         parts = re.split(r"(\*\*)", g)
@@ -119,9 +134,9 @@ def glob_match(path: str, globs: list[str]) -> bool:
                 else:
                     out.append(".*")
             else:
-                out.append(re.escape(part)
-                           .replace(r"\*", "[^/]*").replace(r"\?", "[^/]"))
+                out.append(re.escape(part).replace(r"\*", "[^/]*").replace(r"\?", "[^/]"))
         return "^" + "".join(out) + "$"
+
     return any(re.match(rx(g.strip()), path) for g in globs if g.strip())
 
 
@@ -150,6 +165,7 @@ def frontmatter_paths(lines: list[str]) -> list[str]:
             if m:
                 paths += [p.strip().strip("\"'") for p in m.group(1).split(",")]
     return paths
+
 
 SENTENCE = re.compile(r"(?<=\.)\s+(?=[A-Z])")
 MIN_ITEM_CHARS = 20
@@ -210,29 +226,34 @@ def markdown_items(lines: list[str]) -> list[tuple[int, str]]:
     flush()
     return items
 
-INSTRUCTION_Q = ("Is item [{i}] a rule about the code or files a coding agent writes, "
-                 "such that a reviewer looking at one diff could tell whether it was "
-                 "followed? Facts, descriptions and pointers are not. Neither are "
-                 "process rules about how to work — what to read first, which "
-                 "commands or tools to run, how to communicate, when to delegate "
-                 "— because no single diff can show compliance. The section "
-                 "heading before each item says what the section is about; an "
-                 "item under a heading about workflow, sessions, tools or "
-                 "delegation is a process rule even when it mentions code size.")
 
-TURN_Q = ("Does judging item [{i}] need every change the agent made for the task, "
-          "not just one edit hunk — because it is about the change as a whole: "
-          "its total size, scope creep, edits outside what was asked, an "
-          "abstraction with a single caller, or the same code repeated across "
-          "files? Answer no for a rule a single hunk can break on its own.")
+INSTRUCTION_Q = (
+    "Is item [{i}] a rule about the code or files a coding agent writes, "
+    "such that a reviewer looking at one diff could tell whether it was "
+    "followed? Facts, descriptions and pointers are not. Neither are "
+    "process rules about how to work — what to read first, which "
+    "commands or tools to run, how to communicate, when to delegate "
+    "— because no single diff can show compliance. The section "
+    "heading before each item says what the section is about; an "
+    "item under a heading about workflow, sessions, tools or "
+    "delegation is a process rule even when it mentions code size."
+)
+
+TURN_Q = (
+    "Does judging item [{i}] need every change the agent made for the task, "
+    "not just one edit hunk — because it is about the change as a whole: "
+    "its total size, scope creep, edits outside what was asked, an "
+    "abstraction with a single caller, or the same code repeated across "
+    "files? Answer no for a rule a single hunk can break on its own."
+)
 
 TURN_CRITERIA = {
     "true": "A rule about the change as a whole: how much was changed, whether "
-            "it stayed within the task, whether new code has callers, whether "
-            "the same code now appears in several places.",
+    "it stayed within the task, whether new code has callers, whether "
+    "the same code now appears in several places.",
     "false": "A rule one hunk can break by itself: a forbidden construct, call, "
-             "pattern, comment style, naming, error handling, or a required "
-             "element in the code being added.",
+    "pattern, comment style, naming, error handling, or a required "
+    "element in the code being added.",
 }
 
 POLARITY_Q = "Does item [{i}] forbid something, or require something?"
@@ -263,8 +284,7 @@ TURN_MIN = 0.5
 ITEMS_PER_REQUEST = 15
 
 
-def section_headings(lines: list[str],
-                     items: list[tuple[int, str]]) -> dict[int, str]:
+def section_headings(lines: list[str], items: list[tuple[int, str]]) -> dict[int, str]:
     """Item line -> text of the nearest heading above it."""
     out: dict[int, str] = {}
     current = "no heading"
@@ -289,8 +309,7 @@ def choice_of(answer: dict | None, criteria: dict, default: str) -> str:
     return default
 
 
-def classify_items(lines: list[str],
-                   items: list[tuple[int, str]]) -> dict[int, dict]:
+def classify_items(lines: list[str], items: list[tuple[int, str]]) -> dict[int, dict]:
     """Item index -> {"when", "polarity", "subject"} for the items Jev judges
     to be instructions; items that are not instructions are left out.
     Keyed by index, not line: one prose paragraph can yield several items. One batched
@@ -300,10 +319,15 @@ def classify_items(lines: list[str],
     that markdown parsing couldn't recover: it happens on first use, in
     ~/.claude, with nothing for the user to run or commit."""
     digest = hashlib.sha256(
-        (INSTRUCTION_Q + TURN_Q + POLARITY_Q + SUBJECT_Q
-         + json.dumps([TURN_CRITERIA, POLARITY_CRITERIA, SUBJECT_CRITERIA],
-                      sort_keys=True)
-         + "".join(lines)).encode()).hexdigest()
+        (
+            INSTRUCTION_Q
+            + TURN_Q
+            + POLARITY_Q
+            + SUBJECT_Q
+            + json.dumps([TURN_CRITERIA, POLARITY_CRITERIA, SUBJECT_CRITERIA], sort_keys=True)
+            + "".join(lines)
+        ).encode()
+    ).hexdigest()
     try:
         with open(CLASSIFY_CACHE) as f:
             cache = json.load(f)
@@ -311,24 +335,35 @@ def classify_items(lines: list[str],
         cache = {}
     hit = cache.get(digest)
     if isinstance(hit, dict):
-        return {int(k): v for k, v in hit.items()
-                if isinstance(v, dict) and v.get("when") in ("edit", "turn")}
+        return {
+            int(k): v
+            for k, v in hit.items()
+            if isinstance(v, dict) and v.get("when") in ("edit", "turn")
+        }
 
     headings = section_headings(lines, items)
     meta: dict[int, dict] = {}
     for start in range(0, len(items), ITEMS_PER_REQUEST):
-        chunk = items[start:start + ITEMS_PER_REQUEST]
-        state = "\n\n".join(f"[{i}] ({headings[ln]}) {text}"
-                             for i, (ln, text) in enumerate(chunk))
+        chunk = items[start : start + ITEMS_PER_REQUEST]
+        state = "\n\n".join(f"[{i}] ({headings[ln]}) {text}" for i, (ln, text) in enumerate(chunk))
         questions = {}
         for i in range(len(chunk)):
             questions[f"q{i}"] = {"type": "noul", "instructions": INSTRUCTION_Q.format(i=i)}
-            questions[f"t{i}"] = {"type": "noul", "instructions": TURN_Q.format(i=i),
-                                  "criteria": TURN_CRITERIA}
-            questions[f"p{i}"] = {"type": "choice", "instructions": POLARITY_Q.format(i=i),
-                                  "criteria": POLARITY_CRITERIA}
-            questions[f"s{i}"] = {"type": "choice", "instructions": SUBJECT_Q.format(i=i),
-                                  "criteria": SUBJECT_CRITERIA}
+            questions[f"t{i}"] = {
+                "type": "noul",
+                "instructions": TURN_Q.format(i=i),
+                "criteria": TURN_CRITERIA,
+            }
+            questions[f"p{i}"] = {
+                "type": "choice",
+                "instructions": POLARITY_Q.format(i=i),
+                "criteria": POLARITY_CRITERIA,
+            }
+            questions[f"s{i}"] = {
+                "type": "choice",
+                "instructions": SUBJECT_Q.format(i=i),
+                "criteria": SUBJECT_CRITERIA,
+            }
         answers = jev.ask(state, questions)
         for i in range(len(chunk)):
             p = (answers.get(f"q{i}") or {}).get("noul")
@@ -338,10 +373,8 @@ def classify_items(lines: list[str],
             turn = isinstance(t, (int, float)) and t >= TURN_MIN
             meta[start + i] = {
                 "when": "turn" if turn else "edit",
-                "polarity": choice_of(answers.get(f"p{i}"), POLARITY_CRITERIA,
-                                      DEFAULT_POLARITY),
-                "subject": choice_of(answers.get(f"s{i}"), SUBJECT_CRITERIA,
-                                     DEFAULT_SUBJECT),
+                "polarity": choice_of(answers.get(f"p{i}"), POLARITY_CRITERIA, DEFAULT_POLARITY),
+                "subject": choice_of(answers.get(f"s{i}"), SUBJECT_CRITERIA, DEFAULT_SUBJECT),
             }
     cache[digest] = {str(k): v for k, v in meta.items()}
     try:
@@ -352,8 +385,9 @@ def classify_items(lines: list[str],
     return meta
 
 
-def parse_rules(path: str, base_label: str | None = None,
-                file_scope: list[str] | None = None) -> list[dict]:
+def parse_rules(
+    path: str, base_label: str | None = None, file_scope: list[str] | None = None
+) -> list[dict]:
     """Instructions from a markdown file, each with its line for citation.
     Only items that tell the agent to do or not do something qualify."""
     rules = []
@@ -366,14 +400,14 @@ def parse_rules(path: str, base_label: str | None = None,
 
     file_hash = hashlib.sha256("".join(lines).encode()).hexdigest()[:12]
     scope0 = list(file_scope or []) + frontmatter_paths(lines)
-    items = [(ln, t.strip()) for ln, t in markdown_items(lines)
-             if len(t.strip()) >= MIN_ITEM_CHARS]
+    items = [(ln, t.strip()) for ln, t in markdown_items(lines) if len(t.strip()) >= MIN_ITEM_CHARS]
     meta = classify_items(lines, items)
     for idx, (line_no, text) in enumerate(items):
         if idx not in meta:
             continue
-        around = " ".join(t for _ln, t in items[max(0, idx - 1):idx + 2]
-                          if t != text)[:RULE_CONTEXT_CHARS]
+        around = " ".join(t for _ln, t in items[max(0, idx - 1) : idx + 2] if t != text)[
+            :RULE_CONTEXT_CHARS
+        ]
         if len(text) > MAX_ITEM_CHARS:
             cut = text.rfind(". ", 0, MAX_ITEM_CHARS)
             text = text[: cut + 1] if cut > 100 else text[:MAX_ITEM_CHARS]
@@ -386,11 +420,20 @@ def parse_rules(path: str, base_label: str | None = None,
         nm = NAMED.match(text)
         if nm:
             name, text = nm.group(1), nm.group(2).strip() or text
-        rules.append({"id": name or slug(text), "text": text,
-                      "file": base, "line": line_no, "scope": scope,
-                      "when": meta[idx]["when"], "file_hash": file_hash,
-                      "polarity": meta[idx]["polarity"],
-                      "subject": meta[idx]["subject"], "context": around})
+        rules.append(
+            {
+                "id": name or slug(text),
+                "text": text,
+                "file": base,
+                "line": line_no,
+                "scope": scope,
+                "when": meta[idx]["when"],
+                "file_hash": file_hash,
+                "polarity": meta[idx]["polarity"],
+                "subject": meta[idx]["subject"],
+                "context": around,
+            }
+        )
     return rules
 
 
@@ -399,6 +442,7 @@ def nested_files(cwd: str) -> list[tuple[str, str]]:
     convention: a nested instruction file governs its own tree. Root files
     are the caller's job."""
     out = []
+
     def walk(d: str, depth: int):
         if depth > MAX_NESTED_DEPTH:
             return
@@ -414,10 +458,14 @@ def nested_files(cwd: str) -> list[tuple[str, str]]:
                     out.append((p, f"{rel}/**"))
         for e in entries:
             sub = os.path.join(d, e)
-            if (os.path.isdir(sub) and e not in SKIP_DIRS
-                    and not e.startswith(".")
-                    and not os.path.exists(os.path.join(sub, ".git"))):
+            if (
+                os.path.isdir(sub)
+                and e not in SKIP_DIRS
+                and not e.startswith(".")
+                and not os.path.exists(os.path.join(sub, ".git"))
+            ):
                 walk(sub, depth + 1)
+
     walk(cwd, 0)
     return out
 
@@ -446,15 +494,11 @@ def load_rules(cwd: str) -> list[dict]:
         if os.path.isdir(path):
             for fn in sorted(os.listdir(path)):
                 if fn.endswith((".md", ".mdc")):
-                    rules += parse_rules(os.path.join(path, fn),
-                                         base_label=f"{d}/{fn}")
+                    rules += parse_rules(os.path.join(path, fn), base_label=f"{d}/{fn}")
     for path, scope in nested_files(cwd):
-        rules += parse_rules(path,
-                             base_label=os.path.relpath(path, cwd),
-                             file_scope=[scope])
+        rules += parse_rules(path, base_label=os.path.relpath(path, cwd), file_scope=[scope])
     for path in GLOBAL_RULE_FILES:
-        rules += parse_rules(path, base_label="~/" + os.path.relpath(
-            path, os.path.expanduser("~")))
+        rules += parse_rules(path, base_label="~/" + os.path.relpath(path, os.path.expanduser("~")))
     return dedupe(rules)
 
 
@@ -477,8 +521,10 @@ def request_with_answers(task: str, answers: list[str]) -> str:
     description. Takes answers oldest first; caps the whole section."""
     if not answers:
         return task
-    return (task + "\nThe user's answers to the agent's questions since "
-            f"that request:\n" + "\n".join(answers)[:MAX_ANSWER_CHARS])
+    return (
+        task + "\nThe user's answers to the agent's questions since "
+        "that request:\n" + "\n".join(answers)[:MAX_ANSWER_CHARS]
+    )
 
 
 def last_user_prompt(transcript_path: str | None) -> tuple[str, str, int]:
@@ -503,8 +549,7 @@ def last_user_prompt(transcript_path: str | None) -> tuple[str, str, int]:
             continue
         text = user_prompt(d)
         if text:
-            request = request_with_answers(text[:MAX_TASK_CHARS],
-                                           list(reversed(answers)))
+            request = request_with_answers(text[:MAX_TASK_CHARS], list(reversed(answers)))
             return d.get("uuid") or "", request, len(answers)
         answers.extend(reversed(question_answers(d)))
     return "", "", 0
@@ -520,15 +565,21 @@ def question_answers(d: dict) -> list[str]:
     answers = result.get("answers")
     if not isinstance(answers, dict):
         return []
-    options = {q.get("question"): q.get("options") or []
-               for q in result.get("questions") or [] if isinstance(q, dict)}
+    options = {
+        q.get("question"): q.get("options") or []
+        for q in result.get("questions") or []
+        if isinstance(q, dict)
+    }
     out = []
     for question, answer in answers.items():
         if not isinstance(answer, str):
             continue
         picked = set(answer.split(", "))
-        notes = [o.get("description", "") for o in options.get(question, [])
-                 if isinstance(o, dict) and o.get("label") in picked | {answer}]
+        notes = [
+            o.get("description", "")
+            for o in options.get(question, [])
+            if isinstance(o, dict) and o.get("label") in picked | {answer}
+        ]
         described = f" ({'; '.join(n for n in notes if n)})" if any(notes) else ""
         out.append(f"Q: {question} A: {answer}{described}")
     return out
@@ -542,8 +593,9 @@ def user_prompt(d: dict) -> str:
     c = (d.get("message") or {}).get("content")
     text = c if isinstance(c, str) else ""
     if isinstance(c, list):
-        text = "\n".join(b.get("text", "") for b in c
-                         if isinstance(b, dict) and b.get("type") == "text")
+        text = "\n".join(
+            b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text"
+        )
     text = (text or "").strip()
     return "" if text.startswith(("<", "/", "#")) else text
 
@@ -555,12 +607,21 @@ def write_hunk(cwd: str, rel: str, content: str) -> str:
     the agent's doing (a 4x false-block rate on the stress corpus). A new
     or untracked file is judged whole, marked as such."""
     try:
-        r = subprocess.run(["git", "diff", "--no-color", "--no-ext-diff", "-U3", "--", rel],
-                           cwd=cwd, capture_output=True, text=True, timeout=5)
+        r = subprocess.run(
+            ["git", "diff", "--no-color", "--no-ext-diff", "-U3", "--", rel],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
         if r.returncode == 0 and r.stdout.strip():
             return r.stdout
-        tracked = subprocess.run(["git", "ls-files", "--error-unmatch", rel], cwd=cwd,
-                                 capture_output=True, timeout=5).returncode == 0
+        tracked = (
+            subprocess.run(
+                ["git", "ls-files", "--error-unmatch", rel], cwd=cwd, capture_output=True, timeout=5
+            ).returncode
+            == 0
+        )
         if tracked:
             return ""
     except (OSError, subprocess.SubprocessError):
@@ -594,28 +655,39 @@ def edit_hunks(inp: dict, cwd: str | None = None) -> str:
         return write_hunk(cwd, relative(inp["file_path"], cwd), content)
     return content
 
+
 COMMENT = re.compile(r"(^|\s)(#|//|/\*|\*/|<!--)|\"\"\"|\'\'\'")
-IMPORTISH = re.compile(r"(?m)^\s*[-+]?\s*(import\b|from\s+\S+\s+import\b|export\s+\*|"
-                       r"const\s+\w+\s*=\s*require\(|require\(|use\s+\w|#include\b|using\b)")
-MANIFEST = re.compile(r"(^|/)(package\.json|requirements[^/]*\.txt|pyproject\.toml|"
-                      r"go\.mod|Cargo\.toml|Gemfile|setup\.py)$")
+IMPORTISH = re.compile(
+    r"(?m)^\s*[-+]?\s*(import\b|from\s+\S+\s+import\b|export\s+\*|"
+    r"const\s+\w+\s*=\s*require\(|require\(|use\s+\w|#include\b|using\b)"
+)
+MANIFEST = re.compile(
+    r"(^|/)(package\.json|requirements[^/]*\.txt|pyproject\.toml|"
+    r"go\.mod|Cargo\.toml|Gemfile|setup\.py)$"
+)
 TESTISH = re.compile(r"(?i)\btest|\bspec\b|describe\(|\bit\(|assert|expect\(")
 NUMBER = re.compile(r"(?<![\w.])-?\d[\d_]*(\.\d+)?\b")
 STRINGY = re.compile(r"\"[^\"\n]{4,}\"|\'[^\'\n]{4,}\'|`[^`\n]{4,}`")
-DEFINES = re.compile(r"(?m)^\s*[-+]?\s*(def\b|class\b|function\b|const\b|let\b|var\b|"
-                     r"type\b|interface\b|enum\b|struct\b|fn\b|export\b)")
-TYPEISH = re.compile(r"(?m)(:\s*[A-Z][\w\[\]<>.]*|\bany\b|\bas\b|\binterface\b|\btype\b|"
-                     r"->\s*[\w\[\]]+|\bSchema\b)")
-ERRORISH = re.compile(r"(?i)\b(try|catch|except|finally|throw|raise|Result|Error|Exception|"
-                      r"panic|rescue)\b")
+DEFINES = re.compile(
+    r"(?m)^\s*[-+]?\s*(def\b|class\b|function\b|const\b|let\b|var\b|"
+    r"type\b|interface\b|enum\b|struct\b|fn\b|export\b)"
+)
+TYPEISH = re.compile(
+    r"(?m)(:\s*[A-Z][\w\[\]<>.]*|\bany\b|\bas\b|\binterface\b|\btype\b|"
+    r"->\s*[\w\[\]]+|\bSchema\b)"
+)
+ERRORISH = re.compile(
+    r"(?i)\b(try|catch|except|finally|throw|raise|Result|Error|Exception|"
+    r"panic|rescue)\b"
+)
 
 SUBJECT_TESTS = {
     "imports_deps": lambda h, rel: bool(IMPORTISH.search(h) or MANIFEST.search(rel)),
     "comments": lambda h, rel: bool(COMMENT.search(h)),
     "tests": lambda h, rel: bool(TESTISH.search(h) or TESTISH.search(rel)),
     "literals_constants": lambda h, rel: bool(
-        STRINGY.search(h) or any(m.group(0) not in ("0", "1", "-1")
-                                 for m in NUMBER.finditer(h))),
+        STRINGY.search(h) or any(m.group(0) not in ("0", "1", "-1") for m in NUMBER.finditer(h))
+    ),
     "naming": lambda h, rel: bool(DEFINES.search(h)),
     "types": lambda h, rel: bool(TYPEISH.search(h)),
     "errors": lambda h, rel: bool(ERRORISH.search(h)),
@@ -629,28 +701,25 @@ def touches(hunk: str, subject: str, rel: str = "") -> bool:
     return True if test is None else bool(test(hunk, rel))
 
 
-def split_relevant(in_scope: list[dict], hunk: str,
-                   rel: str = "") -> tuple[list[dict], list[dict]]:
+def split_relevant(in_scope: list[dict], hunk: str, rel: str = "") -> tuple[list[dict], list[dict]]:
     """(rules worth a question, rules this hunk cannot break)."""
     if not RELEVANCE_GATE:
         return list(in_scope), []
     keep, drop = [], []
     for r in in_scope:
-        (keep if touches(hunk, r.get("subject") or DEFAULT_SUBJECT, rel)
-         else drop).append(r)
+        (keep if touches(hunk, r.get("subject") or DEFAULT_SUBJECT, rel) else drop).append(r)
     return keep, drop
+
 
 EDIT_FORBID_CRITERIA = {
     "true": "The new code visibly does the forbidden thing.",
-    "false": "The edit does not do it, or only removes or leaves untouched "
-             "code that did.",
+    "false": "The edit does not do it, or only removes or leaves untouched code that did.",
 }
 
 EDIT_REQUIRE_CRITERIA = {
-    "true": "A case the rule clearly governs was added, and the required "
-            "element is absent.",
+    "true": "A case the rule clearly governs was added, and the required element is absent.",
     "false": "The rule does not govern what changed, the requirement is "
-             "present, or it is a matter of degree or taste.",
+    "present, or it is a matter of degree or taste.",
 }
 
 
@@ -669,6 +738,7 @@ def needle_of(inp: dict) -> str:
             return line.strip()
     return ""
 
+
 MODULE_EXT = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs")
 
 
@@ -686,9 +756,9 @@ def sibling_modules(path: str) -> str:
         full = os.path.join(os.path.dirname(path) or ".", e)
         stem, ext = os.path.splitext(e)
         if os.path.isdir(full):
-            if any(os.path.exists(os.path.join(full, f"index{x}"))
-                   for x in MODULE_EXT) or os.path.exists(
-                       os.path.join(full, "__init__.py")):
+            if any(
+                os.path.exists(os.path.join(full, f"index{x}")) for x in MODULE_EXT
+            ) or os.path.exists(os.path.join(full, "__init__.py")):
                 names.append(e)
         elif ext in MODULE_EXT and not stem.startswith("."):
             names.append(stem)
@@ -709,11 +779,11 @@ def file_context(path: str, needle: str) -> str:
     for i, line in enumerate(lines):
         if needle in line:
             lo = max(0, i - CONTEXT_LINES)
-            return "\n".join(lines[lo:i + CONTEXT_LINES + 1])[:MAX_CONTEXT_CHARS]
+            return "\n".join(lines[lo : i + CONTEXT_LINES + 1])[:MAX_CONTEXT_CHARS]
     return ""
 
-STRICT_PREAMBLE = ("This edit was already judged possibly in breach of this "
-                   "rule. Decide it. ")
+
+STRICT_PREAMBLE = "This edit was already judged possibly in breach of this rule. Decide it. "
 
 
 def enclosing_block(path: str, needle: str) -> str:
@@ -726,11 +796,13 @@ def enclosing_block(path: str, needle: str) -> str:
             lines = f.read().splitlines()
     except OSError:
         return ""
-    anchor = next((i for i, l in enumerate(lines) if needle in l), None)
+    anchor = next((i for i, line in enumerate(lines) if needle in line), None)
     if anchor is None:
         return ""
-    def indent(l: str) -> int:
-        return len(l) - len(l.lstrip())
+
+    def indent(line: str) -> int:
+        return len(line) - len(line.lstrip())
+
     depth = indent(lines[anchor])
     start = anchor
     for i in range(anchor - 1, -1, -1):
@@ -755,28 +827,36 @@ def rule_question(rule: dict, strict: bool = False) -> dict:
     code the agent did not write."""
     pre = STRICT_PREAMBLE if strict else ""
     edit = rule.get("when") == "edit"
-    subject = "this edit" if edit else "the changes this agent made"
-    scope_note = ("Judge only what the edit itself introduces, not "
-                  "pre-existing code." if edit else
-                  "Judge only what these changes introduce, not pre-existing code.")
+    scope_note = (
+        "Judge only what the edit itself introduces, not pre-existing code."
+        if edit
+        else "Judge only what these changes introduce, not pre-existing code."
+    )
     if (rule.get("polarity") or DEFAULT_POLARITY) == "require":
-        what = ("this edit" if edit else "these changes")
-        return {"type": "noul",
-                "instructions": pre + f"Does {what} add or change code that this rule "
-                                f"clearly covers, and do it WITHOUT what the rule "
-                                f"requires: \"{rule['text']}\"? Answer yes only "
-                                f"when both hold and the requirement is plainly "
-                                f"missing from the new code and the surrounding "
-                                f"lines shown. If the rule does not apply to what "
-                                f"changed, or the requirement is met even "
-                                f"imperfectly, answer no.",
-                "criteria": EDIT_REQUIRE_CRITERIA}
-    added = ("the ADDED or CHANGED code in this edit" if edit
-             else "the ADDED or CHANGED code in these changes")
-    return {"type": "noul",
-            "instructions": pre + f"Does {added} do what this rule forbids: "
-                            f"\"{rule['text']}\"? {scope_note}",
-            "criteria": EDIT_FORBID_CRITERIA}
+        what = "this edit" if edit else "these changes"
+        return {
+            "type": "noul",
+            "instructions": pre + f"Does {what} add or change code that this rule "
+            f"clearly covers, and do it WITHOUT what the rule "
+            f'requires: "{rule["text"]}"? Answer yes only '
+            f"when both hold and the requirement is plainly "
+            f"missing from the new code and the surrounding "
+            f"lines shown. If the rule does not apply to what "
+            f"changed, or the requirement is met even "
+            f"imperfectly, answer no.",
+            "criteria": EDIT_REQUIRE_CRITERIA,
+        }
+    added = (
+        "the ADDED or CHANGED code in this edit"
+        if edit
+        else "the ADDED or CHANGED code in these changes"
+    )
+    return {
+        "type": "noul",
+        "instructions": pre + f"Does {added} do what this rule forbids: "
+        f'"{rule["text"]}"? {scope_note}',
+        "criteria": EDIT_FORBID_CRITERIA,
+    }
 
 
 def verdict(answer: dict | None) -> float:
@@ -835,9 +915,10 @@ def record_hunk(state: dict, turn: str, rel: str, hunk: str) -> None:
     room = MAX_TURN_CHARS - total
     if room <= 0:
         return
-    state["hunks"].append(f"--- {rel}\n{hunk[:min(MAX_HUNK_CHARS, room)]}")
+    state["hunks"].append(f"--- {rel}\n{hunk[: min(MAX_HUNK_CHARS, room)]}")
     if rel not in state["files"]:
         state["files"].append(rel)
+
 
 ADDED_HEAD_CHARS = 200
 
@@ -852,8 +933,11 @@ def added_body(hunk: str) -> str:
     if hunk.startswith("NEW FILE"):
         return hunk.split("\n", 1)[1] if "\n" in hunk else ""
     if hunk.lstrip().startswith(("diff --git", "---", "@@", "index ")):
-        return "\n".join(l[1:] for l in hunk.splitlines()
-                          if l.startswith("+") and not l.startswith("+++"))
+        return "\n".join(
+            line[1:]
+            for line in hunk.splitlines()
+            if line.startswith("+") and not line.startswith("+++")
+        )
     return hunk
 
 
@@ -879,38 +963,55 @@ def rule_hashes(in_scope: list[dict]) -> dict:
     return {r["file"]: r["file_hash"] for r in in_scope if r.get("file_hash")}
 
 
-def log_decision(event: dict, answers: dict, probs: dict, violations: list,
-                 n_rules: int, n_scoped_out: int, phase: str,
-                 input_hash: str | None = None, blocked: list | None = None,
-                 hashes: dict | None = None, ms: int | None = None,
-                 n_irrelevant: int = 0, head: str | None = None,
-                 escalated: list | None = None, cmp_chars: dict | None = None,
-                 sg: str | None = None, user_answers: int = 0) -> None:
+def log_decision(
+    event: dict,
+    answers: dict,
+    probs: dict,
+    violations: list,
+    n_rules: int,
+    n_scoped_out: int,
+    phase: str,
+    input_hash: str | None = None,
+    blocked: list | None = None,
+    hashes: dict | None = None,
+    ms: int | None = None,
+    n_irrelevant: int = 0,
+    head: str | None = None,
+    escalated: list | None = None,
+    cmp_chars: dict | None = None,
+    sg: str | None = None,
+    user_answers: int = 0,
+) -> None:
     try:
         with open(DEFAULT_LOG, "a") as f:
-            f.write(json.dumps({
-                "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "kind": "rules",
-                "phase": phase,
-                "session_id": event.get("session_id"),
-                "cwd": event.get("cwd"),
-                "file": (event.get("tool_input") or {}).get("file_path"),
-                "input_hash": input_hash,
-                "added_head": head,
-                "n_rules": n_rules,
-                "n_scoped_out": n_scoped_out,
-                "n_irrelevant": n_irrelevant,
-                "escalated": escalated or [],
-                "comparators": cmp_chars or {},
-                "sg": sg,
-                "ms": ms,
-                "probs": probs,
-                "violations": violations,
-                "blocked": blocked or [],
-                "rule_hashes": hashes or {},
-                "answers": answers,
-                "user_answers": user_answers,
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        "kind": "rules",
+                        "phase": phase,
+                        "session_id": event.get("session_id"),
+                        "cwd": event.get("cwd"),
+                        "file": (event.get("tool_input") or {}).get("file_path"),
+                        "input_hash": input_hash,
+                        "added_head": head,
+                        "n_rules": n_rules,
+                        "n_scoped_out": n_scoped_out,
+                        "n_irrelevant": n_irrelevant,
+                        "escalated": escalated or [],
+                        "comparators": cmp_chars or {},
+                        "sg": sg,
+                        "ms": ms,
+                        "probs": probs,
+                        "violations": violations,
+                        "blocked": blocked or [],
+                        "rule_hashes": hashes or {},
+                        "answers": answers,
+                        "user_answers": user_answers,
+                    }
+                )
+                + "\n"
+            )
     except OSError:
         pass
 
@@ -920,10 +1021,8 @@ def cite(v: dict) -> str:
     if len(text) > 220:
         text = text[:217] + "..."
     where = f"{v['file']} line {v['line']}" if v.get("line") else v["file"]
-    kind = f"[{v.get('polarity') or DEFAULT_POLARITY}/" \
-           f"{v.get('subject') or DEFAULT_SUBJECT}] "
-    return (f"- {kind}Rule \"{v['rule']}\" from {where}: "
-            f"\"{text}\" ({v['prob']:.2f})")
+    kind = f"[{v.get('polarity') or DEFAULT_POLARITY}/{v.get('subject') or DEFAULT_SUBJECT}] "
+    return f'- {kind}Rule "{v["rule"]}" from {where}: "{text}" ({v["prob"]:.2f})'
 
 
 def ask_rules(state_text: str, rules: list[dict], strict: bool = False) -> dict:
@@ -953,6 +1052,7 @@ def load_calib() -> dict:
         return {}
     return data if isinstance(data, dict) else {}
 
+
 CALIB = load_calib()
 
 
@@ -971,26 +1071,32 @@ def act_for(rule: dict, act: float = ACT, calib: dict | None = None) -> float:
     return act
 
 
-def hits_from(rules: list[dict], probs: dict, act: float,
-              flag: float) -> list[dict]:
+def hits_from(rules: list[dict], probs: dict, act: float, flag: float) -> list[dict]:
     """Every rule at or above flag, banded against its own act threshold."""
     hits = []
     for r in rules:
         p = probs.get(r["id"], 0.0)
         if p >= flag:
-            hits.append({"rule": r["id"], "text": r["text"],
-                         "file": r["file"], "line": r.get("line", 0),
-                         "polarity": r.get("polarity"), "subject": r.get("subject"),
-                         "prob": round(p, 2),
-                         "band": "act" if p >= act_for(r, act) else "flag"})
+            hits.append(
+                {
+                    "rule": r["id"],
+                    "text": r["text"],
+                    "file": r["file"],
+                    "line": r.get("line", 0),
+                    "polarity": r.get("polarity"),
+                    "subject": r.get("subject"),
+                    "prob": round(p, 2),
+                    "band": "act" if p >= act_for(r, act) else "flag",
+                }
+            )
     return hits
 
 
-def collect_verdicts(rules: list[dict], answers: dict,
-                     act: float, flag: float) -> tuple[list[dict], dict]:
+def collect_verdicts(
+    rules: list[dict], answers: dict, act: float, flag: float
+) -> tuple[list[dict], dict]:
     """(hits at or above flag, every rule's probability for calibration)."""
-    probs = {r["id"]: round(verdict(answers.get(r.get("_qkey") or r["id"])), 3)
-             for r in rules}
+    probs = {r["id"]: round(verdict(answers.get(r.get("_qkey") or r["id"])), 3) for r in rules}
     return hits_from(rules, probs, act, flag), probs
 
 
@@ -998,8 +1104,12 @@ def scoped_rules(rules: list[dict], phase: str, files: list[str]) -> list[dict]:
     """The questions one request carries: rules for the phase whose scope
     covers a changed file, capped after scoping so a scoped rule is never
     crowded out by unscoped ones loaded before it."""
-    hit = [r for r in rules if r.get("when") == phase
-           and (not r["scope"] or any(glob_match(f, r["scope"]) for f in files))]
+    hit = [
+        r
+        for r in rules
+        if r.get("when") == phase
+        and (not r["scope"] or any(glob_match(f, r["scope"]) for f in files))
+    ]
 
     tiers: dict[tuple, dict[str, list]] = {}
     for r in hit:
@@ -1017,10 +1127,18 @@ def scoped_rules(rules: list[dict], phase: str, files: list[str]) -> list[dict]:
     return out[:MAX_RULES]
 
 
-def judge_edit(rel: str, hunk: str, task: str, in_scope: list[dict],
-               context: str = "", siblings: str = "", block: str = "",
-               cwd: str = "", act: float = ACT, flag: float = FLAG
-               ) -> tuple[list[dict], dict, dict, list[dict], list[str], dict]:
+def judge_edit(
+    rel: str,
+    hunk: str,
+    task: str,
+    in_scope: list[dict],
+    context: str = "",
+    siblings: str = "",
+    block: str = "",
+    cwd: str = "",
+    act: float = ACT,
+    flag: float = FLAG,
+) -> tuple[list[dict], dict, dict, list[dict], list[str], dict]:
     """One judged edit, no session side effects: (hits, probs, answers, rules
     skipped as irrelevant, rules escalated, comparator sizes by subject).
     The hook and the eval harness share this so they measure the same thing."""
@@ -1037,8 +1155,7 @@ def judge_edit(rel: str, hunk: str, task: str, in_scope: list[dict],
     cmp_chars: dict = {}
     if COMPARATORS and cwd:
         for subject in dict.fromkeys(r.get("subject") for r in asked):
-            found = comparators.comparator(subject or DEFAULT_SUBJECT, hunk,
-                                           rel, cwd)
+            found = comparators.comparator(subject or DEFAULT_SUBJECT, hunk, rel, cwd)
             if found:
                 cmp_chars[subject] = len(found)
                 parts.append(found)
@@ -1046,15 +1163,12 @@ def judge_edit(rel: str, hunk: str, task: str, in_scope: list[dict],
     hits, probs = collect_verdicts(in_scope, answers, act, flag)
 
     escalated: list[str] = []
-    undecided = [r for r in asked
-                 if flag <= probs.get(r["id"], 0.0) < act_for(r, act)]
+    undecided = [r for r in asked if flag <= probs.get(r["id"], 0.0) < act_for(r, act)]
     if ESCALATE and undecided:
         extra = list(parts)
         if block:
-            extra.append(f"The function or block this edit landed in, after "
-                         f"the edit:\n{block}")
-        around = "\n".join(f"[{r['id']}] {r['context']}" for r in undecided
-                            if r.get("context"))
+            extra.append(f"The function or block this edit landed in, after the edit:\n{block}")
+        around = "\n".join(f"[{r['id']}] {r['context']}" for r in undecided if r.get("context"))
         if around:
             extra.append(f"The instruction file says, around this rule:\n{around}")
         try:
@@ -1063,8 +1177,7 @@ def judge_edit(rel: str, hunk: str, task: str, in_scope: list[dict],
             second = {}
         if second:
             for r in undecided:
-                probs[r["id"]] = round(verdict(second.get(r.get("_qkey")
-                                                          or r["id"])), 3)
+                probs[r["id"]] = round(verdict(second.get(r.get("_qkey") or r["id"])), 3)
                 escalated.append(r["id"])
             hits = hits_from(in_scope, probs, act, flag)
     return hits, probs, answers, skipped, escalated, cmp_chars
@@ -1097,8 +1210,10 @@ def handle_edit(event: dict) -> dict:
     sg = comparators.which()[1]
     t0 = time.monotonic()
     hits, probs, answers, skipped, escalated, cmp_chars = judge_edit(
-        rel, state, task, in_scope, context, siblings, block, cwd)
+        rel, state, task, in_scope, context, siblings, block, cwd
+    )
     ms = int((time.monotonic() - t0) * 1000)
+
     def spend_blocks(st: dict) -> list:
         acting = []
         for v in hits:
@@ -1107,27 +1222,37 @@ def handle_edit(event: dict) -> dict:
                 st["blocks"][key] = st["blocks"].get(key, 0) + 1
                 acting.append(v)
         return acting
+
     acting = update_state(sid, spend_blocks) if hits else []
     flagged = [v for v in hits if v not in acting]
-    log_decision(event, answers, probs,
-                 [{k: v[k] for k in ("rule", "file", "line", "prob", "band")}
-                  for v in hits],
-                 len(rules), len(rules) - len(in_scope), "edit",
-                 input_hash=input_digest(event),
-                 blocked=[v["rule"] for v in acting],
-                 hashes=rule_hashes(in_scope), ms=ms,
-                 n_irrelevant=len(skipped), head=added_head(state),
-                 escalated=escalated, cmp_chars=cmp_chars, sg=sg,
-                 user_answers=n_answers)
+    log_decision(
+        event,
+        answers,
+        probs,
+        [{k: v[k] for k in ("rule", "file", "line", "prob", "band")} for v in hits],
+        len(rules),
+        len(rules) - len(in_scope),
+        "edit",
+        input_hash=input_digest(event),
+        blocked=[v["rule"] for v in acting],
+        hashes=rule_hashes(in_scope),
+        ms=ms,
+        n_irrelevant=len(skipped),
+        head=added_head(state),
+        escalated=escalated,
+        cmp_chars=cmp_chars,
+        sg=sg,
+        user_answers=n_answers,
+    )
 
     out = {}
     if flagged:
         listed = ", ".join(f"{v['rule']} {v['prob']:.2f}" for v in flagged)
-        out["systemMessage"] = (f"[jev rules] uncertain about {listed} on "
-                                f"{rel} — not sent to the agent")
+        out["systemMessage"] = (
+            f"[jev rules] uncertain about {listed} on {rel} — not sent to the agent"
+        )
     if acting:
-        lines = ["This edit appears to break a rule from this "
-                 "repository's instructions."]
+        lines = ["This edit appears to break a rule from this repository's instructions."]
         lines += [cite(v) for v in acting]
         lines.append(f"Repair {rel} now, then continue with the task.")
         out["decision"] = "block"
@@ -1136,8 +1261,7 @@ def handle_edit(event: dict) -> dict:
 
 
 def git(cwd: str, *args: str, env: dict | None = None) -> str:
-    r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True,
-                       timeout=4, env=env)
+    r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=4, env=env)
     if r.returncode != 0:
         raise subprocess.SubprocessError(r.stderr.strip())
     return r.stdout
@@ -1157,10 +1281,14 @@ def worktree_tree(cwd: str) -> tuple[str, str, str]:
             shutil.copy2(index, scratch)
         env = {**os.environ, "GIT_INDEX_FILE": scratch}
         git(root, "add", "-A", env=env)
-        ignored = git(root, "ls-files", "-z", "--others", "--ignored",
-                      "--exclude-standard", "--directory")
-        return (root, git(root, "write-tree", env=env).strip(),
-                hashlib.sha256(ignored.encode()).hexdigest())
+        ignored = git(
+            root, "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"
+        )
+        return (
+            root,
+            git(root, "write-tree", env=env).strip(),
+            hashlib.sha256(ignored.encode()).hexdigest(),
+        )
     finally:
         if os.path.exists(scratch):
             os.remove(scratch)
@@ -1190,6 +1318,7 @@ def handle_bash_before(event: dict) -> dict:
             st["snapshots"][snapshot_key(event)] = tree
         else:
             st["partial"] = True
+
     update_state(sid, keep)
     return {}
 
@@ -1200,8 +1329,9 @@ def handle_bash_after(event: dict) -> dict:
     cwd = event.get("cwd") or os.getcwd()
     turn, _, _ = last_user_prompt(event.get("transcript_path"))
     key = snapshot_key(event)
-    before = update_state(sid, lambda st: st.get("snapshots", {}).pop(key, None)
-                          if st.get("turn") == turn else None)
+    before = update_state(
+        sid, lambda st: st.get("snapshots", {}).pop(key, None) if st.get("turn") == turn else None
+    )
     if not turn or not before:
         return {}
     root, old, old_ignored = before
@@ -1215,8 +1345,7 @@ def handle_bash_after(event: dict) -> dict:
             rel = relative(os.path.join(root, name), os.path.realpath(cwd))
             if EXCLUDED.search(rel) or outside(rel):
                 continue
-            hunk = git(root, "diff", "--no-color", "--no-ext-diff", "-U3",
-                       old, new, "--", name)
+            hunk = git(root, "diff", "--no-color", "--no-ext-diff", "-U3", old, new, "--", name)
             hunks.append((rel, hunk))
     except (OSError, subprocess.SubprocessError):
         update_state(sid, lambda st: st.update(partial=True))
@@ -1225,6 +1354,7 @@ def handle_bash_after(event: dict) -> dict:
     def keep(st: dict) -> None:
         for rel, hunk in hunks:
             record_hunk(st, turn, rel, hunk)
+
     if hunks:
         update_state(sid, keep)
     return {}
@@ -1237,8 +1367,7 @@ def handle_stop(event: dict) -> dict:
     sid = event.get("session_id") or "unknown"
     sstate = session_state(sid)
     turn, task, n_answers = last_user_prompt(event.get("transcript_path"))
-    if (not turn or sstate.get("turn") != turn
-            or not (sstate["hunks"] or sstate.get("partial"))):
+    if not turn or sstate.get("turn") != turn or not (sstate["hunks"] or sstate.get("partial")):
         return {}
     cwd = event.get("cwd") or os.getcwd()
     rules = load_rules(cwd)
@@ -1249,8 +1378,10 @@ def handle_stop(event: dict) -> dict:
     diff = "\n\n".join(sstate["hunks"])
     parts = [f"Files changed this turn: {', '.join(sstate['files']) or 'none recorded'}"]
     if sstate.get("partial"):
-        parts.append("This turn also ran shell commands. Changes they made "
-                     "are not in the diff below, so it is partial.")
+        parts.append(
+            "This turn also ran shell commands. Changes they made "
+            "are not in the diff below, so it is partial."
+        )
     if task:
         parts.append(f"The user's current request: {task}")
     parts.append(f"The changes:\n{diff[:MAX_TURN_CHARS]}")
@@ -1265,33 +1396,42 @@ def handle_stop(event: dict) -> dict:
     def spend_blocks(st: dict) -> list:
         acting = []
         for v in hits:
-            if (v["band"] == "act" and not already
-                    and st["stop_blocks"] < MAX_STOP_BLOCKS):
+            if v["band"] == "act" and not already and st["stop_blocks"] < MAX_STOP_BLOCKS:
                 st["stop_blocks"] += 1
                 acting.append(v)
         return acting
+
     acting = update_state(sid, spend_blocks) if hits else []
     flagged = [v for v in hits if v not in acting]
-    log_decision(event, answers, probs,
-                 [{k: v[k] for k in ("rule", "file", "line", "prob", "band")}
-                  for v in hits],
-                 len(rules), len(rules) - len(turn_rules), "turn",
-                 input_hash=None, blocked=[v["rule"] for v in acting],
-                 hashes=rule_hashes(turn_rules), ms=ms,
-                 n_irrelevant=len(skipped), user_answers=n_answers)
+    log_decision(
+        event,
+        answers,
+        probs,
+        [{k: v[k] for k in ("rule", "file", "line", "prob", "band")} for v in hits],
+        len(rules),
+        len(rules) - len(turn_rules),
+        "turn",
+        input_hash=None,
+        blocked=[v["rule"] for v in acting],
+        hashes=rule_hashes(turn_rules),
+        ms=ms,
+        n_irrelevant=len(skipped),
+        user_answers=n_answers,
+    )
 
     out = {}
     if flagged:
         listed = ", ".join(f"{v['rule']} {v['prob']:.2f}" for v in flagged)
-        out["systemMessage"] = (f"[jev rules] uncertain about {listed} at "
-                                "end of turn — not sent to the agent")
+        out["systemMessage"] = (
+            f"[jev rules] uncertain about {listed} at end of turn — not sent to the agent"
+        )
     if acting:
         files = ", ".join(sstate["files"])
-        lines = ["The changes this turn appear to break a rule from this "
-                 "repository's instructions."]
+        lines = [
+            "The changes this turn appear to break a rule from this repository's instructions."
+        ]
         lines += [cite(v) for v in acting]
-        lines.append(f"Repair {files} before you finish. Keep the fix to "
-                     "what the rule asks.")
+        lines.append(f"Repair {files} before you finish. Keep the fix to what the rule asks.")
         out["decision"] = "block"
         out["reason"] = "\n".join(lines)
     return out
@@ -1324,16 +1464,22 @@ def log_error(e: Exception, event: dict) -> None:
     explained. A separate kind, so stats never scores it as a decision."""
     try:
         with open(DEFAULT_LOG, "a") as f:
-            f.write(json.dumps({
-                "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "kind": "rules-error",
-                "session_id": event.get("session_id"),
-                "event": event.get("hook_event_name"),
-                "path": (event.get("tool_input") or {}).get("file_path"),
-                "error": f"{type(e).__name__}: {e}"[:300],
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        "kind": "rules-error",
+                        "session_id": event.get("session_id"),
+                        "event": event.get("hook_event_name"),
+                        "path": (event.get("tool_input") or {}).get("file_path"),
+                        "error": f"{type(e).__name__}: {e}"[:300],
+                    }
+                )
+                + "\n"
+            )
     except Exception:
         pass
+
 
 if __name__ == "__main__":
     main()

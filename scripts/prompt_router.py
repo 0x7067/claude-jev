@@ -70,8 +70,11 @@ def conversation_tail(transcript_path: str, prompt: str) -> tuple[str, str, str 
         if d.get("type") == "user" and not prev_user:
             text = content if isinstance(content, str) else ""
             if isinstance(content, list):
-                text = "\n".join(b.get("text", "") for b in content
-                                 if isinstance(b, dict) and b.get("type") == "text")
+                text = "\n".join(
+                    b.get("text", "")
+                    for b in content
+                    if isinstance(b, dict) and b.get("type") == "text"
+                )
             text = (text or "").strip()
 
             if text and text != prompt and not text.startswith("<"):
@@ -82,8 +85,11 @@ def conversation_tail(transcript_path: str, prompt: str) -> tuple[str, str, str 
                 if isinstance(m, str):
                     model = m
             if not prev_assistant:
-                text = "\n".join(b.get("text", "") for b in content
-                                 if isinstance(b, dict) and b.get("type") == "text").strip()
+                text = "\n".join(
+                    b.get("text", "")
+                    for b in content
+                    if isinstance(b, dict) and b.get("type") == "text"
+                ).strip()
                 if text:
                     prev_assistant = text
     return prev_user, prev_assistant, model
@@ -143,7 +149,9 @@ def decide(answers: dict) -> tuple[str | None, dict]:
     scope = (answers.get("scope") or {}).get("score")
     parts = [f"[jev router] intent={choice} conf={conf:.2f}"]
     if scope is not None:
-        parts.append(f"scope={'trivial' if scope < 0.5 else 'small' if scope < 1.5 else 'substantial'}")
+        parts.append(
+            f"scope={'trivial' if scope < 0.5 else 'small' if scope < 1.5 else 'substantial'}"
+        )
     line = " ".join(parts)
 
     tip = GUIDANCE[choice]
@@ -155,27 +163,38 @@ def decide(answers: dict) -> tuple[str | None, dict]:
     return f"{line}\n{tip}", answers
 
 
-def log_decision(event: dict, answers: dict, hint: str | None,
-                 tier: str | None, model_now: str | None,
-                 ms: int | None = None) -> None:
+def log_decision(
+    event: dict,
+    answers: dict,
+    hint: str | None,
+    tier: str | None,
+    model_now: str | None,
+    ms: int | None = None,
+) -> None:
     """Record what was predicted so a later eval can score it against what the
     session actually did. Joins to the transcript by session id and timestamp.
     """
     try:
         import datetime
+
         with open(DEFAULT_LOG, "a") as f:
-            f.write(json.dumps({
-                "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "session_id": event.get("session_id"),
-                "cwd": event.get("cwd"),
-                "prompt": (event.get("prompt") or "")[:200],
-                "answers": answers,
-                "hint": hint,
-                "tier_hint": tier,
-                "model_now": model_now,
-                "ms": ms,
-                "v": jev.version(),
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        "session_id": event.get("session_id"),
+                        "cwd": event.get("cwd"),
+                        "prompt": (event.get("prompt") or "")[:200],
+                        "answers": answers,
+                        "hint": hint,
+                        "tier_hint": tier,
+                        "model_now": model_now,
+                        "ms": ms,
+                        "v": jev.version(),
+                    }
+                )
+                + "\n"
+            )
     except OSError:
         pass
 
@@ -197,8 +216,7 @@ def main() -> None:
         if tp:
             prev_user, prev_assistant, model_now = conversation_tail(tp, prompt)
         t0 = time.monotonic()
-        answers = jev.ask(build_state(prompt, prev_user, prev_assistant),
-                          jev.intent_bundle())
+        answers = jev.ask(build_state(prompt, prev_user, prev_assistant), jev.intent_bundle())
         ms = int((time.monotonic() - t0) * 1000)
         ctx, _ = decide(answers)
         tier = tier_hint(answers, model_now)
@@ -216,6 +234,7 @@ def main() -> None:
             sys.stdout.write("\n")
     except Exception:
         return
+
 
 if __name__ == "__main__":
     main()

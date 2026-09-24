@@ -46,13 +46,13 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "scripts"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
 import jev
 import rules
-from observed import EDIT_TOOLS, prompt_text
 import stats
+from observed import EDIT_TOOLS, prompt_text
 
+HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
 EDITS = os.path.join(DATA, "rules_edits.jsonl")
 
@@ -94,8 +94,11 @@ def cmd_extract(args) -> int:
                 if d.get("type") != "assistant":
                     continue
                 for b in (d.get("message") or {}).get("content") or []:
-                    if not (isinstance(b, dict) and b.get("type") == "tool_use"
-                            and b.get("name") in ("Edit", "Write", "MultiEdit", "NotebookEdit")):
+                    if not (
+                        isinstance(b, dict)
+                        and b.get("type") == "tool_use"
+                        and b.get("name") in ("Edit", "Write", "MultiEdit", "NotebookEdit")
+                    ):
                         continue
                     inp = b.get("input") or {}
                     cwd = d.get("cwd")
@@ -110,22 +113,34 @@ def cmd_extract(args) -> int:
                         excluded += 1
                         continue
                     n += 1
-                    out.write(json.dumps({
-                        "id": f"{os.path.basename(fp)[:8]}#{n}", "kind": "real",
-                        "cwd": cwd, "file_path": inp["file_path"], "sha": head_sha(cwd),
-                        "tool_name": b["name"], "tool_input": inp, "task": task,
-                        "answers": answers,
-                        "ts": d.get("timestamp"),
-                    }) + "\n")
-    print(f"{n} real edits -> {EDITS}"
-          f"   (pruned {gone} in repos that are gone, {excluded} on excluded paths)")
+                    out.write(
+                        json.dumps(
+                            {
+                                "id": f"{os.path.basename(fp)[:8]}#{n}",
+                                "kind": "real",
+                                "cwd": cwd,
+                                "file_path": inp["file_path"],
+                                "sha": head_sha(cwd),
+                                "tool_name": b["name"],
+                                "tool_input": inp,
+                                "task": task,
+                                "answers": answers,
+                                "ts": d.get("timestamp"),
+                            }
+                        )
+                        + "\n"
+                    )
+    print(
+        f"{n} real edits -> {EDITS}"
+        f"   (pruned {gone} in repos that are gone, {excluded} on excluded paths)"
+    )
     return 0
 
 
 def load_jsonl(path: str) -> list[dict]:
     try:
         with open(path) as f:
-            return [json.loads(l) for l in f if l.strip()]
+            return [json.loads(line) for line in f if line.strip()]
     except OSError:
         return []
 
@@ -134,8 +149,9 @@ def cached_ask(cache: dict, cache_f):
     real_ask = jev.ask
 
     def ask(state, questions, model=None, timeout=None):
-        key = hashlib.sha256(json.dumps(
-            [model or jev.DEFAULT_MODEL, state, questions], sort_keys=True).encode()).hexdigest()
+        key = hashlib.sha256(
+            json.dumps([model or jev.DEFAULT_MODEL, state, questions], sort_keys=True).encode()
+        ).hexdigest()
         with _lock:
             if key in cache:
                 return cache[key]
@@ -145,6 +161,7 @@ def cached_ask(cache: dict, cache_f):
             cache_f.write(json.dumps({"key": key, "answers": answers}) + "\n")
             cache_f.flush()
         return answers
+
     return ask
 
 
@@ -160,8 +177,13 @@ def case_hunk(rec: dict, cwd: str, rel: str) -> str:
             old = f.read()
     except OSError:
         return f"NEW FILE (whole content):\n{content}"
-    diff = difflib.unified_diff(old.splitlines(keepends=True), content.splitlines(keepends=True),
-                                fromfile=f"a/{rel}", tofile=f"b/{rel}", n=3)
+    diff = difflib.unified_diff(
+        old.splitlines(keepends=True),
+        content.splitlines(keepends=True),
+        fromfile=f"a/{rel}",
+        tofile=f"b/{rel}",
+        n=3,
+    )
     return "".join(diff)
 
 
@@ -173,12 +195,12 @@ def git_out(cwd: str, *args: str) -> str | None:
     return r.stdout.strip() if r.returncode == 0 else None
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def repo_root(cwd: str) -> str | None:
     return git_out(cwd, "rev-parse", "--show-toplevel") if os.path.isdir(cwd) else None
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def head_sha(cwd: str) -> str | None:
     top = repo_root(cwd)
     return git_out(top, "rev-parse", "HEAD") if top else None
@@ -194,8 +216,13 @@ def at_commit(cwd: str, sha: str) -> str:
     dest = os.path.join(AT, f"{os.path.basename(top)}-{sha[:12]}")
     if not os.path.exists(os.path.join(dest, ".git")):
         os.makedirs(AT, exist_ok=True)
-        r = subprocess.run(["git", "worktree", "add", "--detach", dest, sha], cwd=top,
-                           capture_output=True, text=True, timeout=120)
+        r = subprocess.run(
+            ["git", "worktree", "add", "--detach", dest, sha],
+            cwd=top,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
         if r.returncode != 0:
             raise SystemExit(f"cannot check out {top} at {sha[:12]}: {r.stderr.strip()}")
     return os.path.normpath(os.path.join(dest, os.path.relpath(cwd, top)))
@@ -204,7 +231,21 @@ def at_commit(cwd: str, sha: str) -> str:
 def judge(rec: dict, rule_cache: dict) -> dict:
     cwd = rec["cwd"]
     rel = rules.relative(rec["file_path"], cwd)
-    out = {k: rec.get(k) for k in ("id", "kind", "cwd", "sha", "task", "violates", "expect", "note", "tags", "answers")}
+    out = {
+        k: rec.get(k)
+        for k in (
+            "id",
+            "kind",
+            "cwd",
+            "sha",
+            "task",
+            "violates",
+            "expect",
+            "note",
+            "tags",
+            "answers",
+        )
+    }
     out["rel"] = rel
     if rec.get("sha"):
         with _lock:
@@ -236,16 +277,29 @@ def judge(rec: dict, rule_cache: dict) -> dict:
     t0 = time.time()
     try:
         hits, probs, _, skipped, escalated, cmp_chars = rules.judge_edit(
-            rel, hunk,
-            rules.request_with_answers(rec.get("task") or "",
-                                       rec.get("answers") or []),
-            in_scope, context, siblings, block, cwd)
-        out.update(hits=[{k: h.get(k) for k in
-                          ("rule", "prob", "band", "text", "file", "line",
-                           "polarity", "subject")} for h in hits],
-                   probs=probs, n_irrelevant=len(skipped),
-                   context_chars=len(context), escalated=escalated,
-                   comparators=cmp_chars)
+            rel,
+            hunk,
+            rules.request_with_answers(rec.get("task") or "", rec.get("answers") or []),
+            in_scope,
+            context,
+            siblings,
+            block,
+            cwd,
+        )
+        out.update(
+            hits=[
+                {
+                    k: h.get(k)
+                    for k in ("rule", "prob", "band", "text", "file", "line", "polarity", "subject")
+                }
+                for h in hits
+            ],
+            probs=probs,
+            n_irrelevant=len(skipped),
+            context_chars=len(context),
+            escalated=escalated,
+            comparators=cmp_chars,
+        )
     except Exception as e:
         out["error"] = str(e)[:300]
     out["latency"] = round(time.time() - t0, 3)
@@ -279,8 +333,10 @@ def cmd_run(args) -> int:
         print("  comparators off (control run)", file=sys.stderr)
     live = sum(1 for r in recs if not r.get("sha"))
     if live:
-        print(f"  {live}/{len(recs)} records have no sha; judged at the live checkout",
-              file=sys.stderr)
+        print(
+            f"  {live}/{len(recs)} records have no sha; judged at the live checkout",
+            file=sys.stderr,
+        )
     done = 0
     results = []
 
@@ -299,13 +355,13 @@ def cmd_run(args) -> int:
     print(file=sys.stderr)
     cache_f.close()
     with open(args.out, "w") as f:
-        for r in results:
-            f.write(json.dumps(r) + "\n")
+        f.writelines(json.dumps(r) + "\n" for r in results)
     errors = sum(1 for r in results if r.get("error"))
     print(f"{len(results)} judged ({errors} errors) -> {args.out}")
     if errors:
         print("  first error:", next(r["error"] for r in results if r.get("error")))
     return 0
+
 
 CALIB: dict = {}
 
@@ -348,8 +404,9 @@ def write_calib(real: list[dict], path: str) -> None:
     for r in real:
         for rid, p in (r.get("probs") or {}).items():
             per[rid].append(p)
-    calib = {rid: {"median": round(statistics.median(ps), 3), "n": len(ps)}
-             for rid, ps in per.items()}
+    calib = {
+        rid: {"median": round(statistics.median(ps), 3), "n": len(ps)} for rid, ps in per.items()
+    }
     with open(path, "w") as f:
         json.dump(calib, f, indent=1, sort_keys=True)
     print(f"calibration for {len(calib)} rules -> {path}")
@@ -376,23 +433,23 @@ def sweep(viol: list[dict], clean: list[dict], real: list[dict]) -> None:
     pv = [p for p in (top_prob(r) for r in viol) if p is not None]
     pc = [p for p in (top_prob(r) for r in clean) if p is not None]
     pr = [p for p in (top_prob(r) for r in real) if p is not None]
-    missing = ((len(viol) - len(pv)) + (len(clean) - len(pc)) + (len(real) - len(pr)))
+    missing = (len(viol) - len(pv)) + (len(clean) - len(pc)) + (len(real) - len(pr))
     print(f"\nthreshold sweep (FLAG={rules.FLAG} fixed)")
     if missing:
-        print(f"  {missing} judged records carry no probabilities; "
-              "re-run `run` to refresh the prediction file")
-    print(f"  {'ACT':<7}{'real blocked':<16}{'violations caught':<20}"
-          f"{'near-misses blocked':<21}")
+        print(
+            f"  {missing} judged records carry no probabilities; "
+            "re-run `run` to refresh the prediction file"
+        )
+    print(f"  {'ACT':<7}{'real blocked':<16}{'violations caught':<20}{'near-misses blocked':<21}")
     print("  " + "-" * 64)
     for i in range(60, 100, 5):
         act = i / 100
         nb = sum(1 for p in pr if p >= act)
         nv = sum(1 for p in pv if p >= act)
         nc = sum(1 for p in pc if p >= act)
-        rate = f"{nb} ({100*nb/len(pr):.1f}%)" if pr else "-"
+        rate = f"{nb} ({100 * nb / len(pr):.1f}%)" if pr else "-"
         mark = "  <- current" if abs(act - rules.ACT) < 1e-9 else ""
-        print(f"  {act:<7.2f}{rate:<16}{f'{nv}/{len(pv)}':<20}"
-              f"{f'{nc}/{len(pc)}':<21}{mark}")
+        print(f"  {act:<7.2f}{rate:<16}{f'{nv}/{len(pv)}':<20}{f'{nc}/{len(pc)}':<21}{mark}")
 
 
 def by_tag(cases: list[dict]) -> None:
@@ -403,15 +460,19 @@ def by_tag(cases: list[dict]) -> None:
         groups = collections.defaultdict(list)
         for c in cases:
             groups[(c.get("tags") or {}).get(key, "-")].append(c)
-        print(f"\n  by {key:<10} {'violations':>11} {'blocked':>8} {'flagged+':>9}"
-              f" {'benign':>7} {'false blk':>10} {'expected rule':>14}")
+        print(
+            f"\n  by {key:<10} {'violations':>11} {'blocked':>8} {'flagged+':>9}"
+            f" {'benign':>7} {'false blk':>10} {'expected rule':>14}"
+        )
         for val, cs in sorted(groups.items()):
             v = [c for c in cs if c.get("violates")]
             b = [c for c in cs if not c.get("violates")]
-            print(f"  {str(val):<13}{len(v):>11}{sum(1 for c in v if band(c) == 'act'):>8}"
-                  f"{sum(1 for c in v if band(c) != 'quiet'):>9}"
-                  f"{len(b):>8}{sum(1 for c in b if band(c) == 'act'):>10}"
-                  f"{sum(1 for c in v if expected_fired(c, 'act')):>14}")
+            print(
+                f"  {val!s:<13}{len(v):>11}{sum(1 for c in v if band(c) == 'act'):>8}"
+                f"{sum(1 for c in v if band(c) != 'quiet'):>9}"
+                f"{len(b):>8}{sum(1 for c in b if band(c) == 'act'):>10}"
+                f"{sum(1 for c in v if expected_fired(c, 'act')):>14}"
+            )
 
 
 def cmd_report(args) -> int:
@@ -419,38 +480,55 @@ def cmd_report(args) -> int:
     preds = load_jsonl(args.pred)
     if args.calib:
         CALIB = json.load(open(args.calib))
-        print(f"per-rule thresholds from {args.calib} "
-              f"({len(CALIB)} rules; decisive {rules.ACT_DECISIVE}, "
-              f"noisy {rules.ACT_NOISY}, else {rules.ACT})")
+        print(
+            f"per-rule thresholds from {args.calib} "
+            f"({len(CALIB)} rules; decisive {rules.ACT_DECISIVE}, "
+            f"noisy {rules.ACT_NOISY}, else {rules.ACT})"
+        )
     judged = [p for p in preds if not p.get("skipped") and not p.get("error")]
     cases = [p for p in judged if p["kind"] == "case"]
     real = [p for p in judged if p["kind"] == "real"]
     skipped = collections.Counter(p["skipped"] for p in preds if p.get("skipped"))
-    print(f"{len(preds)} records: {len(judged)} judged, "
-          f"{sum(1 for p in preds if p.get('error'))} errors, skipped {dict(skipped)}")
+    print(
+        f"{len(preds)} records: {len(judged)} judged, "
+        f"{sum(1 for p in preds if p.get('error'))} errors, skipped {dict(skipped)}"
+    )
 
     viol = [c for c in cases if c.get("violates")]
     clean = [c for c in cases if not c.get("violates")]
     if cases:
-        print(f"\nHand-written cases against real repo rules: {len(viol)} violations, "
-              f"{len(clean)} compliant near-misses")
+        print(
+            f"\nHand-written cases against real repo rules: {len(viol)} violations, "
+            f"{len(clean)} compliant near-misses"
+        )
         det_act = sum(1 for c in viol if band(c) == "act")
         det_flag = sum(1 for c in viol if band(c) != "quiet")
         exp_act = sum(1 for c in viol if expected_fired(c, "act"))
         exp_flag = sum(1 for c in viol if expected_fired(c, "flag"))
-        print(f"  violations blocked (>= {rules.ACT}) : {det_act}/{len(viol)}"
-              f"   by the expected rule: {exp_act}/{len(viol)}")
-        print(f"  violations blocked or flagged (>= {rules.FLAG}) : {det_flag}/{len(viol)}"
-              f"   by the expected rule: {exp_flag}/{len(viol)}")
+        print(
+            f"  violations blocked (>= {rules.ACT}) : {det_act}/{len(viol)}"
+            f"   by the expected rule: {exp_act}/{len(viol)}"
+        )
+        print(
+            f"  violations blocked or flagged (>= {rules.FLAG}) : {det_flag}/{len(viol)}"
+            f"   by the expected rule: {exp_flag}/{len(viol)}"
+        )
         fb = sum(1 for c in clean if band(c) == "act")
         ff = sum(1 for c in clean if band(c) == "flag")
         print(f"  compliant edits blocked : {fb}/{len(clean)}   flagged only: {ff}/{len(clean)}")
         if args.by_tag:
             by_tag(cases)
         print("\n  case                          violates  band   top rule (p)")
-        for c in (cases if not args.by_tag else
-                  [c for c in cases if (c.get("violates") and band(c) != "act")
-                   or (not c.get("violates") and band(c) == "act")]):
+        for c in (
+            cases
+            if not args.by_tag
+            else [
+                c
+                for c in cases
+                if (c.get("violates") and band(c) != "act")
+                or (not c.get("violates") and band(c) == "act")
+            ]
+        ):
             hits = sorted(c.get("hits") or [], key=lambda h: -h["prob"])
             top = f"{hits[0]['rule'][:34]} ({hits[0]['prob']:.2f})" if hits else "-"
             mark = ""
@@ -460,37 +538,46 @@ def cmd_report(args) -> int:
                 mark = "  <- FALSE BLOCK"
             elif c.get("violates") and not expected_fired(c, "act"):
                 mark = "  <- blocked, but by another rule"
-            print(f"  {c['id']:<30}{'yes' if c.get('violates') else 'no ':<10}"
-                  f"{band(c):<7}{top}{mark}")
+            print(
+                f"  {c['id']:<30}{'yes' if c.get('violates') else 'no ':<10}{band(c):<7}{top}{mark}"
+            )
 
     if real:
         blocked = [r for r in real if band(r) == "act"]
         flagged = [r for r in real if band(r) == "flag"]
         lat = [r["latency"] for r in real if r.get("latency")]
         print(f"\nReal edits from your transcripts (accepted at the time): {len(real)} judged")
-        print(f"  would block : {len(blocked)} ({100*len(blocked)/len(real):.1f}%)"
-              f"   flag only: {len(flagged)} ({100*len(flagged)/len(real):.1f}%)")
+        print(
+            f"  would block : {len(blocked)} ({100 * len(blocked) / len(real):.1f}%)"
+            f"   flag only: {len(flagged)} ({100 * len(flagged) / len(real):.1f}%)"
+        )
         if lat:
-            print(f"  latency     : median {statistics.median(lat):.2f}s  "
-                  f"p90 {sorted(lat)[int(0.9*(len(lat)-1))]:.2f}s  "
-                  f"questions/edit median {statistics.median(r['n_scope'] for r in real)}")
+            print(
+                f"  latency     : median {statistics.median(lat):.2f}s  "
+                f"p90 {sorted(lat)[int(0.9 * (len(lat) - 1))]:.2f}s  "
+                f"questions/edit median {statistics.median(r['n_scope'] for r in real)}"
+            )
         irr = [r.get("n_irrelevant", 0) for r in real]
         if any(irr):
             asked = [r["n_scope"] - r.get("n_irrelevant", 0) for r in real]
-            print(f"  relevance   : in scope {sum(r['n_scope'] for r in real)}, "
-                  f"skipped as irrelevant {sum(irr)} "
-                  f"({100*sum(irr)/max(1, sum(r['n_scope'] for r in real)):.1f}%), "
-                  f"asked median {statistics.median(asked)}")
+            print(
+                f"  relevance   : in scope {sum(r['n_scope'] for r in real)}, "
+                f"skipped as irrelevant {sum(irr)} "
+                f"({100 * sum(irr) / max(1, sum(r['n_scope'] for r in real)):.1f}%), "
+                f"asked median {statistics.median(asked)}"
+            )
         ctx = [r.get("context_chars", 0) for r in real]
         if any(ctx):
-            print(f"  context     : {sum(1 for c in ctx if c)}/{len(real)} edits "
-                  f"carried surrounding lines")
+            print(
+                f"  context     : {sum(1 for c in ctx if c)}/{len(real)} edits "
+                f"carried surrounding lines"
+            )
         carried = sum(1 for r in real if r.get("answers"))
         if carried:
-            print(f"  answers     : {carried}/{len(real)} edits carried "
-                  f"AskUserQuestion answers")
-        by_rule = collections.Counter(h["rule"] for r in blocked for h in r["hits"]
-                                      if h["band"] == "act")
+            print(f"  answers     : {carried}/{len(real)} edits carried AskUserQuestion answers")
+        by_rule = collections.Counter(
+            h["rule"] for r in blocked for h in r["hits"] if h["band"] == "act"
+        )
         if by_rule:
             print("  rules behind the blocks:")
             for rid, n in by_rule.most_common(12):
@@ -499,8 +586,10 @@ def cmd_report(args) -> int:
             print(f"\n  first {args.examples} real edits the hook would have blocked:")
             for r in blocked[: args.examples]:
                 h = max(r["hits"], key=lambda h: h["prob"])
-                print(f"  - {r['rel']}  [{h['rule']} {h['prob']:.2f}] "
-                      f"\"{' '.join(h['text'].split())[:110]}\"")
+                print(
+                    f"  - {r['rel']}  [{h['rule']} {h['prob']:.2f}] "
+                    f'"{" ".join(h["text"].split())[:110]}"'
+                )
                 if r.get("task"):
                     print(f"      task: {' '.join(r['task'].split())[:110]}")
 
@@ -515,14 +604,18 @@ def cmd_report(args) -> int:
         for rid, p in (r.get("probs") or {}).items():
             per_rule[rid].append(p)
     if per_rule:
-        print(f"\nPer-rule calibration over every judged edit "
-              f"(fired = >= {rules.ACT}; a rule firing on most edits is too broad):")
+        print(
+            f"\nPer-rule calibration over every judged edit "
+            f"(fired = >= {rules.ACT}; a rule firing on most edits is too broad):"
+        )
         print(f"  {'rule':<40}{'checks':>7}{'median':>8}{'max':>6}{'fired':>7}")
         rows = sorted(per_rule.items(), key=lambda kv: -sum(1 for p in kv[1] if p >= rules.ACT))
         for rid, ps in rows[: args.rules]:
             fired = sum(1 for p in ps if p >= rules.ACT)
-            print(f"  {rid[:40]:<40}{len(ps):>7}{statistics.median(ps):>8.2f}"
-                  f"{max(ps):>6.2f}{fired:>7}")
+            print(
+                f"  {rid[:40]:<40}{len(ps):>7}{statistics.median(ps):>8.2f}"
+                f"{max(ps):>6.2f}{fired:>7}"
+            )
     return 0
 
 
@@ -547,8 +640,11 @@ def prompt_times(path: str) -> list:
 
 
 def cmd_turns(args) -> int:
-    rows = [r for r in stats.load_log(args.log, args.days)
-            if r.get("kind") == "rules" and r.get("phase") == "turn"]
+    rows = [
+        r
+        for r in stats.load_log(args.log, args.days)
+        if r.get("kind") == "rules" and r.get("phase") == "turn"
+    ]
     tally = collections.Counter()
     for r in rows:
         ts = stats.parse_ts(r.get("ts"))
@@ -557,10 +653,16 @@ def cmd_turns(args) -> int:
         if not starts:
             tally["no transcript", bool(r.get("blocked")), bool(r.get("violations"))] += 1
             continue
-        tools = [e["name"] for e in stats.tool_events(path)
-                 if e["ts"] and starts[-1] <= e["ts"] <= ts]
-        kind = ("own edits" if any(t in EDIT_TOOLS for t in tools)
-                else "bash only" if "Bash" in tools else "no changes")
+        tools = [
+            e["name"] for e in stats.tool_events(path) if e["ts"] and starts[-1] <= e["ts"] <= ts
+        ]
+        kind = (
+            "own edits"
+            if any(t in EDIT_TOOLS for t in tools)
+            else "bash only"
+            if "Bash" in tools
+            else "no changes"
+        )
         tally[kind, bool(r.get("blocked")), bool(r.get("violations"))] += 1
     print(f"{len(rows)} Stop-hook turn checks in {args.log}")
     print(f"  {'turn made':<15}{'checks':>8}{'blocked':>9}{'flagged':>9}")
@@ -583,8 +685,11 @@ def main() -> int:
     r.add_argument("--sample", type=int, default=0, help="cap on real edits")
     r.add_argument("--seed", type=int, default=0)
     r.add_argument("--workers", type=int, default=4)
-    r.add_argument("--no-comparators", action="store_true",
-                   help="control run: judge without the ast-grep lookups")
+    r.add_argument(
+        "--no-comparators",
+        action="store_true",
+        help="control run: judge without the ast-grep lookups",
+    )
     r.add_argument("--cases", default=CASES)
     r.add_argument("--out", default=PRED)
     r.set_defaults(fn=cmd_run)
@@ -592,15 +697,25 @@ def main() -> int:
     rp.add_argument("--examples", type=int, default=8)
     rp.add_argument("--rules", type=int, default=25)
     rp.add_argument("--pred", default=PRED)
-    rp.add_argument("--calib", default=None,
-                    help="score with per-rule act thresholds from this file")
-    rp.add_argument("--write-calib", nargs="?", const=rules.CALIB_FILE,
-                    default=None, metavar="PATH",
-                    help="write per-rule medians for the hook to read")
-    rp.add_argument("--sweep", action="store_true",
-                    help="what each ACT from 0.60 to 0.95 would have blocked")
-    rp.add_argument("--by-tag", action="store_true",
-                    help="breakdown per tag; the case list shows only misses and false blocks")
+    rp.add_argument(
+        "--calib", default=None, help="score with per-rule act thresholds from this file"
+    )
+    rp.add_argument(
+        "--write-calib",
+        nargs="?",
+        const=rules.CALIB_FILE,
+        default=None,
+        metavar="PATH",
+        help="write per-rule medians for the hook to read",
+    )
+    rp.add_argument(
+        "--sweep", action="store_true", help="what each ACT from 0.60 to 0.95 would have blocked"
+    )
+    rp.add_argument(
+        "--by-tag",
+        action="store_true",
+        help="breakdown per tag; the case list shows only misses and false blocks",
+    )
     rp.set_defaults(fn=cmd_report)
     t = sub.add_parser("turns", help="Stop-hook checks that judged no edits of their own")
     t.add_argument("--log", default=os.path.join(jev.config_dir(), "jev-router-log.jsonl"))
@@ -608,6 +723,7 @@ def main() -> int:
     t.set_defaults(fn=cmd_turns)
     args = p.parse_args()
     return args.fn(args)
+
 
 if __name__ == "__main__":
     sys.exit(main())

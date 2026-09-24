@@ -25,8 +25,10 @@ BASH_OPS = re.compile(
     r"gh|railway|vercel|pytest|jest|vitest|tsc|eslint|ruff|mypy|black|prettier|"
     r"terraform|ansible|systemctl|brew|claude)\b"
 )
-GIT_OPS = re.compile(r"\bgit\s+(commit|push|pull|fetch|merge|rebase|checkout|switch|"
-                     r"branch|tag|cherry-pick|reset|revert|stash|clone|add|worktree)\b")
+GIT_OPS = re.compile(
+    r"\bgit\s+(commit|push|pull|fetch|merge|rebase|checkout|switch|"
+    r"branch|tag|cherry-pick|reset|revert|stash|clone|add|worktree)\b"
+)
 GIT_READ = re.compile(r"\bgit\s+(log|diff|status|show|blame|describe|ls-files|remote)\b")
 BASH_READ = re.compile(
     r"(^|[;&|]\s*)(cat|head|tail|less|more|grep|rg|ag|ls|find|fd|wc|jq|yq|awk|cut|"
@@ -54,8 +56,7 @@ def prompt_text(msg: dict) -> str | None:
     if isinstance(c, str):
         return c
     if isinstance(c, list):
-        parts = [b.get("text", "") for b in c
-                 if isinstance(b, dict) and b.get("type") == "text"]
+        parts = [b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text"]
         return "\n".join(p for p in parts if p)
     return None
 
@@ -65,6 +66,7 @@ def is_real_prompt(txt: str) -> bool:
     if len(txt) < 3:
         return False
     return not txt.startswith(("<", "/", "#", "Caveat", "[Request interrupted"))
+
 
 SYNTHETIC = re.compile(
     r"^(Another Claude session sent a message:"
@@ -88,8 +90,11 @@ SYNTHETIC = re.compile(
 
 
 def is_synthetic(txt: str) -> bool:
-    return bool(SYNTHETIC.match(txt)) or "<teammate-message" in txt[:200]\
+    return (
+        bool(SYNTHETIC.match(txt))
+        or "<teammate-message" in txt[:200]
         or "<agent-message" in txt[:200]
+    )
 
 
 def walk_session(path: str):
@@ -108,10 +113,12 @@ def walk_session(path: str):
             if t == "user":
                 txt = prompt_text(d.get("message") or {})
                 if txt and is_real_prompt(txt.strip()):
-                    yield "prompt", {"text": txt.strip(), "ts": d.get("timestamp"),
-                                     "cwd": d.get("cwd")}
+                    yield (
+                        "prompt",
+                        {"text": txt.strip(), "ts": d.get("timestamp"), "cwd": d.get("cwd")},
+                    )
             elif t == "assistant":
-                for b in ((d.get("message") or {}).get("content") or []):
+                for b in (d.get("message") or {}).get("content") or []:
                     if not isinstance(b, dict):
                         continue
                     if b.get("type") == "tool_use":
@@ -155,7 +162,7 @@ def trace(tools: list[dict], limit: int = 12) -> list[str]:
         else:
             out.append(name)
     if len(tools) > limit:
-        out.append(f"... +{len(tools)-limit} more")
+        out.append(f"... +{len(tools) - limit} more")
     return out
 
 

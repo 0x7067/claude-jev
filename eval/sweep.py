@@ -25,8 +25,8 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import compare
 import compactor
+import compare
 
 SWEEP_CACHE = os.path.join(compare.DATA, "sweep_cache.jsonl")
 THRESHOLDS = [round(0.05 * i, 2) for i in range(2, 19)]
@@ -34,8 +34,8 @@ THRESHOLDS = [round(0.05 * i, 2) for i in range(2, 19)]
 
 def events(synth: int, seed: int) -> list[tuple]:
     files = sorted(
-        f for f in
-        (os.path.join(dp, fn) for dp, _dn, fns in os.walk(compare.PROJECTS) for fn in fns)
+        f
+        for f in (os.path.join(dp, fn) for dp, _dn, fns in os.walk(compare.PROJECTS) for fn in fns)
         if f.endswith(".jsonl")
     )
     real, cands = [], []
@@ -72,7 +72,7 @@ def score_event(fp, lines, i, end, prev_i, kind, cache: dict, cache_f) -> dict |
         tf.writelines(pre_lines)
         tmp = tf.name
     try:
-        blocks = compactor.transcript_blocks(tmp)[-compactor.MAX_BLOCKS:]
+        blocks = compactor.transcript_blocks(tmp)[-compactor.MAX_BLOCKS :]
     finally:
         os.unlink(tmp)
     if len(blocks) <= compactor.PIN_TAIL:
@@ -88,11 +88,22 @@ def score_event(fp, lines, i, end, prev_i, kind, cache: dict, cache_f) -> dict |
     post_keys = {c["key"] for c in post if c["key"].split(":", 1)[0] in compare.REFETCH_KINDS}
     rows = []
     for r, b in zip(stats["rows"], blocks):
-        rows.append({**r, "ref": None,
-                     "needed": any(compare.covered(k, b["text"]) for k in reads),
-                     "needed_post": any(compare.covered(k, b["text"]) for k in post_keys)})
-    d = {"key": key, "sig": sig, "file": os.path.basename(fp), "kind": kind,
-         "n_reads": len(reads), "rows": rows}
+        rows.append(
+            {
+                **r,
+                "ref": None,
+                "needed": any(compare.covered(k, b["text"]) for k in reads),
+                "needed_post": any(compare.covered(k, b["text"]) for k in post_keys),
+            }
+        )
+    d = {
+        "key": key,
+        "sig": sig,
+        "file": os.path.basename(fp),
+        "kind": kind,
+        "n_reads": len(reads),
+        "rows": rows,
+    }
     cache[(key, sig)] = d
     cache_f.write(json.dumps(d) + "\n")
     cache_f.flush()
@@ -123,25 +134,33 @@ def prf(rows: list[dict], t: float, label: str) -> tuple[int, int, int, float, f
 
 def table(rows: list[dict], label: str, title: str) -> None:
     pos = sum(1 for r in rows if r[label])
-    print(f"\n{title}: {len(rows)} judged blocks, {pos} {label} ({100*pos/max(len(rows),1):.0f}%)")
+    print(
+        f"\n{title}: {len(rows)} judged blocks, {pos} {label} ({100 * pos / max(len(rows), 1):.0f}%)"
+    )
     print(f"  {'t':>5} {'kept%':>6} {'chars%':>7} {'prec':>6} {'recall':>7} {'F1':>6}")
     total_chars = sum(r["chars"] for r in rows) or 1
     for t in THRESHOLDS:
         tp, fp, fn, p, rc, f1 = prf(rows, t, label)
         kept = [r for r in rows if r["keep"] >= t]
-        print(f"  {t:>5.2f} {100*len(kept)/len(rows):>5.0f}% {100*sum(r['chars'] for r in kept)/total_chars:>6.0f}% "
-              f"{p:>6.2f} {rc:>7.2f} {f1:>6.2f}{'  <- current' if t == compactor.KEEP_THRESHOLD else ''}")
+        print(
+            f"  {t:>5.2f} {100 * len(kept) / len(rows):>5.0f}% {100 * sum(r['chars'] for r in kept) / total_chars:>6.0f}% "
+            f"{p:>6.2f} {rc:>7.2f} {f1:>6.2f}{'  <- current' if t == compactor.KEEP_THRESHOLD else ''}"
+        )
 
 
 def auc(rows: list[dict], score, label: str) -> float:
     """Probability a needed block outscores an unneeded one; 0.5 is chance."""
     import bisect
+
     pos = [score(r) for r in rows if r[label]]
     neg = sorted(score(r) for r in rows if not r[label])
     if not pos or not neg:
         return float("nan")
-    s = sum(bisect.bisect_left(neg, p) + 0.5 * (bisect.bisect_right(neg, p) - bisect.bisect_left(neg, p))
-            for p in pos)
+    s = sum(
+        bisect.bisect_left(neg, p)
+        + 0.5 * (bisect.bisect_right(neg, p) - bisect.bisect_left(neg, p))
+        for p in pos
+    )
     return s / (len(pos) * len(neg))
 
 
@@ -150,10 +169,14 @@ def auc_table(rows: list[dict], label: str) -> None:
     names = ["keep", "full"] + sorted({c for r in rows for c in (r.get("checks") or {})})
     print(f"\nAUC vs {label} (all / {' / '.join(kinds)}):")
     for name in names:
-        score = (lambda r, n=name: r[n]) if name in ("keep", "full") \
+        score = (
+            (lambda r, n=name: r[n])
+            if name in ("keep", "full")
             else (lambda r, n=name: (r.get("checks") or {}).get(n, 0.0))
+        )
         cells = [auc(rows, score, label)] + [
-            auc([r for r in rows if r["kind"].split(":")[0] == k], score, label) for k in kinds]
+            auc([r for r in rows if r["kind"].split(":")[0] == k], score, label) for k in kinds
+        ]
         print(f"  {name:11} " + "  ".join(f"{c:.3f}" for c in cells))
 
 
@@ -163,9 +186,9 @@ def histogram(rows: list[dict]) -> None:
     print(f"\nkeep score distribution ({n} blocks):")
     for b in range(10):
         c = bins.get(b, 0)
-        print(f"  {b/10:.1f}-{(b+1)/10:.1f} {c:5d} {'#' * int(60 * c / n)}")
+        print(f"  {b / 10:.1f}-{(b + 1) / 10:.1f} {c:5d} {'#' * int(60 * c / n)}")
     band = sum(1 for r in rows if 0.35 <= r["keep"] < 0.65)
-    print(f"  in 0.35-0.65: {100*band/n:.0f}%")
+    print(f"  in 0.35-0.65: {100 * band / n:.0f}%")
 
 
 def main() -> int:
@@ -178,11 +201,15 @@ def main() -> int:
 
     cache = load_cache()
     todo = events(args.synth, args.seed)
-    print(f"{len(todo)} events ({sum(1 for t in todo if t[-1] == 'real')} real), "
-          f"{sum(1 for t in todo if (hashlib.sha256(''.join(t[1][:t[2]]).encode()).hexdigest(), compare.selection_sig()) in cache)} cached")
+    print(
+        f"{len(todo)} events ({sum(1 for t in todo if t[-1] == 'real')} real), "
+        f"{sum(1 for t in todo if (hashlib.sha256(''.join(t[1][: t[2]]).encode()).hexdigest(), compare.selection_sig()) in cache)} cached"
+    )
     results = []
-    with open(SWEEP_CACHE, "a") as cache_f, \
-            concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as ex:
+    with (
+        open(SWEEP_CACHE, "a") as cache_f,
+        concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as ex,
+    ):
         futs = [ex.submit(score_event, *t, cache, cache_f) for t in todo]
         for f in concurrent.futures.as_completed(futs):
             d = f.result()
@@ -191,7 +218,9 @@ def main() -> int:
 
     rows = [r for d in results for r in d["rows"] if r["keep"] is not None]
     with_reads = [r for d in results if d["n_reads"] for r in d["rows"] if r["keep"] is not None]
-    print(f"\n{len(results)} events scored, {sum(1 for d in results if d['n_reads'])} with post-boundary re-fetches")
+    print(
+        f"\n{len(results)} events scored, {sum(1 for d in results if d['n_reads'])} with post-boundary re-fetches"
+    )
     histogram(rows)
     auc_table(with_reads, args.label)
     table(with_reads, args.label, "all roles (events with re-fetches)")

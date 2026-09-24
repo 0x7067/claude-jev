@@ -104,9 +104,18 @@ echo '{"prompt":"hi","transcript_path":""}' | CLAUDE_CONFIG_DIR="$(mktemp -d)" p
 ```
 
 `compileall` plus stdin hook smoke (exit 0, fail open) is what a default
-cloud agent or Grok Bot run can claim. Live Claude Code session verification
-is out-of-band: it needs a machine with `claude` and `TYPESAFE_API_KEY`, and
-is not claimed as proved by those local checks alone.
+cloud agent or Grok Bot run can claim. Ruff is a maintainer check, required
+for a release and for CI, and not part of that python3-only claim:
+
+```bash
+ruff format --check .
+ruff check .
+```
+
+`ruff.toml` configures it. It is not a dependency file: no hook imports
+Ruff. Live Claude Code session verification is out-of-band: it needs a
+machine with `claude` and `TYPESAFE_API_KEY`, and is not claimed as proved
+by those local checks alone.
 
 For a scripted launch → doctor → drive → evidence → cleanup loop (isolated
 `HOME`, feature map under `.cursor/skills/verify-claude-jev/features/`), use

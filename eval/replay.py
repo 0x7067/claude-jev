@@ -24,7 +24,6 @@ import hashlib
 import json
 import os
 import random
-import re
 import sys
 import threading
 import time
@@ -36,6 +35,14 @@ import prompt_router
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import variants
+from observed import (
+    derive_label,
+    is_synthetic,
+    scope_band,
+    summarize,
+    trace,
+    walk_session,
+)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
@@ -44,11 +51,6 @@ PREDICTIONS = os.path.join(DATA, "predictions.jsonl")
 CACHE = os.path.join(DATA, "cache.jsonl")
 
 INTENTS = ["chat", "lookup", "fix", "feature", "refactor", "ops", "unclear"]
-
-from observed import (
-    EDIT_TOOLS, READ_TOOLS, bash_kind, derive_label, is_synthetic,
-    prompt_text, scope_band, segments, summarize, trace, walk_session,
-)
 
 
 def cmd_extract(args) -> int:
@@ -110,6 +112,7 @@ def cmd_extract(args) -> int:
     print(f"extracted {rows} prompts from {len(files)} transcripts -> {DATASET}")
     return 0
 
+
 _cache_lock = threading.Lock()
 
 
@@ -132,7 +135,7 @@ def cache_key(model: str, variant, state: str) -> str:
 
 
 def load_dataset(include_synthetic: bool = False) -> list:
-    recs = [json.loads(l) for l in open(DATASET)]
+    recs = [json.loads(line) for line in open(DATASET)]
     return recs if include_synthetic else [r for r in recs if not r.get("synthetic")]
 
 
@@ -179,11 +182,19 @@ def cmd_run(args) -> int:
         with _cache_lock:
             done += 1
             errors += bool(err)
-            out_f.write(json.dumps({"id": rec["id"], "answers": answers,
-                                    "error": err, "latency": round(dt, 3)}) + "\n")
+            out_f.write(
+                json.dumps(
+                    {"id": rec["id"], "answers": answers, "error": err, "latency": round(dt, 3)}
+                )
+                + "\n"
+            )
             if done % 100 == 0 or done == total:
-                print(f"\r  {variant.name}: {done}/{total} cached={hits} errors={errors}",
-                      end="", file=sys.stderr, flush=True)
+                print(
+                    f"\r  {variant.name}: {done}/{total} cached={hits} errors={errors}",
+                    end="",
+                    file=sys.stderr,
+                    flush=True,
+                )
 
     with ThreadPoolExecutor(max_workers=args.workers) as ex:
         list(ex.map(work, recs))
@@ -237,37 +248,63 @@ def cmd_report(args) -> int:
     m = metrics(variant, rows, args.floor)
     fired = [(r, c) for r, c, _cf, _a in rows if c is not None]
     print(f"{variant.name} — {variant.why}")
-    print(f"  scored {m['n_scored']}   hints at conf>={args.floor}: {m['n_fired']} "
-          f"({100*m['coverage']:.1f}%)")
-    print(f"  accuracy {100*m['accuracy']:.1f}%   best constant {100*m['best_constant']:.1f}%   "
-          f"lift {100*m['lift']:+.1f}pts")
-    print(f"  harmful quiet hints ({variant.quiet_class} then >=5 tool calls): "
-          f"{m['harmful_quiet']} ({100*m['harmful_rate']:.1f}% of hints)")
+    print(
+        f"  scored {m['n_scored']}   hints at conf>={args.floor}: {m['n_fired']} "
+        f"({100 * m['coverage']:.1f}%)"
+    )
+    print(
+        f"  accuracy {100 * m['accuracy']:.1f}%   best constant {100 * m['best_constant']:.1f}%   "
+        f"lift {100 * m['lift']:+.1f}pts"
+    )
+    print(
+        f"  harmful quiet hints ({variant.quiet_class} then >=5 tool calls): "
+        f"{m['harmful_quiet']} ({100 * m['harmful_rate']:.1f}% of hints)"
+    )
 
     cm = collections.Counter((variant.truth(r), c) for r, c in fired)
     cols = variant.classes
     actual = [c for c in cols if c not in variant.unscorable]
-    table("confusion (row = observed, col = predicted)",
-          ["obs\\pred"] + cols + ["n"],
-          [[a] + [cm.get((a, p), 0) for p in cols] + [sum(cm.get((a, p), 0) for p in cols)]
-           for a in actual],
-          [12] + [10] * len(cols) + [6])
-    table("per-class", ["class", "obs", "pred", "precision", "recall", "f1"],
-          [[l, a, p, f"{pr:.2f}", f"{rc:.2f}", f"{f1:.2f}"]
-           for l, a, p, pr, rc, f1 in prf(cm, cols)],
-          [11, 7, 7, 11, 9, 6])
+    table(
+        "confusion (row = observed, col = predicted)",
+        ["obs\\pred"] + cols + ["n"],
+        [
+            [a] + [cm.get((a, p), 0) for p in cols] + [sum(cm.get((a, p), 0) for p in cols)]
+            for a in actual
+        ],
+        [12] + [10] * len(cols) + [6],
+    )
+    table(
+        "per-class",
+        ["class", "obs", "pred", "precision", "recall", "f1"],
+        [
+            [label, a, p, f"{pr:.2f}", f"{rc:.2f}", f"{f1:.2f}"]
+            for label, a, p, pr, rc, f1 in prf(cm, cols)
+        ],
+        [11, 7, 7, 11, 9, 6],
+    )
 
     if args.sweep:
         rows_ = []
-        for f in [i / 20 for i in range(0, 20)]:
+        for f in [i / 20 for i in range(20)]:
             rr = join(variant, path, f)
             mm = metrics(variant, rr, f)
             if mm["n_fired"]:
-                rows_.append([f"{f:.2f}", mm["n_fired"], f"{100*mm['coverage']:.1f}%",
-                              f"{100*mm['accuracy']:.1f}%", f"{100*mm['lift']:+.1f}",
-                              mm["harmful_quiet"]])
-        table("threshold sweep", ["floor", "hints", "coverage", "accuracy", "lift", "harmful"],
-              rows_, [8, 8, 11, 11, 8, 9])
+                rows_.append(
+                    [
+                        f"{f:.2f}",
+                        mm["n_fired"],
+                        f"{100 * mm['coverage']:.1f}%",
+                        f"{100 * mm['accuracy']:.1f}%",
+                        f"{100 * mm['lift']:+.1f}",
+                        mm["harmful_quiet"],
+                    ]
+                )
+        table(
+            "threshold sweep",
+            ["floor", "hints", "coverage", "accuracy", "lift", "harmful"],
+            rows_,
+            [8, 8, 11, 11, 8, 9],
+        )
     return 0
 
 
@@ -299,12 +336,23 @@ def cmd_compare(args) -> int:
         if not os.path.exists(path):
             continue
         m = metrics(v, join(v, path, args.floor), args.floor)
-        rows.append([name, f"{100*m['coverage']:.0f}%", f"{100*m['accuracy']:.1f}%",
-                     f"{100*m['best_constant']:.1f}%", f"{100*m['lift']:+.1f}",
-                     m["harmful_quiet"], f"{100*m['harmful_rate']:.1f}%"])
-    table(f"variant comparison at conf>={args.floor}",
-          ["variant", "coverage", "accuracy", "constant", "lift", "harmful", "harm rate"],
-          rows, [19, 10, 10, 10, 8, 9, 10])
+        rows.append(
+            [
+                name,
+                f"{100 * m['coverage']:.0f}%",
+                f"{100 * m['accuracy']:.1f}%",
+                f"{100 * m['best_constant']:.1f}%",
+                f"{100 * m['lift']:+.1f}",
+                m["harmful_quiet"],
+                f"{100 * m['harmful_rate']:.1f}%",
+            ]
+        )
+    table(
+        f"variant comparison at conf>={args.floor}",
+        ["variant", "coverage", "accuracy", "constant", "lift", "harmful", "harm rate"],
+        rows,
+        [19, 10, 10, 10, 8, 9, 10],
+    )
     print("\n  accuracy is against behavior observed in the transcript;")
     print("  constant = always guessing that variant's most common class;")
     print("  harmful = told the agent not to use tools, agent then made >=5 tool calls.")
@@ -342,6 +390,7 @@ def main() -> int:
 
     args = p.parse_args()
     return args.fn(args)
+
 
 if __name__ == "__main__":
     sys.exit(main())

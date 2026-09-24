@@ -25,7 +25,6 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import compare
 import compactor
 
 CONSTRAINTS = [
@@ -41,14 +40,25 @@ CONSTRAINTS = [
     "Do not run the seed script against the shared staging database.",
 ]
 RESTATE = "Noted, and I'll keep to your constraint: {c}"
-KEYS = ["migrations/", "pnpm", "PROJ-4471", "src/billing/", "dependency versions",
-        "vitest", "fix/ledger-rounding", "v2 clients", "structured logger", "seed script"]
+KEYS = [
+    "migrations/",
+    "pnpm",
+    "PROJ-4471",
+    "src/billing/",
+    "dependency versions",
+    "vitest",
+    "fix/ledger-rounding",
+    "v2 clients",
+    "structured logger",
+    "seed script",
+]
 
 
 def load_old(ref: str):
     src = subprocess.check_output(["git", "show", f"{ref}:scripts/compactor.py"], text=True)
-    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False,
-                                     dir=os.path.dirname(compactor.__file__)) as tf:
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".py", delete=False, dir=os.path.dirname(compactor.__file__)
+    ) as tf:
         tf.write(src)
         path = tf.name
     spec = importlib.util.spec_from_file_location("compactor_old", path)
@@ -67,13 +77,21 @@ def plant(blocks: list[dict], rng: random.Random) -> tuple[list[dict], dict]:
     out = list(blocks)
     pos_user = rng.randrange(max(1, n // 5), max(2, n - 8))
     out.insert(pos_user, {"role": "user", "text": c})
-    cands = [i for i, b in enumerate(out)
-             if b["role"] == "assistant" and i > pos_user + 1 and i < len(out) - 8
-             and not b["text"].startswith("[tool_use") and len(b["text"]) < 900]
+    cands = [
+        i
+        for i, b in enumerate(out)
+        if b["role"] == "assistant"
+        and i > pos_user + 1
+        and i < len(out) - 8
+        and not b["text"].startswith("[tool_use")
+        and len(b["text"]) < 900
+    ]
     pos_buried = rng.choice(cands) if cands else None
     if pos_buried is not None:
-        out[pos_buried] = {"role": "assistant",
-                           "text": out[pos_buried]["text"].rstrip() + "\n\n" + RESTATE.format(c=c)}
+        out[pos_buried] = {
+            "role": "assistant",
+            "text": out[pos_buried]["text"].rstrip() + "\n\n" + RESTATE.format(c=c),
+        }
     return out, {"key": key, "user": pos_user, "buried": pos_buried}
 
 
@@ -82,7 +100,7 @@ def run_event(mod, fp, lines, i, kind, seed: int) -> dict | None:
         tf.writelines(lines[:i])
         tmp = tf.name
     try:
-        blocks = mod.transcript_blocks(tmp)[-mod.MAX_BLOCKS:]
+        blocks = mod.transcript_blocks(tmp)[-mod.MAX_BLOCKS :]
     finally:
         os.unlink(tmp)
     if len(blocks) < 30:
@@ -104,11 +122,17 @@ def run_event(mod, fp, lines, i, kind, seed: int) -> dict | None:
         return "kept" if meta["key"] in k["text"] else "cut"
 
     rows = stats["rows"]
-    return {"file": os.path.basename(fp), "kind": kind, "key": meta["key"],
-            "user": fate(meta["user"]), "user_keep": rows[meta["user"]]["keep"],
-            "buried": fate(meta["buried"]),
-            "buried_keep": rows[meta["buried"]]["keep"] if meta["buried"] is not None else None,
-            "kept": stats["kept"], "blocks": len(planted)}
+    return {
+        "file": os.path.basename(fp),
+        "kind": kind,
+        "key": meta["key"],
+        "user": fate(meta["user"]),
+        "user_keep": rows[meta["user"]]["keep"],
+        "buried": fate(meta["buried"]),
+        "buried_keep": rows[meta["buried"]]["keep"] if meta["buried"] is not None else None,
+        "kept": stats["kept"],
+        "blocks": len(planted),
+    }
 
 
 def main() -> int:
@@ -122,11 +146,14 @@ def main() -> int:
     mod = load_old(args.old) if args.old else compactor
 
     import sweep
+
     todo = sweep.events(args.synth, args.seed)
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as ex:
-        futs = [ex.submit(run_event, mod, fp, lines, i, kind, args.seed)
-                for fp, lines, i, _end, _prev, kind in todo]
+        futs = [
+            ex.submit(run_event, mod, fp, lines, i, kind, args.seed)
+            for fp, lines, i, _end, _prev, kind in todo
+        ]
         for f in concurrent.futures.as_completed(futs):
             r = f.result()
             if r:
@@ -142,15 +169,19 @@ def main() -> int:
         return n, {v: sum(1 for x in vals if x == v) for v in ("kept", "cut", "dropped")}
 
     label = f"questions from {args.old}" if args.old else "current questions"
-    print(f"\n{label}: {len(results)} events, "
-          f"mean kept {sum(r['kept'] for r in results)/max(len(results),1):.1f} of "
-          f"{sum(r['blocks'] for r in results)/max(len(results),1):.0f} blocks")
+    print(
+        f"\n{label}: {len(results)} events, "
+        f"mean kept {sum(r['kept'] for r in results) / max(len(results), 1):.1f} of "
+        f"{sum(r['blocks'] for r in results) / max(len(results), 1):.0f} blocks"
+    )
     for field in ("user", "buried"):
         n, c = summary(field)
         scores = sorted(r[f"{field}_keep"] for r in results if r[f"{field}_keep"] is not None)
         med = scores[len(scores) // 2] if scores else float("nan")
-        print(f"  planted {field:6}: n={n:3d} survived {100*c['kept']/max(n,1):3.0f}% "
-              f"(kept {c['kept']}, cut {c['cut']}, dropped {c['dropped']})  median keep score {med:.2f}")
+        print(
+            f"  planted {field:6}: n={n:3d} survived {100 * c['kept'] / max(n, 1):3.0f}% "
+            f"(kept {c['kept']}, cut {c['cut']}, dropped {c['dropped']})  median keep score {med:.2f}"
+        )
     return 0
 
 

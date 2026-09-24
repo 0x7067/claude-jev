@@ -42,8 +42,9 @@ class Provider:
 
 PROVIDERS = (
     Provider("typesafe", "https://api.typesafe.ai/v1/systemone", "", "TYPESAFE_API_KEY"),
-    Provider("openrouter", "https://openrouter.ai/api/v1/systemone", "sk-or-",
-             "OPENROUTER_API_KEY"),
+    Provider(
+        "openrouter", "https://openrouter.ai/api/v1/systemone", "sk-or-", "OPENROUTER_API_KEY"
+    ),
 )
 DEFAULT_MODEL = "jev-latest"
 DEFAULT_TIMEOUT = 8.0
@@ -74,8 +75,9 @@ def version() -> str:
     """
     global _VERSION
     if _VERSION is None:
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            "..", ".claude-plugin", "plugin.json")
+        path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", ".claude-plugin", "plugin.json"
+        )
         try:
             with open(path, encoding="utf-8") as f:
                 _VERSION = str(json.load(f).get("version") or "unknown")
@@ -90,8 +92,9 @@ def caller_name() -> str:
     return name[:-3] if name.endswith(".py") else (name or "jev")
 
 
-def log_call(provider: Provider, model: str, n_questions: int, t0: float,
-             error: str | None) -> None:
+def log_call(
+    provider: Provider, model: str, n_questions: int, t0: float, error: str | None
+) -> None:
     """Append one call record. Never raises: the caller is mid-request and a
     log failure must not change what `ask` returns or what it raises."""
     try:
@@ -153,8 +156,9 @@ def missing_key_message(pinned: Provider | None) -> str:
 
 def provider_for(key: str) -> Provider:
     """The provider whose key prefix is the longest match for `key`."""
-    return max((p for p in PROVIDERS if key.startswith(p.key_prefix)),
-               key=lambda p: len(p.key_prefix))
+    return max(
+        (p for p in PROVIDERS if key.startswith(p.key_prefix)), key=lambda p: len(p.key_prefix)
+    )
 
 
 def ask(state, questions: dict, model: str | None = None, timeout: float | None = None) -> dict:
@@ -268,20 +272,19 @@ def intent_bundle() -> dict:
         "needs_tools": {
             "type": "noul",
             "instructions": "To handle this message, must the assistant use tools "
-                            "(read files, search, run commands, edit code) rather than "
-                            "just replying from the conversation?",
+            "(read files, search, run commands, edit code) rather than "
+            "just replying from the conversation?",
         },
         "model_tier": {
             "type": "choice",
             "instructions": "What is the cheapest Claude model tier that would "
-                            "handle this request well?",
+            "handle this request well?",
             "criteria": {
                 "haiku": "Mechanical or conversational — chat, quick lookups, "
-                         "renames, a single command",
+                "renames, a single command",
                 "sonnet": "Ordinary coding work — focused edits, standard "
-                          "features, debugging with a clear signal",
-                "opus": "Hardest reasoning — ambiguous multi-file work, "
-                        "architecture, subtle bugs",
+                "features, debugging with a clear signal",
+                "opus": "Hardest reasoning — ambiguous multi-file work, architecture, subtle bugs",
             },
         },
     }
@@ -289,40 +292,38 @@ def intent_bundle() -> dict:
 
 TIER_CRITERIA = {
     "haiku": "Bounded, mechanical work with a clear stop condition and no "
-             "design choices: search, fetch, count, summarize, list callers, "
-             "run a named command and report its output, apply a rename or "
-             "one-line change that the brief spells out exactly. If the "
-             "brief says precisely what to do and where, this is enough",
+    "design choices: search, fetch, count, summarize, list callers, "
+    "run a named command and report its output, apply a rename or "
+    "one-line change that the brief spells out exactly. If the "
+    "brief says precisely what to do and where, this is enough",
     "sonnet": "Ordinary implementation from a complete brief: focused edits "
-              "or a standard feature in named files, a bug with a clear "
-              "reproduction or error message, mechanical changes across "
-              "several files that follow an existing pattern. Needs local "
-              "judgment about code, not decisions about design",
+    "or a standard feature in named files, a bug with a clear "
+    "reproduction or error message, mechanical changes across "
+    "several files that follow an existing pattern. Needs local "
+    "judgment about code, not decisions about design",
     "opus": "Work where the brief leaves real decisions open: an ambiguous "
-            "multi-file change, a bug with no clear signal, design inside a "
-            "module, a review that must find what is wrong rather than "
-            "confirm what is right, changes in tangled or unfamiliar code. "
-            "The default for hard work",
+    "multi-file change, a bug with no clear signal, design inside a "
+    "module, a review that must find what is wrong rather than "
+    "confirm what is right, changes in tangled or unfamiliar code. "
+    "The default for hard work",
     "fable": "Only when a cheaper tier would likely return a confident wrong "
-             "answer: adversarial review of an architecture or a "
-             "security-sensitive design, debugging across systems where the "
-             "cause is unknown and the evidence conflicts, or a task whose "
-             "acceptance criteria cannot be written down in advance. Rare "
-             "and the most expensive; not for implementation",
+    "answer: adversarial review of an architecture or a "
+    "security-sensitive design, debugging across systems where the "
+    "cause is unknown and the evidence conflicts, or a task whose "
+    "acceptance criteria cannot be written down in advance. Rare "
+    "and the most expensive; not for implementation",
 }
 
 BRIEF_CHECKS = {
     "brief_writes": "Does this task ask the subagent to create, edit, or "
-                    "delete files, as opposed to only reading, searching, "
-                    "running commands, or reporting?",
-    "brief_paths": "Does the brief name the exact files or paths the "
-                   "subagent should work in?",
+    "delete files, as opposed to only reading, searching, "
+    "running commands, or reporting?",
+    "brief_paths": "Does the brief name the exact files or paths the subagent should work in?",
     "brief_acceptance": "Does the brief state acceptance criteria — how "
-                        "the subagent can tell the work is done?",
+    "the subagent can tell the work is done?",
     "brief_verify": "Does the brief name a command or check the subagent "
-                    "must run to verify its work?",
-    "brief_commit": "Does the brief say whether the subagent may commit, "
-                    "or that it must not?",
+    "must run to verify its work?",
+    "brief_commit": "Does the brief say whether the subagent may commit, or that it must not?",
 }
 
 
@@ -338,8 +339,8 @@ def subagent_bundle(tiers: dict | None = None, ask_tier: bool = True) -> dict:
         q["model_tier"] = {
             "type": "choice",
             "instructions": "A coding assistant is delegating this task to a "
-                            "subagent. What is the cheapest Claude model tier "
-                            "the subagent needs to do it well?",
+            "subagent. What is the cheapest Claude model tier "
+            "the subagent needs to do it well?",
             "criteria": {**TIER_CRITERIA, **(tiers or {})},
         }
     return q
@@ -349,13 +350,14 @@ def main() -> int:
     p = argparse.ArgumentParser(prog="jev", description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    ask_p = sub.add_parser("ask", help="raw request: read {state, questions, model?} JSON from stdin")
+    sub.add_parser("ask", help="raw request: read {state, questions, model?} JSON from stdin")
 
     choose_p = sub.add_parser("choose", help="pick one option for the given state")
     choose_p.add_argument("question", help="what to decide")
     choose_p.add_argument("state", help="state text, @file, or - for stdin")
-    choose_p.add_argument("--opt", action="append", required=True,
-                          metavar="NAME=DESC", help="option (repeatable)")
+    choose_p.add_argument(
+        "--opt", action="append", required=True, metavar="NAME=DESC", help="option (repeatable)"
+    )
 
     noul_p = sub.add_parser("noul", help="yes/no probability for the given state")
     noul_p.add_argument("question", help="yes/no question")
@@ -364,8 +366,12 @@ def main() -> int:
     score_p = sub.add_parser("score", help="rate state on an ordered rubric")
     score_p.add_argument("question", help="what to rate")
     score_p.add_argument("state", help="state text, @file, or - for stdin")
-    score_p.add_argument("--level", action="append", required=True,
-                         help="rubric level, lowest first (repeatable, >=2)")
+    score_p.add_argument(
+        "--level",
+        action="append",
+        required=True,
+        help="rubric level, lowest first (repeatable, >=2)",
+    )
 
     intent_p = sub.add_parser("intent", help="preset routing bundle for a user request")
     intent_p.add_argument("state", help="request text, @file, or - for stdin")
@@ -383,16 +389,21 @@ def main() -> int:
             criteria = dict(parse_opt(o) for o in args.opt)
             if len(criteria) < 2:
                 raise JevError("choose needs at least two --opt")
-            out = ask(read_state_arg(args.state), {"q": {
-                "type": "choice", "instructions": args.question, "criteria": criteria}})["q"]
+            out = ask(
+                read_state_arg(args.state),
+                {"q": {"type": "choice", "instructions": args.question, "criteria": criteria}},
+            )["q"]
         elif args.cmd == "noul":
-            out = ask(read_state_arg(args.state), {"q": {
-                "type": "noul", "instructions": args.question}})["q"]
+            out = ask(
+                read_state_arg(args.state), {"q": {"type": "noul", "instructions": args.question}}
+            )["q"]
         elif args.cmd == "score":
             if len(args.level) < 2:
                 raise JevError("score needs at least two --level")
-            out = ask(read_state_arg(args.state), {"q": {
-                "type": "score", "instructions": args.question, "criteria": args.level}})["q"]
+            out = ask(
+                read_state_arg(args.state),
+                {"q": {"type": "score", "instructions": args.question, "criteria": args.level}},
+            )["q"]
         else:
             out = ask(read_state_arg(args.state), intent_bundle())
         json.dump(out, sys.stdout)
@@ -404,6 +415,7 @@ def main() -> int:
     except (json.JSONDecodeError, KeyError) as e:
         print(f"jev: bad input: {e}", file=sys.stderr)
         return 2
+
 
 if __name__ == "__main__":
     sys.exit(main())

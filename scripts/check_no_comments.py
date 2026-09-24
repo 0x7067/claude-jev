@@ -48,7 +48,7 @@ def _js_regex_ok(text: str, i: int, line_start: int) -> bool:
     prev = text[j]
     if prev in "=(,{[!:?~&|^+-*%<>;":
         return True
-    frag = text[max(line_start, j - 10):j + 1]
+    frag = text[max(line_start, j - 10) : j + 1]
     for kw in ("return", "case", "typeof", "instanceof", "in", "of"):
         if frag.endswith(kw) and (len(frag) == len(kw) or not frag[-len(kw) - 1].isalnum()):
             return True
@@ -197,16 +197,16 @@ def _js_comment_hits(text: str) -> list[tuple[int, str]]:
 
 def _self_check() -> None:
     nested_ok = (
-        'const x = `outer ${out.summary ?? `https://example.com/${id} // not comment`}`;\n'
-        'const y = `a ${`b /* still string */ c`} d`;\n'
+        "const x = `outer ${out.summary ?? `https://example.com/${id} // not comment`}`;\n"
+        "const y = `a ${`b /* still string */ c`} d`;\n"
     )
     assert _js_comment_hits(nested_ok) == [], _js_comment_hits(nested_ok)
 
-    real_comment = 'const x = `outer ${`https://ok`} `;\n// real comment\n'
+    real_comment = "const x = `outer ${`https://ok`} `;\n// real comment\n"
     hits = _js_comment_hits(real_comment)
     assert len(hits) == 1 and hits[0][0] == 2, hits
 
-    nested_then_comment = 'const x = `${`https://a.com/${n}`}`; // after\n'
+    nested_then_comment = "const x = `${`https://a.com/${n}`}`; // after\n"
     hits = _js_comment_hits(nested_then_comment)
     assert len(hits) == 1 and "// after" in hits[0][1], hits
 
@@ -218,7 +218,10 @@ def _self_check() -> None:
 def iter_targets() -> list[Path]:
     listed = subprocess.run(
         ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", *SCAN_DIRS],
-        cwd=ROOT, capture_output=True, text=True, check=True,
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
     paths = (ROOT / name for name in listed.split("\0") if name)
     return sorted(p for p in paths if p.suffix in SCAN_SUFFIXES and p.is_file())
