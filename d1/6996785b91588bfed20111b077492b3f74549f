@@ -1,0 +1,29 @@
+CHANGELOG.md
+  s_f73d9ba9e717ea::t_c77f38cd26782c 7
+  s_f73d9ba9e717ea::t_1f05f46f3c16c6 8
+scripts/rules.py
+  s_f73d9ba9e717ea::t_008182cf469ec5 490
+  s_f73d9ba9e717ea::t_d2a082673a5b76 474-488,506-508,510,888,912,1088,1120-1121,1179,1201,1239,1281
+eval/rules_eval.py
+  s_f73d9ba9e717ea::t_b7e987d37bf8a3 76,90-92,117,207,236-239,485-488
+scripts/check_no_stubs.py
+  s_f73d9ba9e717ea::t_d63a348cf79091 1-78
+AGENTS.md
+  s_f73d9ba9e717ea::t_ff7762d1211718 71-77,102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d16996785b91588bfed20111b077492b3f74549f",
+  "prompts": {},
+  "sessions": {
+    "s_f73d9ba9e717ea": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d4bf-842e-755c-aa45-de62e40a40b3",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
