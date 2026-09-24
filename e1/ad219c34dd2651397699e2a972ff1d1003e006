@@ -1,0 +1,23 @@
+.claude-plugin/marketplace.json
+  s_f73d9ba9e717ea::t_b4d345add950c2 12
+.claude-plugin/plugin.json
+  s_f73d9ba9e717ea::t_f82e1024eb1187 3
+CHANGELOG.md
+  s_f73d9ba9e717ea::t_bfba33ac774137 7-8,11-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e1ad219c34dd2651397699e2a972ff1d1003e006",
+  "prompts": {},
+  "sessions": {
+    "s_f73d9ba9e717ea": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d4bf-842e-755c-aa45-de62e40a40b3",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
