@@ -468,17 +468,19 @@ def outside(rel: str) -> bool:
     return rel.startswith(os.pardir + os.sep) or rel == os.pardir
 
 
-def last_user_prompt(transcript_path: str | None) -> tuple[str, str]:
-    """What the user last asked for, and the uuid of that message — rules
-    like "don't touch generated files" only mean something against the task,
-    and the uuid marks which turn a hunk belongs to."""
+def last_user_prompt(transcript_path: str | None) -> tuple[str, str, bool]:
+    """What the user last asked for, the uuid of that message, and whether
+    the turn since then ran Bash — rules like "don't touch generated files"
+    only mean something against the task, the uuid marks which turn a hunk
+    belongs to, and Bash writes never reach the recorded hunks."""
     if not transcript_path:
-        return "", ""
+        return "", "", False
     try:
         with open(transcript_path, errors="replace") as f:
             lines = f.readlines()[-400:]
     except OSError:
-        return "", ""
+        return "", "", False
+    bash = False
     for line in reversed(lines):
         if len(line) > 500_000:
             continue
@@ -488,8 +490,20 @@ def last_user_prompt(transcript_path: str | None) -> tuple[str, str]:
             continue
         text = user_prompt(d)
         if text:
-            return d.get("uuid") or text[:MAX_TASK_CHARS], text[:MAX_TASK_CHARS]
-    return "", ""
+            return (d.get("uuid") or text[:MAX_TASK_CHARS],
+                    text[:MAX_TASK_CHARS], bash)
+        bash = bash or ran_bash(d)
+    return "", "", bash
+
+
+def ran_bash(d: dict) -> bool:
+    """Whether a transcript entry is an assistant message calling Bash."""
+    if d.get("type") != "assistant" or d.get("isSidechain"):
+        return False
+    c = (d.get("message") or {}).get("content")
+    return isinstance(c, list) and any(
+        isinstance(b, dict) and b.get("type") == "tool_use"
+        and b.get("name") == "Bash" for b in c)
 
 
 def user_prompt(d: dict) -> str:
@@ -1037,7 +1051,7 @@ def handle_edit(event: dict) -> dict:
     if not state:
         return {}
     sid = event.get("session_id") or "unknown"
-    turn, task = last_user_prompt(event.get("transcript_path"))
+    turn, task, _ = last_user_prompt(event.get("transcript_path"))
     update_state(sid, lambda st: record_hunk(st, turn, rel, state))
     if not in_scope:
         return {}
@@ -1092,7 +1106,7 @@ def handle_stop(event: dict) -> dict:
     a file that grew past its cap)."""
     sid = event.get("session_id") or "unknown"
     sstate = session_state(sid)
-    turn, task = last_user_prompt(event.get("transcript_path"))
+    turn, task, bash = last_user_prompt(event.get("transcript_path"))
     if not sstate["hunks"] or sstate.get("turn") != turn:
         return {}
     cwd = event.get("cwd") or os.getcwd()
@@ -1103,6 +1117,9 @@ def handle_stop(event: dict) -> dict:
 
     diff = "\n\n".join(sstate["hunks"])
     parts = [f"Files changed this turn: {', '.join(sstate['files'])}"]
+    if bash:
+        parts.append("This turn also ran shell commands. Changes they made "
+                     "are not in the diff below, so it is partial.")
     if task:
         parts.append(f"The user's current request: {task}")
     parts.append(f"The changes:\n{diff[:MAX_TURN_CHARS]}")
