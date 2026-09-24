@@ -4,6 +4,12 @@ A Claude Code plugin. Five hooks send small judgments to TypeSafe's Jev, a
 System One model that returns typed answers instead of text. `README.md`
 explains what each hook decides and why. Read it before changing behavior.
 
+## Vision
+
+`VISION.md` is the acceptance policy for what this plugin becomes and refuses to
+become. Check a non-trivial change against its align/resist pair before
+building it, and cite it when resisting.
+
 ## Layout
 
 | Path | What lives there |
