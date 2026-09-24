@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import collections
 import datetime
+import functools
 import glob
 import hashlib
 import json
@@ -59,9 +60,16 @@ def load_log(path: str, days: int | None) -> list[dict]:
     return out
 
 
+@functools.cache
+def transcripts() -> dict[str, str]:
+    index = {}
+    for path in glob.glob(os.path.join(PROJECTS, "*", "*.jsonl")):
+        index.setdefault(os.path.basename(path)[:-len(".jsonl")], path)
+    return index
+
+
 def transcript_for(session_id: str) -> str | None:
-    hits = glob.glob(os.path.join(PROJECTS, "*", f"{session_id}.jsonl"))
-    return hits[0] if hits else None
+    return transcripts().get(session_id)
 
 
 def parse_ts(value) -> datetime.datetime | None:
@@ -264,15 +272,37 @@ def print_calls(days: int | None) -> None:
         errs = sum(1 for c in cs if not c.get("ok", True))
         print(f"  {caller:<16}{len(cs):>7}{fmt_q(ms, 0.5):>11}{fmt_q(ms, 0.95):>9}"
               f"{errs:>8}{fmt_q(qs, 0.5):>11}")
-    bad = [c for c in calls if not c.get("ok", True)]
-    if bad:
-        print(f"  last error: {str(bad[-1].get('error'))[:100]}")
+    print("  Failures by caller (counts are failed calls, not HTTP status codes):")
+    for caller, cs in sorted(per.items()):
+        ordered = sorted(cs, key=lambda c: c.get("ts", ""))
+        bad = [c for c in ordered if not c.get("ok", True)]
+        recent = ordered[-20:]
+        failures = sum(not c.get("ok", True) for c in recent)
+        print(f"    {caller}: latest {ordered[-1].get('ts')}; "
+              f"last {len(recent)} calls: {failures} failed")
+        categories = collections.Counter()
+        for c in bad:
+            error = str(c.get("error", "unknown"))
+            status = re.match(r"HTTP (\d{3})\b", error)
+            category = (status.group(0) if status else
+                        "timeout" if "timed out" in error.lower() else "other")
+            categories[category] += 1
+        if bad:
+            print("      " + ", ".join(f"{k}: {v}" for k, v in sorted(categories.items())))
+            print(f"      last failure {bad[-1].get('ts')}: "
+                  f"{str(bad[-1].get('error'))[:160]}")
+            good = [c for c in ordered if c.get("ok", True)]
+            print(f"      last success: {good[-1].get('ts') if good else 'none in window'}")
+    print("  Calls alone cannot measure coverage: disabled hooks and missing keys make no API call.")
 
 
 def print_rule_outcomes(entries: list[dict]) -> None:
     """Whether a block led to a repair, and how often the same edit came back."""
     outcomes = rule_outcomes(entries)
     print("\nRule outcomes (what happened after an edit was blocked):")
+    print("  Heuristics, not verified fixes: repaired = flagged text touched; "
+          "abandoned = no later edit to that file.")
+    print("  Post-edit blocks do not undo writes. Outcomes exclude whole-turn blocks.")
     if not outcomes:
         print("  no blocked edits logged yet in this window.")
     else:

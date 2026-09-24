@@ -3,6 +3,17 @@
 How you phrase a question changes the answer more than which tool you pick.
 This document records measured effects on real codebases, not general advice.
 
+## Applying this to the rule verifier
+
+The measurements below concern small file-analysis samples. They are hypotheses
+for rule enforcement, not grounds to change its thresholds or skip short edits.
+The verifier already asks one binary question per rule in the direction of
+detecting a violation. See [the rule prompt review](rule-prompt-review.md) for a
+bounded comparison of concrete wording, applicability, and evidence sufficiency.
+A missing approval history or external definition is missing evidence, not proof
+of compliance. Validate candidate wording against both violations and compliant
+contrasts before changing the hook.
+
 ## Concrete beats abstract
 
 Tested on 5 source files with known ground truth (independently verified by

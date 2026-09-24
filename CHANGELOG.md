@@ -4,6 +4,19 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+- The rules `Stop` check judges only the edits made since the latest user prompt, and skips a turn with none. It had pooled every edit since the session began and judged them against the newest prompt. In session `ccb4b920`, that blocked twice on approved `.zprofile`/`.zshenv` edits from an earlier turn (0.91, 0.92) and spent the session's block budget. Hunks are keyed by the transcript uuid of the prompt they were made under. The request and the repair message now name this turn's files. See `docs/stop-hook-false-positive.md`.
+- When a turn with recorded edits also ran Bash, the `Stop` request tells Jev the diff is partial, since shell writes never reach the recorded hunks.
+- The rules hook reads and writes its session state under a file lock. Twenty parallel writers kept 20 of 20 hunks; without the lock they kept 5. It logs a swallowed exception as a `rules-error` row, which stats never scores, so a missing decision row can be explained.
+- `python3 eval/rules_eval.py turns` splits live Stop-hook checks by whether the turn made an Edit/Write of its own. It is offline and free. On the live log before the fix: 216 checks. 82 judged the turn's own edits (0 blocks, 30 flags). 107 came after Bash-only turns (2 blocks, 23 flags) and 27 after turns with no changes (0 blocks, 6 flags). Both blocks were the `ccb4b920` false positives. Under the turn scoping, those 134 checks and 29 flags no longer run.
+
+
+- Add a bounded rule-prompt comparison tool and document a reviewed live false positive, evidence limits, and candidate questions. Shipped rule prompts and thresholds are unchanged.
+
+- Stats breaks down failed calls by HTTP status or timeout for each caller, shows recent call health and last failure/success timestamps, and explains that rule outcomes are edit heuristics rather than verified repairs.
+
+- `scripts/stats.py` lists `~/.claude/projects` once instead of globbing it for every session. On this machine the report went from 9.1s to 0.9s cold and from 2.15s to 0.59s warm, with byte-identical output on a frozen copy of the logs.
+- The Status row in `/claude-jev` shows the status the pane already loaded as soon as it is pressed, then refreshes it from `jev.py status`.
+
 ## [0.19.0] - 2026-09-23
 
 - The prompt router no longer shows an `ops` hint. Live, 18 of 60 were right; on the 120 hand-labeled prompts humans agreed with 6 of 18. With `feature` already silent, replaying 1,613 prompts through the shipped rule goes from 31.1% accuracy and −0.9 lift to 50.2% and +18.4, at 13.8% coverage. The cleaned live log goes from 49.5% (111 hints) to 72.5% (51 hints). An intent is silent by having no entry in `GUIDANCE`; `SILENT_INTENTS` is gone. `eval/variants.py` gains `v9_hinted_only`, which scores v7 answers only where the hook shows a hint.

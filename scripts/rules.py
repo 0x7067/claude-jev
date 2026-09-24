@@ -33,6 +33,7 @@ Off when `rules` ("Rule checks" in /claude-jev or /config) is off.
 """
 
 import datetime
+import fcntl
 import hashlib
 import json
 import os
@@ -467,16 +468,19 @@ def outside(rel: str) -> bool:
     return rel.startswith(os.pardir + os.sep) or rel == os.pardir
 
 
-def last_user_prompt(transcript_path: str | None) -> str:
-    """What the user last asked for — rules like "don't touch generated
-    files" only mean something against the task."""
+def last_user_prompt(transcript_path: str | None) -> tuple[str, str, bool]:
+    """What the user last asked for, the uuid of that message, and whether
+    the turn since then ran Bash — rules like "don't touch generated files"
+    only mean something against the task, the uuid marks which turn a hunk
+    belongs to, and Bash writes never reach the recorded hunks."""
     if not transcript_path:
-        return ""
+        return "", "", False
     try:
         with open(transcript_path, errors="replace") as f:
             lines = f.readlines()[-400:]
     except OSError:
-        return ""
+        return "", "", False
+    bash = False
     for line in reversed(lines):
         if len(line) > 500_000:
             continue
@@ -484,17 +488,35 @@ def last_user_prompt(transcript_path: str | None) -> str:
             d = json.loads(line)
         except ValueError:
             continue
-        if d.get("type") != "user" or d.get("isSidechain"):
-            continue
-        c = (d.get("message") or {}).get("content")
-        text = c if isinstance(c, str) else ""
-        if isinstance(c, list):
-            text = "\n".join(b.get("text", "") for b in c
-                             if isinstance(b, dict) and b.get("type") == "text")
-        text = (text or "").strip()
-        if text and not text.startswith(("<", "/", "#")):
-            return text[:MAX_TASK_CHARS]
-    return ""
+        text = user_prompt(d)
+        if text:
+            return d.get("uuid") or "", text[:MAX_TASK_CHARS], bash
+        bash = bash or ran_bash(d)
+    return "", "", bash
+
+
+def ran_bash(d: dict) -> bool:
+    """Whether a transcript entry is an assistant message calling Bash."""
+    if d.get("type") != "assistant" or d.get("isSidechain"):
+        return False
+    c = (d.get("message") or {}).get("content")
+    return isinstance(c, list) and any(
+        isinstance(b, dict) and b.get("type") == "tool_use"
+        and b.get("name") == "Bash" for b in c)
+
+
+def user_prompt(d: dict) -> str:
+    """The text of a transcript entry the user typed as a request, or ""
+    for tool results, harness wrappers, slash commands, and subagent turns."""
+    if d.get("type") != "user" or d.get("isSidechain"):
+        return ""
+    c = (d.get("message") or {}).get("content")
+    text = c if isinstance(c, str) else ""
+    if isinstance(c, list):
+        text = "\n".join(b.get("text", "") for b in c
+                         if isinstance(b, dict) and b.get("type") == "text")
+    text = (text or "").strip()
+    return "" if text.startswith(("<", "/", "#")) else text
 
 
 def write_hunk(cwd: str, rel: str, content: str) -> str:
@@ -758,8 +780,23 @@ def save_state(session_id: str, state: dict) -> None:
         pass
 
 
-def record_hunk(state: dict, rel: str, hunk: str) -> None:
-    """What the agent changed, kept for the Stop-time turn check."""
+def update_state(session_id: str, change):
+    """Read, change, and write the session state under an exclusive lock, so
+    parallel PostToolUse hooks cannot drop each other's hunks. Returns what
+    `change` returns."""
+    os.makedirs(BLOCK_DIR, exist_ok=True)
+    with open(session_path(session_id) + ".lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        state = session_state(session_id)
+        result = change(state)
+        save_state(session_id, state)
+        return result
+
+
+def record_hunk(state: dict, turn: str, rel: str, hunk: str) -> None:
+    """What the agent changed this turn, kept for the Stop-time turn check."""
+    if state.get("turn") != turn:
+        state["turn"], state["hunks"], state["files"] = turn, [], []
     total = sum(len(h) for h in state["hunks"])
     room = MAX_TURN_CHARS - total
     if room <= 0:
@@ -1013,13 +1050,11 @@ def handle_edit(event: dict) -> dict:
     if not state:
         return {}
     sid = event.get("session_id") or "unknown"
-    sstate = session_state(sid)
-    record_hunk(sstate, rel, state)
+    turn, task, _ = last_user_prompt(event.get("transcript_path"))
+    update_state(sid, lambda st: record_hunk(st, turn, rel, state))
     if not in_scope:
-        save_state(sid, sstate)
         return {}
 
-    task = last_user_prompt(event.get("transcript_path"))
     context = file_context(file_path, needle_of(inp))
     siblings = sibling_modules(file_path)
     block = enclosing_block(file_path, needle_of(inp)) if ESCALATE else ""
@@ -1029,15 +1064,16 @@ def handle_edit(event: dict) -> dict:
     hits, probs, answers, skipped, escalated, cmp_chars = judge_edit(
         rel, state, task, in_scope, context, siblings, block, cwd)
     ms = int((time.monotonic() - t0) * 1000)
-    acting, flagged = [], []
-    for v in hits:
-        key = f"{v['rule']}|{rel}"
-        if v["band"] == "act" and sstate["blocks"].get(key, 0) < MAX_BLOCKS:
-            sstate["blocks"][key] = sstate["blocks"].get(key, 0) + 1
-            acting.append(v)
-        else:
-            flagged.append(v)
-    save_state(sid, sstate)
+    def spend_blocks(st: dict) -> list:
+        acting = []
+        for v in hits:
+            key = f"{v['rule']}|{rel}"
+            if v["band"] == "act" and st["blocks"].get(key, 0) < MAX_BLOCKS:
+                st["blocks"][key] = st["blocks"].get(key, 0) + 1
+                acting.append(v)
+        return acting
+    acting = update_state(sid, spend_blocks) if hits else []
+    flagged = [v for v in hits if v not in acting]
     log_decision(event, answers, probs,
                  [{k: v[k] for k in ("rule", "file", "line", "prob", "band")}
                   for v in hits],
@@ -1064,12 +1100,13 @@ def handle_edit(event: dict) -> dict:
 
 
 def handle_stop(event: dict) -> dict:
-    """Turn rules judge the session's changes as a whole — the questions a
+    """Turn rules judge the turn's changes as a whole — the questions a
     per-edit hunk can't answer (scope creep, an abstraction with one caller,
     a file that grew past its cap)."""
     sid = event.get("session_id") or "unknown"
     sstate = session_state(sid)
-    if not sstate["hunks"]:
+    turn, task, bash = last_user_prompt(event.get("transcript_path"))
+    if not turn or not sstate["hunks"] or sstate.get("turn") != turn:
         return {}
     cwd = event.get("cwd") or os.getcwd()
     rules = load_rules(cwd)
@@ -1077,9 +1114,11 @@ def handle_stop(event: dict) -> dict:
     if not turn_rules:
         return {}
 
-    task = last_user_prompt(event.get("transcript_path"))
     diff = "\n\n".join(sstate["hunks"])
-    parts = [f"Files changed this session: {', '.join(sstate['files'])}"]
+    parts = [f"Files changed this turn: {', '.join(sstate['files'])}"]
+    if bash:
+        parts.append("This turn also ran shell commands. Changes they made "
+                     "are not in the diff below, so it is partial.")
     if task:
         parts.append(f"The user's current request: {task}")
     parts.append(f"The changes:\n{diff[:MAX_TURN_CHARS]}")
@@ -1090,15 +1129,17 @@ def handle_stop(event: dict) -> dict:
 
     hits, probs = collect_verdicts(turn_rules, answers, ACT, FLAG)
     already = bool(event.get("stop_hook_active"))
-    acting, flagged = [], []
-    for v in hits:
-        if (v["band"] == "act" and not already
-                and sstate["stop_blocks"] < MAX_STOP_BLOCKS):
-            sstate["stop_blocks"] += 1
-            acting.append(v)
-        else:
-            flagged.append(v)
-    save_state(sid, sstate)
+
+    def spend_blocks(st: dict) -> list:
+        acting = []
+        for v in hits:
+            if (v["band"] == "act" and not already
+                    and st["stop_blocks"] < MAX_STOP_BLOCKS):
+                st["stop_blocks"] += 1
+                acting.append(v)
+        return acting
+    acting = update_state(sid, spend_blocks) if hits else []
+    flagged = [v for v in hits if v not in acting]
     log_decision(event, answers, probs,
                  [{k: v[k] for k in ("rule", "file", "line", "prob", "band")}
                   for v in hits],
@@ -1125,6 +1166,7 @@ def handle_stop(event: dict) -> dict:
 
 
 def main() -> None:
+    event = {}
     try:
         if not jev.enabled("rules"):
             return
@@ -1134,8 +1176,26 @@ def main() -> None:
         if out:
             json.dump(out, sys.stdout)
             sys.stdout.write("\n")
-    except Exception:
+    except Exception as e:
+        log_error(e, event)
         return
+
+
+def log_error(e: Exception, event: dict) -> None:
+    """A swallowed failure, logged so a missing decision row can be
+    explained. A separate kind, so stats never scores it as a decision."""
+    try:
+        with open(DEFAULT_LOG, "a") as f:
+            f.write(json.dumps({
+                "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "kind": "rules-error",
+                "session_id": event.get("session_id"),
+                "event": event.get("hook_event_name"),
+                "path": (event.get("tool_input") or {}).get("file_path"),
+                "error": f"{type(e).__name__}: {e}"[:300],
+            }) + "\n")
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     main()
