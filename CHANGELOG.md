@@ -4,7 +4,11 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-09-24
+
 - The rules hook counts the user's `AskUserQuestion` answers as part of the request. Jev saw only typed prompts, so an approval given by picking an option never reached it. In one session that blocked three approved edits: two to an axe spec (0.83, 0.85) and one to `feature_flag_spec.rb` (0.91), each under "do not weaken tests", after the user had picked the option that said the test expectation would change. The request now lists each answer since the latest prompt, as the question, the picked label and that option's description, capped at `MAX_ANSWER_CHARS`. Subagent results are skipped. The rules eval has not been rerun on this change.
+
+[0.20.0]: https://github.com/0x7067/claude-jev/compare/v0.19.2...v0.20.0
 
 ## [0.19.2] - 2026-09-24
 
