@@ -490,8 +490,7 @@ def last_user_prompt(transcript_path: str | None) -> tuple[str, str, bool]:
             continue
         text = user_prompt(d)
         if text:
-            return (d.get("uuid") or text[:MAX_TASK_CHARS],
-                    text[:MAX_TASK_CHARS], bash)
+            return d.get("uuid") or "", text[:MAX_TASK_CHARS], bash
         bash = bash or ran_bash(d)
     return "", "", bash
 
@@ -1107,7 +1106,7 @@ def handle_stop(event: dict) -> dict:
     sid = event.get("session_id") or "unknown"
     sstate = session_state(sid)
     turn, task, bash = last_user_prompt(event.get("transcript_path"))
-    if not sstate["hunks"] or sstate.get("turn") != turn:
+    if not turn or not sstate["hunks"] or sstate.get("turn") != turn:
         return {}
     cwd = event.get("cwd") or os.getcwd()
     rules = load_rules(cwd)
@@ -1167,6 +1166,7 @@ def handle_stop(event: dict) -> dict:
 
 
 def main() -> None:
+    event = {}
     try:
         if not jev.enabled("rules"):
             return
@@ -1177,11 +1177,11 @@ def main() -> None:
             json.dump(out, sys.stdout)
             sys.stdout.write("\n")
     except Exception as e:
-        log_error(e)
+        log_error(e, event)
         return
 
 
-def log_error(e: Exception) -> None:
+def log_error(e: Exception, event: dict) -> None:
     """A swallowed failure, logged so a missing decision row can be
     explained. A separate kind, so stats never scores it as a decision."""
     try:
@@ -1189,6 +1189,9 @@ def log_error(e: Exception) -> None:
             f.write(json.dumps({
                 "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "kind": "rules-error",
+                "session_id": event.get("session_id"),
+                "event": event.get("hook_event_name"),
+                "path": (event.get("tool_input") or {}).get("file_path"),
                 "error": f"{type(e).__name__}: {e}"[:300],
             }) + "\n")
     except Exception:
