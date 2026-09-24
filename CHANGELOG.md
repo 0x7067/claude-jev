@@ -4,8 +4,12 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-09-24
+
 - The rules hook records what a Bash command changes. A `PreToolUse` hook snapshots the git working tree, untracked files included, in a scratch index. The matching `PostToolUse` diffs it and records each changed file as a hunk, so the `Stop` check judges shell writes like edits. A turn whose snapshot fails, such as outside a git repo, still tells Jev its diff is partial. Snapshots took under 0.7s on the five slowest repos checked.
 - A failed Bash command's writes are recorded too, through a `PostToolUseFailure` hook. A turn with no recorded hunks but a partial diff still gets the `Stop` check, and so does a Bash write to a git-ignored path, which marks the diff partial.
+
+[0.19.2]: https://github.com/0x7067/claude-jev/compare/v0.19.1...v0.19.2
 
 ## [0.19.1] - 2026-09-24
 
