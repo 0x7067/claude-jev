@@ -1,0 +1,21 @@
+AGENTS.md
+  s_951b9bb55d2f3b::t_5e700f5e591194 30-31
+  s_951b9bb55d2f3b::t_94f01e9b55d991 1-18,20-29,32-50,53-84
+  s_951b9bb55d2f3b::t_3da20c6580d467 19,51-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "deeb873ee9a719ef88625d3807f38b0daee283bc",
+  "prompts": {},
+  "sessions": {
+    "s_951b9bb55d2f3b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6cc4b3d3-229d-47d5-8d86-cf79a477ddbc",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}

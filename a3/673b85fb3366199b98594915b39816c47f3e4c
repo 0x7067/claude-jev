@@ -1,0 +1,20 @@
+.claude/skills/release/SKILL.md
+  s_a1ee9515e64242::t_012398e6c3ae71 34-36
+  s_a1ee9515e64242::t_60051c6814c0fb 23-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a3673b85fb3366199b98594915b39816c47f3e4c",
+  "prompts": {},
+  "sessions": {
+    "s_a1ee9515e64242": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "774f7cd4-36a5-4fed-b6ed-ea9453f77d42",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

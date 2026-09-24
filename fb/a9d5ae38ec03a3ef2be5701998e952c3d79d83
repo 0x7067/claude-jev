@@ -1,0 +1,20 @@
+docs/compaction-design.md
+  s_951b9bb55d2f3b::t_bde19306f66157 235-245
+  s_951b9bb55d2f3b::t_0242508fd0cfb0 1-234,246-361
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fba9d5ae38ec03a3ef2be5701998e952c3d79d83",
+  "prompts": {},
+  "sessions": {
+    "s_951b9bb55d2f3b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6cc4b3d3-229d-47d5-8d86-cf79a477ddbc",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

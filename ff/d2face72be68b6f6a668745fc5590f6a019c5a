@@ -1,0 +1,19 @@
+.claude-plugin/plugin.json
+  s_fe7f83b04adc78::t_27e673c0ec0a01 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ffd2face72be68b6f6a668745fc5590f6a019c5a",
+  "prompts": {},
+  "sessions": {
+    "s_fe7f83b04adc78": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "skillful-grade",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,32 @@
+README.md
+  s_e839c6c682ec16::t_ae83a4fb059737 54
+AGENTS.md
+  s_e839c6c682ec16::t_ae83a4fb059737 44
+  s_e839c6c682ec16::t_9acf32f69f4abb 45
+CHANGELOG.md
+  s_e839c6c682ec16::t_9acf32f69f4abb 7
+  s_e839c6c682ec16::t_ae83a4fb059737 8
+scripts/jev.py
+  s_e839c6c682ec16::t_4191aa645dca55 119-120,128,134
+  s_e839c6c682ec16::t_9acf32f69f4abb 9-12,18,27-38,84-85,94,115-118,129,131,147,150,152
+.claude-plugin/plugin.json
+  s_e839c6c682ec16::t_ae83a4fb059737 3
+skills/jev/SKILL.md
+  s_e839c6c682ec16::t_ae83a4fb059737 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4dd3637723257c84442d2a20010e5aaa7340256e",
+  "prompts": {},
+  "sessions": {
+    "s_e839c6c682ec16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4a0e82a-6359-4328-8315-5d2bf16f4c12",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

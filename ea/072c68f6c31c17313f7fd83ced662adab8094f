@@ -1,0 +1,25 @@
+eval/rules_eval.py
+  s_8a580af607c2f7::t_d8d0b16e4a86e3 14-18,53-54,515-560,591-594
+scripts/rules.py
+  s_8a580af607c2f7::t_0e5612edce22e7 36,489-490,495-508,770-782,1041,1054-1063,1116-1126,1162-1163,1166-1179
+CHANGELOG.md
+  s_8a580af607c2f7::t_031a2a901b50d1 7-9
+eval/README.md
+  s_8a580af607c2f7::t_1b1663648ee0fb 44-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ea072c68f6c31c17313f7fd83ced662adab8094f",
+  "prompts": {},
+  "sessions": {
+    "s_8a580af607c2f7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fae89405-07f0-4260-8f52-58cc82d0062f",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

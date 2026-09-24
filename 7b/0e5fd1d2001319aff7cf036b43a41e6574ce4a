@@ -1,0 +1,19 @@
+.claude-plugin/marketplace.json
+  s_5cfb1a32fce1ec::t_c43bfbf0fc9523 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7b0e5fd1d2001319aff7cf036b43a41e6574ce4a",
+  "prompts": {},
+  "sessions": {
+    "s_5cfb1a32fce1ec": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "11cdb6fd-f296-4607-b38b-79778c096374",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

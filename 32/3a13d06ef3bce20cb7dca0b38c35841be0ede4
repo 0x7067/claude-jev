@@ -1,0 +1,19 @@
+docs/stop-hook-false-positive.md
+  s_8a580af607c2f7::t_becbbfc56d0e51 137-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "323a13d06ef3bce20cb7dca0b38c35841be0ede4",
+  "prompts": {},
+  "sessions": {
+    "s_8a580af607c2f7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fae89405-07f0-4260-8f52-58cc82d0062f",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

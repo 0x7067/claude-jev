@@ -1,0 +1,23 @@
+scripts/rules.py
+  s_ee8454a5eaae0e::t_b801378015834a 254
+.gitignore
+  s_ee8454a5eaae0e::t_b801378015834a 3
+eval/rules_eval.py
+  s_ee8454a5eaae0e::t_b801378015834a 31,176,178,181,184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8650c6a1bbcc6a989ea76499bb657d6d1916c14e",
+  "prompts": {},
+  "sessions": {
+    "s_ee8454a5eaae0e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae76bb4e-183e-445e-b19b-edeac62397fb",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

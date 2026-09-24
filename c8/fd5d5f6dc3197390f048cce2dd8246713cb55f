@@ -1,0 +1,19 @@
+CHANGELOG.md
+  s_8a580af607c2f7::t_fd20c7c92a5a99 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c8fd5d5f6dc3197390f048cce2dd8246713cb55f",
+  "prompts": {},
+  "sessions": {
+    "s_8a580af607c2f7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fae89405-07f0-4260-8f52-58cc82d0062f",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

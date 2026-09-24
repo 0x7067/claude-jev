@@ -1,0 +1,21 @@
+eval/README.md
+  s_773de635b6a909::t_161d32c0be9871 8,11-12,14,16-18,20-24,26-28,31-33,36-37,39-41,43,45-47,50-53,56-57
+eval/rules_eval.py
+  s_773de635b6a909::t_17750588573ad8 160,249,285,292
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0d978be06ab873216d58b1d881d64257fe415220",
+  "prompts": {},
+  "sessions": {
+    "s_773de635b6a909": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7c4cdae-369e-4a49-9e26-a8a7806fcaeb",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

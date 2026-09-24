@@ -1,0 +1,57 @@
+.cursor/skills/verify-claude-jev/bin/control-jev
+  s_e839c6c682ec16::t_30730e93ca0d7f 35-38
+  s_e839c6c682ec16::t_397301223cb6d3 247
+  s_e839c6c682ec16::t_37ab7d0eeb71e7 327
+.cursor/skills/verify-claude-jev/features/prompt-routing.md
+  s_e839c6c682ec16::t_682a0fb8ea5c50 17
+  s_e839c6c682ec16::t_b542be740a1181 35
+  s_e839c6c682ec16::t_15bb49738caf68 30
+.cursor/skills/verify-claude-jev/SKILL.md
+  s_e839c6c682ec16::t_bfea07b4428168 129-130
+  s_e839c6c682ec16::t_70e5fa3007c176 32,40-41
+  s_e839c6c682ec16::t_beb67274a6e65f 56-57
+  s_e839c6c682ec16::t_7f34c34d09a556 90-93
+  s_e839c6c682ec16::t_4f9013e0557ccd 159-163,171-173
+  s_e839c6c682ec16::t_779363c1dfff39 164-165
+  s_e839c6c682ec16::t_d9d0350fbe2ab9 14-17
+  s_e839c6c682ec16::t_e66fa6b3beb505 7
+  s_e839c6c682ec16::t_0b570d5d0caf56 121-122
+.cursor/skills/verify-claude-jev/features/rule-enforcement.md
+  s_e839c6c682ec16::t_7ae9d28b185cda 17
+  s_e839c6c682ec16::t_37cf78e8793019 35
+  s_e839c6c682ec16::t_cab32d03c59f17 26
+.cursor/skills/verify-claude-jev/features/session-compaction.md
+  s_e839c6c682ec16::t_3978a2a0c6ea40 29
+  s_e839c6c682ec16::t_d336913a1dd01c 35
+  s_e839c6c682ec16::t_f762651289682b 13-14
+.cursor/skills/verify-claude-jev/features/settings-pane.md
+  s_e839c6c682ec16::t_779363c1dfff39 12-18,26-27,37-38,44,50-54
+  s_e839c6c682ec16::t_e5b654d9ccf672 1-11,19-25,28-36,39-43,45-49
+.cursor/skills/verify-claude-jev/features/subagent-routing.md
+  s_e839c6c682ec16::t_e1d98571779f70 18
+  s_e839c6c682ec16::t_c1329e2b50fc43 31
+.cursor/skills/verify-claude-jev/features/jev-cli.md
+  s_e839c6c682ec16::t_708f70aa9b676e 3-7,11,17,28,30
+  s_e839c6c682ec16::t_779363c1dfff39 37
+.cursor/skills/verify-claude-jev/features/README.md
+  s_e839c6c682ec16::t_bf5f19c8cc289e 19-22
+  s_e839c6c682ec16::t_cc905e7ec3e1d1 84-85
+  s_e839c6c682ec16::t_779363c1dfff39 23
+  s_e839c6c682ec16::t_7b3e97a9f29c16 33-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa543c502621b56ea8986e83feeed4868ed0b67b",
+  "prompts": {},
+  "sessions": {
+    "s_e839c6c682ec16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4a0e82a-6359-4328-8315-5d2bf16f4c12",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

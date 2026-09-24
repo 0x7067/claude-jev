@@ -1,0 +1,53 @@
+.claude-plugin/plugin.json
+  s_39c7492a3a915f::t_10f7ba0ca06846 3
+README.md
+  s_39c7492a3a915f::t_c7128a1e60e871 72
+  s_39c7492a3a915f::t_e08b88ce067150 37
+  s_39c7492a3a915f::t_89ce3206eb6c58 35
+scripts/compactor.py
+  s_39c7492a3a915f::t_e40d8dec69f92d 313
+  s_39c7492a3a915f::t_6158801f07bfbc 41-43
+  s_39c7492a3a915f::t_38d6da6b661b80 394
+  s_39c7492a3a915f::t_79cef012af80cc 186-187
+  s_39c7492a3a915f::t_adebda60b53776 249-250
+  s_39c7492a3a915f::t_18c8f6788d4072 54-56
+  s_39c7492a3a915f::t_e2b7254a757b8e 332
+  s_39c7492a3a915f::t_8b2b9580dc64ed 215,218-227,236,243-244
+  s_39c7492a3a915f::t_16b798dff5352e 369-370
+  s_39c7492a3a915f::t_0c0bf6f1751b1c 470-472
+  s_39c7492a3a915f::t_5c930a06d8449b 53
+  s_39c7492a3a915f::t_482d2145cbe459 337
+  s_39c7492a3a915f::t_0ebf7f1096c482 367
+  s_39c7492a3a915f::t_6567f37dbd0bd8 268
+  s_39c7492a3a915f::t_93f109ee2bc2db 256
+  s_39c7492a3a915f::t_d4a8ea428cf189 331
+  s_39c7492a3a915f::t_4506b5b5c8d482 494
+  s_39c7492a3a915f::t_8f7fec9672af7c 204-205
+  s_39c7492a3a915f::t_2283d68222c301 336
+  s_39c7492a3a915f::t_825b0d309d8c0c 354-355
+  s_39c7492a3a915f::t_5eccdf77feffa3 294-297,300-305
+  s_39c7492a3a915f::t_7a532076420115 363
+  s_39c7492a3a915f::t_1d1f4c091715c5 481-482
+  s_39c7492a3a915f::t_eacd1dfa37626e 45
+  s_39c7492a3a915f::t_9eb0e5fa76f34b 298-299
+  s_39c7492a3a915f::t_b364b9ae4c3e38 469
+  s_39c7492a3a915f::t_f521d6b7298351 319-320,325-327,338
+  s_39c7492a3a915f::t_9897037d2dddc2 37-39
+  s_39c7492a3a915f::t_2066f71883af47 321
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "40e6570cb08df9cfd133d03f1555b892a5a34723",
+  "prompts": {},
+  "sessions": {
+    "s_39c7492a3a915f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e6cad5ec-ea76-4c1b-9310-490a706f1451",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

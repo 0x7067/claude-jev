@@ -1,0 +1,25 @@
+.claude/skills/release/release.py
+  s_b8dc91cf249887::t_579516f0bedb4c 1-153
+.claude/skills/release/SKILL.md
+  s_b8dc91cf249887::t_579516f0bedb4c 1-52
+AGENTS.md
+  s_b8dc91cf249887::t_579516f0bedb4c 22-23,167-168
+CHANGELOG.md
+  s_b8dc91cf249887::t_579516f0bedb4c 7-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "432eb71f90821a2beb98e2c0eda6763b093e9cb0",
+  "prompts": {},
+  "sessions": {
+    "s_b8dc91cf249887": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b8dfccfa-6c0b-44e5-a756-31e4bf7b5595",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

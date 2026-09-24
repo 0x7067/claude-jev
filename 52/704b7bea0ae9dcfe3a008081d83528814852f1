@@ -1,0 +1,23 @@
+AGENTS.md
+  s_52f08eadac0e76::t_86e8b5ce89b868 74-77
+README.md
+  s_52f08eadac0e76::t_86e8b5ce89b868 54-60,69,71,80
+.claude-plugin/plugin.json
+  s_52f08eadac0e76::t_86e8b5ce89b868 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "52704b7bea0ae9dcfe3a008081d83528814852f1",
+  "prompts": {},
+  "sessions": {
+    "s_52f08eadac0e76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "69b2223e-e573-4c48-b2bf-b154ce12619d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

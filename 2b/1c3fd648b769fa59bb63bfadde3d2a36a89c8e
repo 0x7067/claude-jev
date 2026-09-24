@@ -1,0 +1,19 @@
+skills/jev/SKILL.md
+  s_951b9bb55d2f3b::t_444b57acf4a4ca 4-9,15,17-19,23-24,36,42,46,48-53,55,57-60,62-64,66-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2b1c3fd648b769fa59bb63bfadde3d2a36a89c8e",
+  "prompts": {},
+  "sessions": {
+    "s_951b9bb55d2f3b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6cc4b3d3-229d-47d5-8d86-cf79a477ddbc",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}

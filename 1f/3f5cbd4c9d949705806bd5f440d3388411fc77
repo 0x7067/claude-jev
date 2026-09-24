@@ -1,0 +1,19 @@
+README.md
+  s_480c91df601a4e::t_026619db3f1d4b 9,11,16-23,25-45,54-57,164-170,178-181,184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1f3f5cbd4c9d949705806bd5f440d3388411fc77",
+  "prompts": {},
+  "sessions": {
+    "s_480c91df601a4e": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0bcac-396a-7159-bcb1-38e8babf5570",
+        "model": "swe-2"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

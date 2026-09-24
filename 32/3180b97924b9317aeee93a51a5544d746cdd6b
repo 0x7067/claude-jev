@@ -1,0 +1,29 @@
+README.md
+  s_bd2197e5a0c163::t_df89bd3be7e984 3,23-25,51,70-77,91,93,106-108
+  s_bd2197e5a0c163::t_65a99b8432bcf1 4,92
+scripts/observed.py
+  s_bd2197e5a0c163::t_313f99a757f7e9 1-224
+eval/replay.py
+  s_bd2197e5a0c163::t_313f99a757f7e9 49-51
+commands/stats.md
+  s_bd2197e5a0c163::t_454ce2af47bba7 1-23
+scripts/stats.py
+  s_bd2197e5a0c163::t_5f4ea3d3a2d075 1-136,139-154
+  s_bd2197e5a0c163::t_0c4e378a2e8af6 137-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "323180b97924b9317aeee93a51a5544d746cdd6b",
+  "prompts": {},
+  "sessions": {
+    "s_bd2197e5a0c163": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3b4cc5dc-7cca-4f27-a8fe-15651cf94d9c",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

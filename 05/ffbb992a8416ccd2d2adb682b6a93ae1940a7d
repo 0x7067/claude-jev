@@ -1,0 +1,27 @@
+.claude-plugin/plugin.json
+  s_14fb29cccff59e::t_f301892558e815 3
+CHANGELOG.md
+  s_14fb29cccff59e::t_f301892558e815 7-9
+scripts/stats.py
+  s_14fb29cccff59e::t_65791b152488f2 232-233
+scripts/prompt_router.py
+  s_14fb29cccff59e::t_65791b152488f2 200
+scripts/observed.py
+  s_14fb29cccff59e::t_65791b152488f2 81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "05ffbb992a8416ccd2d2adb682b6a93ae1940a7d",
+  "prompts": {},
+  "sessions": {
+    "s_14fb29cccff59e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2141dfa9-ff49-44ab-abd6-af0f48c85bd8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

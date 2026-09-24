@@ -1,0 +1,27 @@
+eval/rules_eval.py
+  s_52f08eadac0e76::t_dcf4cc364ada29 234,237-238,243
+  s_52f08eadac0e76::t_24dbe4733c34dc 305-311,313-325,333-334,339-352,413,415-419,501-503,538-542
+scripts/rules.py
+  s_52f08eadac0e76::t_dcf4cc364ada29 853-854,869,987-989,991,1005-1018,1020-1028,1055,1057-1058,1076-1077
+  s_52f08eadac0e76::t_5620bc1a98e853 65-79,394-395,412,703-733,909-935
+  s_52f08eadac0e76::t_6540dc237c4874 699-702,740,749,761,938-941,943,949-958
+  s_52f08eadac0e76::t_f1bccd370835d7 734,892,905,1019
+  s_52f08eadac0e76::t_f24e35c5425525 812-826,831
+  s_52f08eadac0e76::t_ca22e219f4df08 936-937
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "afa8017e6b725cc58b2d1089851f236eccc24c4d",
+  "prompts": {},
+  "sessions": {
+    "s_52f08eadac0e76": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "69b2223e-e573-4c48-b2bf-b154ce12619d",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+scripts/prompt_router.py
+  s_951b9bb55d2f3b::t_5e700f5e591194 16
+scripts/subagent_router.py
+  s_951b9bb55d2f3b::t_5e700f5e591194 14
+scripts/jev.py
+  s_951b9bb55d2f3b::t_5e700f5e591194 9,31,33
+scripts/rules.py
+  s_951b9bb55d2f3b::t_5e700f5e591194 30
+scripts/compactor.py
+  s_951b9bb55d2f3b::t_9d31e21099a23a 25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d39026aa03eb494d56c4847e6b549c6c631f30a7",
+  "prompts": {},
+  "sessions": {
+    "s_951b9bb55d2f3b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6cc4b3d3-229d-47d5-8d86-cf79a477ddbc",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

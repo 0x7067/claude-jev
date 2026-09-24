@@ -1,0 +1,55 @@
+eval/.gitignore
+  s_773de635b6a909::t_de0cec43e18bf3 2
+eval/fixtures/README.md
+  s_773de635b6a909::t_88980d7a3953b2 1-27
+eval/fixtures/ts/LICENSE.upstream
+  s_773de635b6a909::t_a2a77d61be7d2f 1-21
+eval/fixtures/ts/src/adapter/bun/websocket.ts
+  s_773de635b6a909::t_1f7595289c72bc 1-113
+eval/fixtures/ts/src/adapter/cloudflare-pages/handler.ts
+  s_773de635b6a909::t_aa6323c70919a7 1-123
+eval/fixtures/ts/src/client/utils.ts
+  s_773de635b6a909::t_3ee328acc432a0 1-117
+eval/fixtures/ts/src/middleware/body-limit/index.ts
+  s_773de635b6a909::t_b07692503127e4 1-111
+eval/fixtures/ts/src/middleware/request-id/request-id.ts
+  s_773de635b6a909::t_11d7e0243b8243 1-59
+eval/fixtures/ts/src/utils/cookie.ts
+  s_773de635b6a909::t_52194e6b30062a 1-280
+eval/fixtures/ts/src/utils/crypto.ts
+  s_773de635b6a909::t_fd187b31389007 1-58
+eval/fixtures/ts/src/utils/filepath.ts
+  s_773de635b6a909::t_45ef308ea899bf 1-60
+eval/fixtures/ts/src/utils/jwt/jwt.ts
+  s_773de635b6a909::t_3117844b5117b5 1-292
+eval/fixtures/ts/src/utils/url.ts
+  s_773de635b6a909::t_3281c7b90c7c4b 1-337
+eval/fixtures/yaml/k8s/workloads/apps/firecrawl.yaml
+  s_773de635b6a909::t_715d9d81d967a8 1-317
+eval/fixtures/yaml/k8s/workloads/apps/forgejo.yaml
+  s_773de635b6a909::t_4bd0ebb7f533d1 1-129
+eval/fixtures/yaml/k8s/workloads/infra/adguard.yaml
+  s_773de635b6a909::t_8036052c3ada3c 1-87
+eval/fixtures/yaml/k8s/workloads/media/sonarr.yaml
+  s_773de635b6a909::t_9e7406d60bf622 1-56
+eval/rules_corpus.jsonl
+  s_773de635b6a909::t_13cfacdb92f029 1-22
+eval/rules_stress.py
+  s_773de635b6a909::t_00a36b1edb13d8 2,4-26,31-34,39,44-45,48-101,105-107,110-117,122-126,128-131,133-136,138,140-148,150-187,190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "308a7b88f107b1e6963d5e6cae58df08e354a4aa",
+  "prompts": {},
+  "sessions": {
+    "s_773de635b6a909": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7c4cdae-369e-4a49-9e26-a8a7806fcaeb",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

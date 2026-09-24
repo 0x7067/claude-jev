@@ -1,0 +1,23 @@
+docs/compaction-design.md
+  s_b8dc91cf249887::t_4691b6941a9f0b 30-40
+scripts/compactor.py
+  s_b8dc91cf249887::t_f1ee6fce7749fc 221-240,242-249,253-255,259-274,290,395,397,434
+README.md
+  s_b8dc91cf249887::t_3c2fde3beb3d9b 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7a38193b5a64a6a0296661bdd32cdcb1143a7bef",
+  "prompts": {},
+  "sessions": {
+    "s_b8dc91cf249887": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b8dfccfa-6c0b-44e5-a756-31e4bf7b5595",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

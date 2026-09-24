@@ -1,0 +1,29 @@
+scripts/jev.py
+  s_a1ee9515e64242::t_2ed315e845cbb3 191-216,218-224,229-231
+.cursor/skills/verify-claude-jev/features/subagent-routing.md
+  s_a1ee9515e64242::t_84decf918064fc 12,32,37
+CHANGELOG.md
+  s_a1ee9515e64242::t_84decf918064fc 7-8
+AGENTS.md
+  s_a1ee9515e64242::t_84decf918064fc 13
+README.md
+  s_a1ee9515e64242::t_84decf918064fc 21-22
+scripts/subagent_router.py
+  s_a1ee9515e64242::t_2ed315e845cbb3 4-7,11-13,25,32,34,36-60,72-96,98,114-115,126-127,131-151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "021dc79e261e07c6dd5b394e14dd0e5bc219c4e2",
+  "prompts": {},
+  "sessions": {
+    "s_a1ee9515e64242": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "774f7cd4-36a5-4fed-b6ed-ea9453f77d42",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

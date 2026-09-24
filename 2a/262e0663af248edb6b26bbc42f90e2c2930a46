@@ -1,0 +1,45 @@
+.cursor/skills/verify-claude-jev/features/rule-enforcement.md
+  s_e839c6c682ec16::t_f8291ad1d8ab09 12
+  s_e839c6c682ec16::t_2d6a99b0a03921 32
+.cursor/skills/verify-claude-jev/features/stats.md
+  s_e839c6c682ec16::t_f8291ad1d8ab09 1-32
+.cursor/skills/verify-claude-jev/features/README.md
+  s_e839c6c682ec16::t_f8291ad1d8ab09 84-85
+  s_e839c6c682ec16::t_46efd43710e4c8 80-82
+.cursor/skills/verify-claude-jev/features/jev-cli.md
+  s_e839c6c682ec16::t_f8291ad1d8ab09 14-15,33-34,39
+.cursor/skills/verify-claude-jev/features/subagent-routing.md
+  s_e839c6c682ec16::t_f8291ad1d8ab09 34
+  s_e839c6c682ec16::t_b96aca1dc03e29 13
+.cursor/skills/verify-claude-jev/SKILL.md
+  s_e839c6c682ec16::t_f8291ad1d8ab09 33-35
+.cursor/skills/verify-claude-jev/features/settings-pane.md
+  s_e839c6c682ec16::t_f8291ad1d8ab09 27
+.cursor/skills/verify-claude-jev/features/prompt-routing.md
+  s_14fb29cccff59e::t_09d2cc42036751 12
+  s_e839c6c682ec16::t_f8291ad1d8ab09 32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2a262e0663af248edb6b26bbc42f90e2c2930a46",
+  "prompts": {},
+  "sessions": {
+    "s_14fb29cccff59e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2141dfa9-ff49-44ab-abd6-af0f48c85bd8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    },
+    "s_e839c6c682ec16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4a0e82a-6359-4328-8315-5d2bf16f4c12",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

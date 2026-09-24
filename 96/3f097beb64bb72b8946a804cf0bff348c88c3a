@@ -1,0 +1,21 @@
+.gitignore
+  s_e839c6c682ec16::t_100ac7cb1dd669 8-10
+CHANGELOG.md
+  s_e839c6c682ec16::t_001451bdff3539 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "963f097beb64bb72b8946a804cf0bff348c88c3a",
+  "prompts": {},
+  "sessions": {
+    "s_e839c6c682ec16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d4a0e82a-6359-4328-8315-5d2bf16f4c12",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

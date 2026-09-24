@@ -1,0 +1,21 @@
+scripts/compactor.py
+  s_22a28f52b48f00::t_11ce7c7491fdbc 191-199,203,206-207
+  s_22a28f52b48f00::t_a868bfc41f627f 337-339
+  s_22a28f52b48f00::t_ac219bf1917294 255,257,266,272-285
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ccbe5a9581b79a0e385142bb02cfd89d509b0c1a",
+  "prompts": {},
+  "sessions": {
+    "s_22a28f52b48f00": {
+      "agent_id": {
+        "tool": "windsurf",
+        "id": "dent-height",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}

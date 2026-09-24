@@ -1,0 +1,31 @@
+CHANGELOG.md
+  s_8919e5912302ac::t_d5721b1977ccf0 8-9
+hooks/hooks.json
+  s_8a580af607c2f7::t_54c5651d7108ba 68-79
+scripts/rules.py
+  s_8a580af607c2f7::t_045f763d7f9c6c 1104-1108,1118-1121,1165,1167-1169,1198-1199,1208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9cb5a40bea85c28ec401a221866be88827a65e93",
+  "prompts": {},
+  "sessions": {
+    "s_8919e5912302ac": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a313bcf9-573c-4fee-ba6b-49c20b5ea6ea",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    },
+    "s_8a580af607c2f7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fae89405-07f0-4260-8f52-58cc82d0062f",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
