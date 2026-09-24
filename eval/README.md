@@ -41,6 +41,12 @@ its rule was written against. A record without a sha is judged at the live
 checkout. `~/.claude/CLAUDE.md` has no sha, so the committed copy at
 `eval/global_CLAUDE.md` stands in for it.
 
+**Stop-hook turns.** `turns` reads the live log and transcripts, and asks Jev nothing. It splits every Stop-hook check by what that turn did since the user's prompt: its own edits, only Bash, or nothing. A check on a turn with no edits of its own judged an earlier turn's work (`docs/stop-hook-false-positive.md`).
+
+```bash
+python3 eval/rules_eval.py turns
+```
+
 Answers cache in `data/rules_cache.jsonl`, keyed by model, state and questions,
 so re-running after an unrelated change costs nothing.
 

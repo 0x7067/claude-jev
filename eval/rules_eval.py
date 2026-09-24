@@ -11,6 +11,11 @@
             and the extracted edits through scripts/rules.judge_edit — the
             same function the PostToolUse hook calls. Cached per (state,
             questions); re-runs are free.
+  turns     the live Stop-hook log rows (kind rules, phase turn) split by
+            whether that turn made an Edit/Write of its own since the user's
+            prompt. A row with none judged an earlier turn's edits, the
+            false positive in docs/stop-hook-false-positive.md. Offline and
+            free: it reads the log and transcripts, and asks Jev nothing.
   report    detection on violations (at the block and flag bands, and
             whether the *expected* rule is the one that fired), false blocks
             on compliant cases and real edits, per-rule calibration.
@@ -45,7 +50,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "scripts"))
 import jev
 import rules
-from observed import prompt_text
+from observed import EDIT_TOOLS, prompt_text
+import stats
 
 DATA = os.path.join(HERE, "data")
 EDITS = os.path.join(DATA, "rules_edits.jsonl")
@@ -506,6 +512,52 @@ def cmd_report(args) -> int:
     return 0
 
 
+def prompt_times(path: str) -> list:
+    out = []
+    try:
+        with open(path, errors="replace") as f:
+            for line in f:
+                if len(line) > 500_000:
+                    continue
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if rules.user_prompt(d):
+                    ts = stats.parse_ts(d.get("timestamp"))
+                    if ts:
+                        out.append(ts)
+    except OSError:
+        pass
+    return out
+
+
+def cmd_turns(args) -> int:
+    rows = [r for r in stats.load_log(args.log, args.days)
+            if r.get("kind") == "rules" and r.get("phase") == "turn"]
+    tally = collections.Counter()
+    for r in rows:
+        ts = stats.parse_ts(r.get("ts"))
+        path = stats.transcript_for(r.get("session_id") or "")
+        starts = [t for t in prompt_times(path) if t <= ts] if path and ts else []
+        if not starts:
+            tally["no transcript", bool(r.get("blocked")), bool(r.get("violations"))] += 1
+            continue
+        tools = [e["name"] for e in stats.tool_events(path)
+                 if e["ts"] and starts[-1] <= e["ts"] <= ts]
+        kind = ("own edits" if any(t in EDIT_TOOLS for t in tools)
+                else "bash only" if "Bash" in tools else "no changes")
+        tally[kind, bool(r.get("blocked")), bool(r.get("violations"))] += 1
+    print(f"{len(rows)} Stop-hook turn checks in {args.log}")
+    print(f"  {'turn made':<15}{'checks':>8}{'blocked':>9}{'flagged':>9}")
+    for kind in ("own edits", "bash only", "no changes", "no transcript"):
+        n = sum(v for k, v in tally.items() if k[0] == kind)
+        b = sum(v for k, v in tally.items() if k[0] == kind and k[1])
+        f = sum(v for k, v in tally.items() if k[0] == kind and k[2] and not k[1])
+        print(f"  {kind:<15}{n:>8}{b:>9}{f:>9}")
+    return 0
+
+
 def main() -> int:
     p = argparse.ArgumentParser(prog="rules_eval", description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -536,6 +588,10 @@ def main() -> int:
     rp.add_argument("--by-tag", action="store_true",
                     help="breakdown per tag; the case list shows only misses and false blocks")
     rp.set_defaults(fn=cmd_report)
+    t = sub.add_parser("turns", help="Stop-hook checks that judged no edits of their own")
+    t.add_argument("--log", default=os.path.join(jev.config_dir(), "jev-router-log.jsonl"))
+    t.add_argument("--days", type=int, default=None)
+    t.set_defaults(fn=cmd_turns)
     args = p.parse_args()
     return args.fn(args)
 
