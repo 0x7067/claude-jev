@@ -7,6 +7,7 @@ Coding agents spend the expensive model on small judgments. What kind of prompt 
 | `UserPromptSubmit` | Classify the prompt and add a one-line routing hint |
 | `PreToolUse` (`Agent\|Task`) | Pick the model tier a subagent spawns on, and check its brief |
 | `PostToolUse` (edits) | Judge the edit against your instruction files |
+| `PreToolUse` / `PostToolUse` (`Bash`) | Snapshot the git working tree around each command, so `Stop` sees what it changed |
 | `Stop` | Judge the whole turn against the rules that need it |
 | `session.compact` (experimental function hook) | Replace the compaction summary with the rows Jev keeps, so the summarizer never runs |
 
@@ -23,7 +24,7 @@ Then set `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY`. Without a key, the hooks tu
 
 If both variables are set, the plugin reads `TYPESAFE_API_KEY` first. A key that starts with `sk-or-`, in either variable, sends every call to [OpenRouter](https://openrouter.ai/docs/guides/community/jev)'s System One API instead of `api.typesafe.ai`. To use OpenRouter while both are set, pick it in the Provider row of `/claude-jev` or `/config`; a pinned provider reads only its own variable.
 
-Compaction needs Claude Code 2.1.278 or later, started with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`. That flag is Claude Code's own switch for its experimental function hooks. It's off by default and undocumented; `docs/claude-code-compaction-research.md` records what was verified. Function-hook modules load only in a trusted workspace, and never for subagents. The other four hooks work without the flag.
+Compaction needs Claude Code 2.1.278 or later, started with `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`. That flag is Claude Code's own switch for its experimental function hooks. It's off by default and undocumented; `docs/claude-code-compaction-research.md` records what was verified. Function-hook modules load only in a trusted workspace, and never for subagents. The other hooks work without the flag.
 
 Leave auto-compact on (the Auto-compact row in `/config`, stored as `autoCompactEnabled` in `~/.claude/settings.json`). With the flag set, auto-compaction goes through Jev like `/compact` does. With auto-compact off, a session runs until it hits the context limit, and then you have to run `/compact` yourself.
 
@@ -60,7 +61,7 @@ Some violations can't be seen in a hunk. Three subjects get a deterministic ast-
 
 At 0.80 the hook blocks the edit and cites file:line. Below 0.50 it says nothing. A rule that lands between the two gets a second call, with all such rules in one request. That call adds the enclosing function, read from disk after the edit, and the sentences around the rule in its instruction file. The second answer decides, and anything still uncertain is flagged to you only. About 8% of edits pay for that second call.
 
-A rule blocks the same file at most twice per session and only flags after that, since an unlandable repair would loop. Vendored, generated, and out-of-project paths are never judged. Whole-turn rules, such as minimal changes, no single-caller abstraction, and no unrelated refactoring, skip the per-edit check. The `Stop` hook judges them against all of the turn's hunks, where scope creep shows. It sees only hunks made since the latest user prompt, and skips a turn with none.
+A rule blocks the same file at most twice per session and only flags after that, since an unlandable repair would loop. Vendored, generated, and out-of-project paths are never judged. Whole-turn rules, such as minimal changes, no single-caller abstraction, and no unrelated refactoring, skip the per-edit check. The `Stop` hook judges them against all of the turn's hunks, where scope creep shows. It sees only hunks made since the latest user prompt, and skips a turn with none. Bash commands count too: a snapshot of the git working tree, untracked files included, is taken before each command and diffed after it. When a snapshot fails, for example outside a git repository, Jev is told the diff is partial.
 
 ## Compaction
 
