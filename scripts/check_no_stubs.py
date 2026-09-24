@@ -7,7 +7,9 @@ one place, the cached_ask wiring in eval/rules_eval.py's cmd_run, which
 wraps the real client with the cache. Any other .ask = assignment in
 tracked .py files under scripts/, eval/, and hooks/ is a stub and fails.
 Scans with tokenize, so string contents never trip it. .ts and .js are out
-of scope: the client is Python and the hook bridge never calls it.
+of scope: the client is Python and the hook bridge never calls it. Inside
+the sanctioned file only the wiring shapes pass: a right side of
+cached_ask(...) or jev.ask; any other right side there is a stub too.
 
 Exit 0 when clean; exit 1 and print paths/lines otherwise.
 Stdlib only. Invoked from the Verify section of AGENTS.md.
@@ -23,6 +25,13 @@ from pathlib import Path
 from check_no_comments import ROOT, iter_targets
 
 SANCTIONED = Path("eval") / "rules_eval.py"
+
+
+def wiring_allowed(rel: Path, snippet: str) -> bool:
+    if rel != SANCTIONED:
+        return False
+    rhs = snippet.split("=", 1)[1].strip()
+    return rhs == "jev.ask" or rhs.startswith("cached_ask(")
 
 
 def ask_assignments(text: str) -> list[tuple[int, str]]:
@@ -52,6 +61,12 @@ def _self_check() -> None:
     stub = "rules_eval.jev.ask = lambda state, questions: []\n"
     lines = ask_assignments(stub)
     assert len(lines) == 1 and lines[0][0] == 1, lines
+    assert wiring_allowed(SANCTIONED, "jev.ask = cached_ask(cache, cache_f)")
+    assert wiring_allowed(SANCTIONED, "rules.jev.ask = jev.ask")
+    assert not wiring_allowed(SANCTIONED, "jev.ask = lambda s, q: []")
+    assert not wiring_allowed(SANCTIONED, "jev.ask = capture")
+    assert not wiring_allowed(Path("scripts") / "rules.py",
+                              "jev.ask = cached_ask(c)")
 
 
 def main() -> int:
@@ -62,10 +77,11 @@ def main() -> int:
         if path.suffix != ".py":
             continue
         scanned += 1
-        if path.relative_to(ROOT) == SANCTIONED:
-            continue
+        rel = path.relative_to(ROOT)
         for lineno, snip in ask_assignments(path.read_text(encoding="utf-8")):
-            print(f"{path.relative_to(ROOT)}:{lineno}: stub banned: {snip}")
+            if wiring_allowed(rel, snip):
+                continue
+            print(f"{rel}:{lineno}: stub banned: {snip}")
             bad += 1
     if bad:
         print(f"check_no_stubs: {bad} hit(s)", file=sys.stderr)

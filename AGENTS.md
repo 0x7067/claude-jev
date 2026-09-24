@@ -74,7 +74,7 @@ explains what each hook decides and why. Read it before changing behavior.
   stubs, mocks, or monkeypatches the ask path — a stub proves wiring, not
   behavior — and cost is bounded by shrinking the sample, never by faking
   the client. Enforce with `python3 scripts/check_no_stubs.py` (exit 1 on
-  any `.ask =` assignment outside `eval/rules_eval.py`).
+  any `.ask =` assignment outside the sanctioned wiring).
 - Hook scripts import siblings through `sys.path.insert(0, dirname(__file__))`.
   Keep that, because Claude Code runs them from arbitrary directories.
 

@@ -492,7 +492,7 @@ def last_user_prompt(transcript_path: str | None) -> tuple[str, str, int]:
         with open(transcript_path, errors="replace") as f:
             lines = f.readlines()[-400:]
     except OSError:
-        return "", ""
+        return "", "", 0
     answers: list[str] = []
     for line in reversed(lines):
         if len(line) > 500_000:

@@ -88,7 +88,7 @@ def cmd_extract(args) -> int:
                     if t and not t.startswith(("<", "/", "#")):
                         task = t[: rules.MAX_TASK_CHARS]
                         answers = []
-                    elif "AskUserQuestion" in line:
+                    else:
                         answers += rules.question_answers(d)
                     continue
                 if d.get("type") != "assistant":
