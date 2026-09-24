@@ -1,0 +1,20 @@
+README.md
+  s_f73d9ba9e717ea::t_6deeabaead42f2 9,106,108,172,174-181
+  s_f73d9ba9e717ea::t_9078e640cd708a 228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e5001c3247ab95788b62dd0e2fa751393d94cad6",
+  "prompts": {},
+  "sessions": {
+    "s_f73d9ba9e717ea": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d4bf-842e-755c-aa45-de62e40a40b3",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
