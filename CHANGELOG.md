@@ -4,6 +4,8 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+- The rules hook counts the user's `AskUserQuestion` answers as part of the request. Jev saw only typed prompts, so an approval given by picking an option never reached it. In one session that blocked three approved edits: two to an axe spec (0.83, 0.85) and one to `feature_flag_spec.rb` (0.91), each under "do not weaken tests", after the user had picked the option that said the test expectation would change. The request now lists each answer since the latest prompt, as the question, the picked label and that option's description, capped at `MAX_ANSWER_CHARS`. Subagent results are skipped. The rules eval has not been rerun on this change.
+
 ## [0.19.2] - 2026-09-24
 
 - The rules hook records what a Bash command changes. A `PreToolUse` hook snapshots the git working tree, untracked files included, in a scratch index. The matching `PostToolUse` diffs it and records each changed file as a hunk, so the `Stop` check judges shell writes like edits. A turn whose snapshot fails, such as outside a git repo, still tells Jev its diff is partial. Snapshots took under 0.7s on the five slowest repos checked.

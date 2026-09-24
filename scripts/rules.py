@@ -53,6 +53,7 @@ FLAG = 0.50
 MAX_RULES = 40
 MAX_STATE_CHARS = 8000
 MAX_TASK_CHARS = 600
+MAX_ANSWER_CHARS = 1500
 MAX_BLOCKS = 2
 MAX_STOP_BLOCKS = 2
 MAX_HUNK_CHARS = 2000
@@ -481,6 +482,7 @@ def last_user_prompt(transcript_path: str | None) -> tuple[str, str]:
             lines = f.readlines()[-400:]
     except OSError:
         return "", ""
+    answers: list[str] = []
     for line in reversed(lines):
         if len(line) > 500_000:
             continue
@@ -490,8 +492,38 @@ def last_user_prompt(transcript_path: str | None) -> tuple[str, str]:
             continue
         text = user_prompt(d)
         if text:
-            return d.get("uuid") or "", text[:MAX_TASK_CHARS]
+            task = text[:MAX_TASK_CHARS]
+            if answers:
+                picked = "\n".join(reversed(answers))[:MAX_ANSWER_CHARS]
+                task += ("\nThe user's answers to the agent's questions since "
+                         f"that request:\n{picked}")
+            return d.get("uuid") or "", task
+        answers.extend(reversed(question_answers(d)))
     return "", ""
+
+
+def question_answers(d: dict) -> list[str]:
+    """The user's picks from an AskUserQuestion result, each with the chosen
+    option's description, so an approval given there counts like one typed.
+    Only the main thread's results: a subagent cannot answer for the user."""
+    result = d.get("toolUseResult")
+    if d.get("type") != "user" or d.get("isSidechain") or not isinstance(result, dict):
+        return []
+    answers = result.get("answers")
+    if not isinstance(answers, dict):
+        return []
+    options = {q.get("question"): q.get("options") or []
+               for q in result.get("questions") or [] if isinstance(q, dict)}
+    out = []
+    for question, answer in answers.items():
+        if not isinstance(answer, str):
+            continue
+        picked = set(answer.split(", "))
+        notes = [o.get("description", "") for o in options.get(question, [])
+                 if isinstance(o, dict) and o.get("label") in picked | {answer}]
+        described = f" ({'; '.join(n for n in notes if n)})" if any(notes) else ""
+        out.append(f"Q: {question} A: {answer}{described}")
+    return out
 
 
 def user_prompt(d: dict) -> str:
