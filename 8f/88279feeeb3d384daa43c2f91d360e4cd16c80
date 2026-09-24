@@ -1,0 +1,39 @@
+scripts/rules.py
+  s_8919e5912302ac::t_fb2d798e5f3f1a 3,42,473-476,478,483,493-494,785,788-793,1047,1096-1184,1191,1202,1258-1264
+hooks/hooks.json
+  s_8a580af607c2f7::t_18ae9fa6863bfd 24-33,46-55
+.claude-plugin/marketplace.json
+  s_8919e5912302ac::t_747a32eab03ffa 12
+.claude-plugin/plugin.json
+  s_8919e5912302ac::t_83dc5836d261c4 3
+AGENTS.md
+  s_8919e5912302ac::t_b96ae68a94d910 14
+CHANGELOG.md
+  s_8919e5912302ac::t_97442ba5779907 7
+docs/stop-hook-false-positive.md
+  s_8919e5912302ac::t_7cfd2a2ceec776 141-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8f88279feeeb3d384daa43c2f91d360e4cd16c80",
+  "prompts": {},
+  "sessions": {
+    "s_8919e5912302ac": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a313bcf9-573c-4fee-ba6b-49c20b5ea6ea",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    },
+    "s_8a580af607c2f7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fae89405-07f0-4260-8f52-58cc82d0062f",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
