@@ -1,0 +1,27 @@
+scripts/check_no_stubs.py
+  s_f73d9ba9e717ea::t_db4e0567641a1f 10-12,30-36,64-69,80,82-84
+AGENTS.md
+  s_f73d9ba9e717ea::t_e8878b2f7df0b9 77
+scripts/rules.py
+  s_f73d9ba9e717ea::t_7b0b0f81e1f6c5 495
+eval/rules_eval.py
+  s_f73d9ba9e717ea::t_6f429f67c3cd55 91
+CHANGELOG.md
+  s_f73d9ba9e717ea::t_a1229dfa3a73b0 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "005b56d1e06ded0c93244f23988d2ca112e61b3e",
+  "prompts": {},
+  "sessions": {
+    "s_f73d9ba9e717ea": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d4bf-842e-755c-aa45-de62e40a40b3",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
