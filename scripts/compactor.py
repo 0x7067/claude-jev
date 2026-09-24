@@ -56,17 +56,25 @@ TARGET_CHARS = 16000
 
 STATS_LOG = os.path.join(jev.config_dir(), "jev-compact-log.jsonl")
 TAIL_LINES = 5000
-ROWS_HEADER = ("This session's history was compacted by Jev. Every message below "
-               "was judged still needed and kept verbatim, or as a head with an "
-               "elision note; everything else was dropped. Continue the last task "
-               "without asking the user to repeat anything.")
+ROWS_HEADER = (
+    "This session's history was compacted by Jev. Every message below "
+    "was judged still needed and kept verbatim, or as a head with an "
+    "elision note; everything else was dropped. Continue the last task "
+    "without asking the user to repeat anything."
+)
 
-META_PREFIXES = ("<command-", "<local-command", "<system-reminder", "<caveat",
-                 "<bash-", "<task-notification")
+META_PREFIXES = (
+    "<command-",
+    "<local-command",
+    "<system-reminder",
+    "<caveat",
+    "<bash-",
+    "<task-notification",
+)
 
 SOURCE_OK = ("typed", "queued", "suggestion_accepted")
 
-ACK = re.compile(r"(ok|yes|no|thanks|continue)\.?", re.I)
+ACK = re.compile(r"(ok|yes|no|thanks|continue)\.?", re.IGNORECASE)
 
 
 def block_text(content) -> str:
@@ -133,8 +141,7 @@ def compaction_marker(d: dict, text: str) -> bool:
     return text.startswith("<command-") and "claude-jev:compact" in text[:200]
 
 
-def visible_text(d: dict, text: str | None = None,
-                 strict_source: bool = False) -> str | None:
+def visible_text(d: dict, text: str | None = None, strict_source: bool = False) -> str | None:
     """The judge-visible text of one transcript line, or None. Sidechains,
     non-message lines, harness injections, meta wrappers, and trivial acks are
     invisible. `text` is the already-flattened content, when the caller has it."""
@@ -183,8 +190,7 @@ def transcript_blocks(transcript_path: str) -> list[dict]:
     return blocks if cut_at is None else blocks[:cut_at]
 
 
-def session_context(blocks: list[dict], cwd: str | None,
-                    directive: str | None) -> str:
+def session_context(blocks: list[dict], cwd: str | None, directive: str | None) -> str:
     """The part of every chunk's state that does not depend on the chunk:
     working directory, the `/compact <text>` directive, and the session's
     goals. Built once per compaction; the keep question needs the goals, so
@@ -194,8 +200,7 @@ def session_context(blocks: list[dict], cwd: str | None,
         lines.append(f"Working directory: {cwd}")
     if directive:
         lines.append(f"The user asked this compaction to: {directive}")
-    goal = "\n".join(b["text"][:300] for b in blocks
-                     if b["role"] == "user")[-HEADER_CHARS:]
+    goal = "\n".join(b["text"][:300] for b in blocks if b["role"] == "user")[-HEADER_CHARS:]
     if goal.strip():
         lines.append(f"Most recent user requests:\n{goal}")
     return "\n".join(lines)
@@ -216,26 +221,27 @@ def compact_state(blocks: list[dict], lo: int, hi: int, context: str) -> str:
     ]
     if context:
         header.append(context)
-    body = "\n\n".join(f"[{i}] [{blocks[i]['role']}] {blocks[i]['text'][:BLOCK_CHARS]}"
-                       for i in range(lo, hi))
+    body = "\n\n".join(
+        f"[{i}] [{blocks[i]['role']}] {blocks[i]['text'][:BLOCK_CHARS]}" for i in range(lo, hi)
+    )
     return "\n".join(header) + "\n\n" + body
 
 
 CHECKS = {
     "constraint": "Does block [{i}] state a requirement, restriction, or preference "
-                  "from the user about how the work must be done: something not "
-                  "to touch, a tool or approach to use, a deadline, a scope limit?",
+    "from the user about how the work must be done: something not "
+    "to touch, a tool or approach to use, a deadline, a scope limit?",
     "decision": "Does block [{i}] record a decision about the work together with "
-                "its reason: an approach chosen, an alternative rejected, a root "
-                "cause identified?",
+    "its reason: an approach chosen, an alternative rejected, a root "
+    "cause identified?",
     "error": "Does block [{i}] contain an exact error message, failing test "
-             "output, or unexpected result that the agent would have to "
-             "reproduce to see again?",
+    "output, or unexpected result that the agent would have to "
+    "reproduce to see again?",
     "open": "Does block [{i}] name work still to be done: a next step, a pending "
-            "task, or a question waiting for the user's answer?",
+    "task, or a question waiting for the user's answer?",
     "artifact": "Does block [{i}] show file contents, a directory listing, or "
-                "command output that the agent could get again by re-running "
-                "the same tool?",
+    "command output that the agent could get again by re-running "
+    "the same tool?",
 }
 KEEP_CHECKS = ("constraint", "decision", "error", "open")
 VERBATIM_CHECKS = ("constraint", "error")
@@ -248,14 +254,16 @@ def keep_questions(n: int, directive: str | None = None) -> dict:
 
     `/compact <text>` is named in the state, not repeated per question; the
     checks defer to it: what the user asked to keep outranks their score."""
-    asked = (" The state names what the user asked this compaction to keep; "
-             "a block that request covers counts as yes here."
-             if directive else "")
+    asked = (
+        " The state names what the user asked this compaction to keep; "
+        "a block that request covers counts as yes here."
+        if directive
+        else ""
+    )
     questions = {}
     for i in range(n):
         for name, text in CHECKS.items():
-            questions[f"{name}_{i}"] = {"type": "noul",
-                                        "instructions": text.format(i=i) + asked}
+            questions[f"{name}_{i}"] = {"type": "noul", "instructions": text.format(i=i) + asked}
     return questions
 
 
@@ -275,8 +283,7 @@ def verdicts(answers: dict, i: int) -> tuple[float | None, float | None, dict]:
     return keep, full, checks
 
 
-def ask_chunked(blocks: list[dict], cwd: str | None, n: int,
-                directive: str | None = None) -> dict:
+def ask_chunked(blocks: list[dict], cwd: str | None, n: int, directive: str | None = None) -> dict:
     """Judge the first `n` blocks, one request per BLOCKS_PER_CHUNK of them.
 
     Each request carries only its own blocks, so wall time stays ~1 round trip
@@ -284,13 +291,11 @@ def ask_chunked(blocks: list[dict], cwd: str | None, n: int,
     """
     questions = keep_questions(n, directive)
     context = session_context(blocks, cwd, directive)
-    ranges = [(i, min(i + BLOCKS_PER_CHUNK, n))
-              for i in range(0, n, BLOCKS_PER_CHUNK)]
+    ranges = [(i, min(i + BLOCKS_PER_CHUNK, n)) for i in range(0, n, BLOCKS_PER_CHUNK)]
 
     def one(r: tuple[int, int]) -> dict:
         lo, hi = r
-        q = {k: questions[k] for i in range(lo, hi)
-             for k in (f"{name}_{i}" for name in CHECKS)}
+        q = {k: questions[k] for i in range(lo, hi) for k in (f"{name}_{i}" for name in CHECKS)}
 
         try:
             return jev.ask(compact_state(blocks, lo, hi, context), q)
@@ -301,13 +306,13 @@ def ask_chunked(blocks: list[dict], cwd: str | None, n: int,
         answers = one(ranges[0])
     else:
         answers = {}
-        with concurrent.futures.ThreadPoolExecutor(
-                max_workers=min(len(ranges), MAX_WORKERS)) as ex:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(ranges), MAX_WORKERS)) as ex:
             for part in ex.map(one, ranges):
                 answers.update(part)
     if not answers:
         raise jev.JevError("every chunk failed")
     return answers
+
 
 ELISION = "[… {n} chars elided by jev-compact — re-read the file or re-run the command if needed]"
 
@@ -343,8 +348,7 @@ def fit_kept(kept: list[dict], blocks: list[dict]) -> list[dict]:
     if total <= TARGET_CHARS:
         return kept
     movable = [k for k in kept if not k.get("pinned")]
-    for k in sorted((k for k in movable if k["kind"] == "full"),
-                    key=lambda k: k["full"]):
+    for k in sorted((k for k in movable if k["kind"] == "full"), key=lambda k: k["full"]):
         if total <= TARGET_CHARS:
             break
         shorter = truncate_block(blocks[k["i"]]["text"])
@@ -361,6 +365,7 @@ def fit_kept(kept: list[dict], blocks: list[dict]) -> list[dict]:
         k["kind"] = "dropped"
     return [k for k in kept if k["kind"] != "dropped"]
 
+
 REF_CHARS = 160
 
 
@@ -370,15 +375,14 @@ def block_kind(text: str) -> str:
     re-fetched, so the kind is what makes the row list scorable."""
     if text.startswith("[tool_use"):
         end = text.find("]")
-        name = text[len("[tool_use"):end].strip() if end > 0 else ""
+        name = text[len("[tool_use") : end].strip() if end > 0 else ""
         return f"tool_use:{name or '?'}"
     if text.startswith("[tool_result]"):
         return "tool_result"
     return "text"
 
 
-def block_rows(blocks: list[dict], kept: list[dict], answers: dict,
-               n_judged: int) -> list[dict]:
+def block_rows(blocks: list[dict], kept: list[dict], answers: dict, n_judged: int) -> list[dict]:
     """One record per input block: what Jev scored it and what became of it.
 
     Built after `fit_kept`, so a block the digest cap dropped or downgraded
@@ -396,17 +400,19 @@ def block_rows(blocks: list[dict], kept: list[dict], answers: dict,
         else:
             verdict = k["kind"]
         keep, full, checks = verdicts(answers, i) if i < n_judged else (None, None, {})
-        out.append({
-            "checks": checks,
-            "i": i,
-            "role": b["role"],
-            "kind": block_kind(b["text"]),
-            "chars": len(b["text"]),
-            "keep": keep,
-            "full": full,
-            "verdict": verdict,
-            "ref": " ".join(b["text"].split())[:REF_CHARS],
-        })
+        out.append(
+            {
+                "checks": checks,
+                "i": i,
+                "role": b["role"],
+                "kind": block_kind(b["text"]),
+                "chars": len(b["text"]),
+                "keep": keep,
+                "full": full,
+                "verdict": verdict,
+                "ref": " ".join(b["text"].split())[:REF_CHARS],
+            }
+        )
     return out
 
 
@@ -417,8 +423,9 @@ def judge(transcript_path: str, cwd: str | None) -> tuple[list[str], dict]:
     return [k["text"] for k in kept], stats
 
 
-def select_blocks(blocks: list[dict], cwd: str | None,
-                  directive: str | None = None) -> tuple[list[dict], dict]:
+def select_blocks(
+    blocks: list[dict], cwd: str | None, directive: str | None = None
+) -> tuple[list[dict], dict]:
     """Jev keep/truncate/drop over labeled blocks. Each kept entry carries the
     block index `i`, its digest `text`, and `kind` (full or truncated), so the
     caller can hand back either the text or the row the block came from."""
@@ -431,45 +438,64 @@ def select_blocks(blocks: list[dict], cwd: str | None,
     kept: list[dict] = []
     for i, b in enumerate(blocks):
         if i >= n_judged:
-            kept.append({"i": i, "text": cut_marked(b["text"], KEEP_CHARS),
-                         "kind": "full", "pinned": True})
+            kept.append(
+                {"i": i, "text": cut_marked(b["text"], KEEP_CHARS), "kind": "full", "pinned": True}
+            )
             continue
         keep, full, _ = verdicts(answers, i)
         if keep is None or keep >= KEEP_THRESHOLD:
-
-            kind = "truncated" if keep is not None and full is not None\
-                and full < KEEP_THRESHOLD else "full"
-            kept.append({
-                "i": i,
-                "text": truncate_block(b["text"]) if kind == "truncated"
-                else cut_marked(b["text"], KEEP_CHARS),
-                "kind": kind,
-                "keep": keep if keep is not None else 1.0,
-                "full": full if full is not None else 1.0,
-            })
+            kind = (
+                "truncated"
+                if keep is not None and full is not None and full < KEEP_THRESHOLD
+                else "full"
+            )
+            kept.append(
+                {
+                    "i": i,
+                    "text": truncate_block(b["text"])
+                    if kind == "truncated"
+                    else cut_marked(b["text"], KEEP_CHARS),
+                    "kind": kind,
+                    "keep": keep if keep is not None else 1.0,
+                    "full": full if full is not None else 1.0,
+                }
+            )
 
     kept_idx = {k["i"] for k in kept}
     paired: list[dict] = []
     for k in kept:
         i = k["i"]
-        if (k["text"].startswith("[tool_result]") and i > 0
-                and i - 1 not in kept_idx
-                and blocks[i - 1]["text"].startswith("[tool_use")):
-            paired.append({"i": i - 1, "text": cut_marked(blocks[i - 1]["text"], KEEP_CHARS),
-                           "kind": "full", "keep": k.get("keep", 1.0), "full": k.get("full", 1.0)})
+        if (
+            k["text"].startswith("[tool_result]")
+            and i > 0
+            and i - 1 not in kept_idx
+            and blocks[i - 1]["text"].startswith("[tool_use")
+        ):
+            paired.append(
+                {
+                    "i": i - 1,
+                    "text": cut_marked(blocks[i - 1]["text"], KEEP_CHARS),
+                    "kind": "full",
+                    "keep": k.get("keep", 1.0),
+                    "full": k.get("full", 1.0),
+                }
+            )
             kept_idx.add(i - 1)
         paired.append(k)
     kept = fit_kept(paired, blocks)
-    stats = {"judged": n_judged, "pinned": len(blocks) - n_judged,
-             "kept": len(kept),
-             "truncated": sum(1 for k in kept if k["kind"] == "truncated"),
-             "escalated": sum(1 for k in kept if k.get("escalated")),
-             "chars_before": sum(len(b["text"]) for b in blocks),
-             "chars_after": sum(len(k["text"]) for k in kept), "ms": ms,
-             "rows": block_rows(blocks, kept, answers, n_judged)}
+    stats = {
+        "judged": n_judged,
+        "pinned": len(blocks) - n_judged,
+        "kept": len(kept),
+        "truncated": sum(1 for k in kept if k["kind"] == "truncated"),
+        "escalated": sum(1 for k in kept if k.get("escalated")),
+        "chars_before": sum(len(b["text"]) for b in blocks),
+        "chars_after": sum(len(k["text"]) for k in kept),
+        "ms": ms,
+        "rows": block_rows(blocks, kept, answers, n_judged),
+    }
     stats["est_tokens_after"] = stats["chars_after"] // 4
-    stats["reduction"] = round(
-        1 - stats["chars_after"] / max(stats["chars_before"], 1), 3)
+    stats["reduction"] = round(1 - stats["chars_after"] / max(stats["chars_before"], 1), 3)
     return kept, stats
 
 
@@ -484,10 +510,16 @@ def row_text(row: dict) -> str | None:
     line is; the engine already drops isMeta rows.
     """
     content = [{"type": "text", "text": row.get("text") or ""}]
-    content += [{"type": "tool_use", "name": u.get("tool", "?"), "input": u.get("input", {})}
-                for u in row.get("toolUses") or [] if isinstance(u, dict)]
-    content += [{"type": "tool_result", "content": r.get("text")}
-                for r in row.get("toolResults") or [] if isinstance(r, dict)]
+    content += [
+        {"type": "tool_use", "name": u.get("tool", "?"), "input": u.get("input", {})}
+        for u in row.get("toolUses") or []
+        if isinstance(u, dict)
+    ]
+    content += [
+        {"type": "tool_result", "content": r.get("text")}
+        for r in row.get("toolResults") or []
+        if isinstance(r, dict)
+    ]
     return judgeable(row.get("role"), block_text(content).strip())
 
 
@@ -533,12 +565,17 @@ def log_stats(session_id: str | None, stats: dict) -> None:
     try:
         os.makedirs(os.path.dirname(STATS_LOG), exist_ok=True)
         with open(STATS_LOG, "a") as f:
-            f.write(json.dumps({
-                "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "session_id": session_id,
-                "source": "rows",
-                **stats,
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        "session_id": session_id,
+                        "source": "rows",
+                        **stats,
+                    }
+                )
+                + "\n"
+            )
     except OSError:
         pass
 
@@ -579,10 +616,18 @@ def rows(stdin) -> int:
     stats["passed_through"] = sum(1 for r in out if r.get("handle"))
     log_stats(event.get("session_id"), stats)
     what = f"{stats['trigger']} compaction" if stats["trigger"] else "compaction"
-    print(json.dumps({"messages": out, "summary": (
-        f"{what} replaced by {len(out)} rows (kept {stats['kept']}, "
-        f"{stats['truncated']} truncated, {stats['reduction']:.0%} smaller, "
-        f"{stats['ms']} ms)")}))
+    print(
+        json.dumps(
+            {
+                "messages": out,
+                "summary": (
+                    f"{what} replaced by {len(out)} rows (kept {stats['kept']}, "
+                    f"{stats['truncated']} truncated, {stats['reduction']:.0%} smaller, "
+                    f"{stats['ms']} ms)"
+                ),
+            }
+        )
+    )
     return 0
 
 
@@ -592,9 +637,9 @@ def main() -> int:
             return rows(sys.stdin)
         except Exception as e:
             return fallback(f"compactor.py: {e}")
-    print("usage: compactor.py rows  (reads a session.compact event on stdin)",
-          file=sys.stderr)
+    print("usage: compactor.py rows  (reads a session.compact event on stdin)", file=sys.stderr)
     return 2
+
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -46,8 +46,12 @@ def ask_assignments(text: str) -> list[tuple[int, str]]:
         if i + 2 >= len(tokens):
             continue
         name, eq = tokens[i + 1], tokens[i + 2]
-        if (name.type == tokenize.NAME and name.string == "ask"
-                and eq.type == tokenize.OP and eq.string == "="):
+        if (
+            name.type == tokenize.NAME
+            and name.string == "ask"
+            and eq.type == tokenize.OP
+            and eq.string == "="
+        ):
             hits.append((tok.start[0], eq.line.strip()[:120]))
     return hits
 
@@ -65,8 +69,7 @@ def _self_check() -> None:
     assert wiring_allowed(SANCTIONED, "rules.jev.ask = jev.ask")
     assert not wiring_allowed(SANCTIONED, "jev.ask = lambda s, q: []")
     assert not wiring_allowed(SANCTIONED, "jev.ask = capture")
-    assert not wiring_allowed(Path("scripts") / "rules.py",
-                              "jev.ask = cached_ask(c)")
+    assert not wiring_allowed(Path("scripts") / "rules.py", "jev.ask = cached_ask(c)")
 
 
 def main() -> int:

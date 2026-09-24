@@ -75,8 +75,7 @@ def missing_parts(answers: dict) -> list[str]:
     writes = (answers.get("brief_writes") or {}).get("noul", 0.0)
     if writes < MIN_CONFIDENCE:
         return []
-    return [k for k in BRIEF_PARTS
-            if (answers.get(k) or {}).get("noul", 1.0) <= BRIEF_MISSING]
+    return [k for k in BRIEF_PARTS if (answers.get(k) or {}).get("noul", 1.0) <= BRIEF_MISSING]
 
 
 def already_denied(session_id, prompt_head: str) -> bool:
@@ -88,34 +87,49 @@ def already_denied(session_id, prompt_head: str) -> bool:
                 if '"kind": "subagent"' not in line:
                     continue
                 r = json.loads(line)
-                if (r.get("session_id") == session_id and r.get("brief_denied")
-                        and r.get("prompt") == prompt_head):
+                if (
+                    r.get("session_id") == session_id
+                    and r.get("brief_denied")
+                    and r.get("prompt") == prompt_head
+                ):
                     return True
     except (OSError, ValueError):
         pass
     return False
 
 
-def log_decision(event: dict, inp: dict, answers: dict, routed: str | None,
-                 explicit: str | None, missing: list[str], denied: bool) -> None:
+def log_decision(
+    event: dict,
+    inp: dict,
+    answers: dict,
+    routed: str | None,
+    explicit: str | None,
+    missing: list[str],
+    denied: bool,
+) -> None:
     """Record what was predicted and what ran, so a later eval can score the
     routing. kind=subagent keeps these rows distinct from prompt decisions.
     """
     try:
         with open(DEFAULT_LOG, "a") as f:
-            f.write(json.dumps({
-                "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                "kind": "subagent",
-                "session_id": event.get("session_id"),
-                "cwd": event.get("cwd"),
-                "subagent_type": inp.get("subagent_type"),
-                "prompt": (inp.get("prompt") or "")[:200],
-                "answers": answers,
-                "model_routed": routed,
-                "model_explicit": explicit,
-                "brief_missing": missing,
-                "brief_denied": denied,
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        "kind": "subagent",
+                        "session_id": event.get("session_id"),
+                        "cwd": event.get("cwd"),
+                        "subagent_type": inp.get("subagent_type"),
+                        "prompt": (inp.get("prompt") or "")[:200],
+                        "answers": answers,
+                        "model_routed": routed,
+                        "model_explicit": explicit,
+                        "brief_missing": missing,
+                        "brief_denied": denied,
+                    }
+                )
+                + "\n"
+            )
     except OSError:
         pass
 
@@ -127,8 +141,9 @@ def main() -> None:
         event = json.load(sys.stdin)
         inp = event.get("tool_input") or {}
         explicit = inp.get("model")
-        answers = jev.ask(build_state(inp),
-                          jev.subagent_bundle(user_tier_criteria(), ask_tier=not explicit))
+        answers = jev.ask(
+            build_state(inp), jev.subagent_bundle(user_tier_criteria(), ask_tier=not explicit)
+        )
         t = answers.get("model_tier") or {}
         choice, conf = t.get("choice"), t.get("confidence", 0.0)
         routed = choice if choice in TIERS and conf >= MIN_CONFIDENCE else None
@@ -141,13 +156,17 @@ def main() -> None:
             listed = "; ".join(BRIEF_PARTS[k] for k in missing)
             out["hookSpecificOutput"]["permissionDecision"] = "deny"
             out["hookSpecificOutput"]["permissionDecisionReason"] = (
-                "This brief changes files but does not state: " + listed +
-                ". The subagent sees none of this conversation. Add the "
-                "missing parts to the prompt and spawn again.")
+                "This brief changes files but does not state: "
+                + listed
+                + ". The subagent sees none of this conversation. Add the "
+                "missing parts to the prompt and spawn again."
+            )
         elif missing:
-            out["systemMessage"] = ("[jev router] brief still missing " +
-                                    ", ".join(BRIEF_PARTS[k] for k in missing) +
-                                    " — spawned anyway (denied once already)")
+            out["systemMessage"] = (
+                "[jev router] brief still missing "
+                + ", ".join(BRIEF_PARTS[k] for k in missing)
+                + " — spawned anyway (denied once already)"
+            )
         if routed and not denied:
             out["hookSpecificOutput"]["updatedInput"] = {**inp, "model": routed}
             out["systemMessage"] = f"[jev router] subagent → {routed} (conf={conf:.2f})"
@@ -156,6 +175,7 @@ def main() -> None:
             sys.stdout.write("\n")
     except Exception:
         return
+
 
 if __name__ == "__main__":
     main()

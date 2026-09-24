@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import prompt_router
 
@@ -42,29 +42,33 @@ NEEDS_REPO_Q = {
 }
 
 TIER_CRITERIA = {
-    "haiku": "Mechanical or conversational — chat, quick lookups, "
-             "renames, a single command",
+    "haiku": "Mechanical or conversational — chat, quick lookups, renames, a single command",
     "sonnet": "Ordinary coding work — focused edits, standard "
-              "features, debugging with a clear signal",
-    "opus": "Hardest reasoning — ambiguous multi-file work, "
-            "architecture, subtle bugs",
+    "features, debugging with a clear signal",
+    "opus": "Hardest reasoning — ambiguous multi-file work, architecture, subtle bugs",
 }
 
 TIER_Q = {
     "type": "choice",
-    "instructions": "What is the cheapest Claude model tier that would "
-                    "handle this request well?",
+    "instructions": "What is the cheapest Claude model tier that would handle this request well?",
     "criteria": TIER_CRITERIA,
 }
 
 
 def intent_bundle(refactor: bool = True, needs_repo: bool = True, unclear: bool = True) -> dict:
-    crit = {k: v for k, v in INTENT_CRITERIA.items()
-            if (refactor or k != "refactor") and (unclear or k != "unclear")}
-    b = {"intent": {"type": "choice",
-                    "instructions": "What kind of request is this for an AI coding assistant?",
-                    "criteria": crit},
-         "scope": SCOPE_Q}
+    crit = {
+        k: v
+        for k, v in INTENT_CRITERIA.items()
+        if (refactor or k != "refactor") and (unclear or k != "unclear")
+    }
+    b = {
+        "intent": {
+            "type": "choice",
+            "instructions": "What kind of request is this for an AI coding assistant?",
+            "criteria": crit,
+        },
+        "scope": SCOPE_Q,
+    }
     if needs_repo:
         b["needs_repo"] = NEEDS_REPO_Q
     return b
@@ -80,7 +84,7 @@ def action_bundle() -> dict:
                 "talk": "Answer from the conversation itself — no files opened, no commands run",
                 "read": "Inspect the project — read files, search, or run read-only commands",
                 "act": "Change something — edit files, or run commands that alter state "
-                       "(git, install, deploy, build, test)",
+                "(git, install, deploy, build, test)",
             },
         },
         "scope": SCOPE_Q,
@@ -93,8 +97,8 @@ def binary_bundle() -> dict:
         "needs_tools": {
             "type": "noul",
             "instructions": "To handle this message, must the assistant use tools "
-                            "(read files, search, run commands, edit code) rather than "
-                            "just replying from the conversation?",
+            "(read files, search, run commands, edit code) rather than "
+            "just replying from the conversation?",
         },
         "scope": SCOPE_Q,
     }
@@ -224,51 +228,131 @@ class Variant:
     def bundle_hash(self) -> str:
         return hashlib.sha1(json.dumps(self.bundle, sort_keys=True).encode()).hexdigest()[:12]
 
+
 INTENTS = list(INTENT_CRITERIA)
 
 VARIANTS = {
     "v0_shipped": Variant(
-        "v0_shipped", "the plugin as published: prompt only, all seven intents",
-        intent_bundle(), state_plain, rule_intent, truth_intent, INTENTS, "chat", ("refactor",)),
+        "v0_shipped",
+        "the plugin as published: prompt only, all seven intents",
+        intent_bundle(),
+        state_plain,
+        rule_intent,
+        truth_intent,
+        INTENTS,
+        "chat",
+        ("refactor",),
+    ),
     "v1_context": Variant(
-        "v1_context", "change 1: show Jev the previous turn",
-        intent_bundle(), state_ctx, rule_intent, truth_intent, INTENTS, "chat", ("refactor",)),
+        "v1_context",
+        "change 1: show Jev the previous turn",
+        intent_bundle(),
+        state_ctx,
+        rule_intent,
+        truth_intent,
+        INTENTS,
+        "chat",
+        ("refactor",),
+    ),
     "v2_no_needs_repo": Variant(
-        "v2_no_needs_repo", "change 2: drop needs_repo, which loses to a constant",
-        intent_bundle(needs_repo=False), state_ctx, rule_intent, truth_intent,
-        INTENTS, "chat", ("refactor",)),
+        "v2_no_needs_repo",
+        "change 2: drop needs_repo, which loses to a constant",
+        intent_bundle(needs_repo=False),
+        state_ctx,
+        rule_intent,
+        truth_intent,
+        INTENTS,
+        "chat",
+        ("refactor",),
+    ),
     "v3_no_refactor": Variant(
-        "v3_no_refactor", "change 3: drop refactor, which has no observable ground truth",
-        intent_bundle(needs_repo=False, refactor=False), state_ctx, rule_intent, truth_intent,
-        [i for i in INTENTS if i != "refactor"], "chat"),
+        "v3_no_refactor",
+        "change 3: drop refactor, which has no observable ground truth",
+        intent_bundle(needs_repo=False, refactor=False),
+        state_ctx,
+        rule_intent,
+        truth_intent,
+        [i for i in INTENTS if i != "refactor"],
+        "chat",
+    ),
     "v4_safe_chat": Variant(
-        "v4_safe_chat", "change 4: same answers as v3, but gate the no-tools hint",
-        intent_bundle(needs_repo=False, refactor=False), state_ctx, rule_intent_safe_chat,
-        truth_intent, [i for i in INTENTS if i != "refactor"], "chat"),
+        "v4_safe_chat",
+        "change 4: same answers as v3, but gate the no-tools hint",
+        intent_bundle(needs_repo=False, refactor=False),
+        state_ctx,
+        rule_intent_safe_chat,
+        truth_intent,
+        [i for i in INTENTS if i != "refactor"],
+        "chat",
+    ),
     "v5_three_way": Variant(
-        "v5_three_way", "change 5a: talk / read / act instead of seven intents",
-        action_bundle(), state_ctx, rule_action, truth_action, ["talk", "read", "act"], "talk"),
+        "v5_three_way",
+        "change 5a: talk / read / act instead of seven intents",
+        action_bundle(),
+        state_ctx,
+        rule_action,
+        truth_action,
+        ["talk", "read", "act"],
+        "talk",
+    ),
     "v6_combined": Variant(
-        "v6_combined", "changes 1-4 plus a gated no-tools question",
-        combined_bundle(), state_ctx, rule_combined, truth_intent,
-        [i for i in INTENTS if i != "refactor"], "chat"),
+        "v6_combined",
+        "changes 1-4 plus a gated no-tools question",
+        combined_bundle(),
+        state_ctx,
+        rule_combined,
+        truth_intent,
+        [i for i in INTENTS if i != "refactor"],
+        "chat",
+    ),
     "v7_no_unclear": Variant(
-        "v7_no_unclear", "v6 minus the unclear class, which never earns its precision",
-        combined_bundle(unclear=False), state_ctx, rule_combined, truth_intent,
-        [i for i in INTENTS if i not in ("refactor", "unclear")], "chat"),
+        "v7_no_unclear",
+        "v6 minus the unclear class, which never earns its precision",
+        combined_bundle(unclear=False),
+        state_ctx,
+        rule_combined,
+        truth_intent,
+        [i for i in INTENTS if i not in ("refactor", "unclear")],
+        "chat",
+    ),
     "v9_hinted_only": Variant(
-        "v9_hinted_only", "v7 answers, scored only where the hook shows a hint",
-        combined_bundle(unclear=False), state_ctx, rule_shipped, truth_intent,
-        [i for i in INTENTS if i not in ("refactor", "unclear")], "chat"),
+        "v9_hinted_only",
+        "v7 answers, scored only where the hook shows a hint",
+        combined_bundle(unclear=False),
+        state_ctx,
+        rule_shipped,
+        truth_intent,
+        [i for i in INTENTS if i not in ("refactor", "unclear")],
+        "chat",
+    ),
     "v8_shipped": Variant(
-        "v8_shipped", "shipped bundle with model_tier — does intent still hold?",
-        combined_bundle(unclear=False, tier=True), state_ctx, rule_combined, truth_intent,
-        [i for i in INTENTS if i not in ("refactor", "unclear")], "chat"),
+        "v8_shipped",
+        "shipped bundle with model_tier — does intent still hold?",
+        combined_bundle(unclear=False, tier=True),
+        state_ctx,
+        rule_combined,
+        truth_intent,
+        [i for i in INTENTS if i not in ("refactor", "unclear")],
+        "chat",
+    ),
     "v8_tier": Variant(
-        "v8_tier", "advisory model tier vs observed scale; harmful = said haiku, turn churned",
-        combined_bundle(unclear=False, tier=True), state_ctx, rule_tier, truth_tier,
-        list(TIER_CRITERIA), "haiku"),
+        "v8_tier",
+        "advisory model tier vs observed scale; harmful = said haiku, turn churned",
+        combined_bundle(unclear=False, tier=True),
+        state_ctx,
+        rule_tier,
+        truth_tier,
+        list(TIER_CRITERIA),
+        "haiku",
+    ),
     "v5_binary": Variant(
-        "v5_binary", "change 5b: one bit — does this need tools at all?",
-        binary_bundle(), state_ctx, rule_binary, truth_binary, ["no_tools", "tools"], "no_tools"),
+        "v5_binary",
+        "change 5b: one bit — does this need tools at all?",
+        binary_bundle(),
+        state_ctx,
+        rule_binary,
+        truth_binary,
+        ["no_tools", "tools"],
+        "no_tools",
+    ),
 }

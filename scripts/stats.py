@@ -64,7 +64,7 @@ def load_log(path: str, days: int | None) -> list[dict]:
 def transcripts() -> dict[str, str]:
     index = {}
     for path in glob.glob(os.path.join(PROJECTS, "*", "*.jsonl")):
-        index.setdefault(os.path.basename(path)[:-len(".jsonl")], path)
+        index.setdefault(os.path.basename(path)[: -len(".jsonl")], path)
     return index
 
 
@@ -93,6 +93,7 @@ def quantile(vals: list[float], q: float) -> float:
 def fmt_q(vals: list[float], q: float) -> str:
     return f"{quantile(vals, q):.0f}" if vals else "-"
 
+
 _TOOLS_CACHE: dict[str, list[dict]] = {}
 
 
@@ -117,10 +118,11 @@ def tool_events(path: str) -> list[dict]:
                 if d.get("type") != "assistant" or d.get("isSidechain"):
                     continue
                 ts = parse_ts(d.get("timestamp"))
-                for b in ((d.get("message") or {}).get("content") or []):
+                for b in (d.get("message") or {}).get("content") or []:
                     if isinstance(b, dict) and b.get("type") == "tool_use":
-                        out.append({"ts": ts, "name": b.get("name", "?"),
-                                    "input": b.get("input") or {}})
+                        out.append(
+                            {"ts": ts, "name": b.get("name", "?"), "input": b.get("input") or {}}
+                        )
     except OSError:
         out = []
     _TOOLS_CACHE[path] = out
@@ -131,8 +133,7 @@ def input_hash(inp: dict) -> str:
     """The same digest rules.py logs, so a later edit can be compared to the
     one that was blocked."""
     try:
-        return hashlib.sha256(
-            json.dumps(inp, sort_keys=True).encode()).hexdigest()[:16]
+        return hashlib.sha256(json.dumps(inp, sort_keys=True).encode()).hexdigest()[:16]
     except (TypeError, ValueError):
         return ""
 
@@ -151,8 +152,9 @@ def touches_text(inp: dict, head: str) -> bool:
     if len(first) < 8:
         return False
     olds = [inp.get("old_string") or ""]
-    olds += [(x or {}).get("old_string") or "" for x in inp.get("edits") or []
-             if isinstance(x, dict)]
+    olds += [
+        (x or {}).get("old_string") or "" for x in inp.get("edits") or [] if isinstance(x, dict)
+    ]
     return any(first in o for o in olds)
 
 
@@ -179,15 +181,18 @@ def rule_outcomes(entries: list[dict]) -> list[dict]:
         if not path or not target or ts is None:
             out.append({"rules": blocked, "outcome": "unscorable"})
             continue
-        later = [t for t in tool_events(path)
-                 if t["name"] in observed.EDIT_TOOLS
-                 and t["ts"] is not None and t["ts"] > ts
-                 and same_file(t["input"].get("file_path"), target)]
+        later = [
+            t
+            for t in tool_events(path)
+            if t["name"] in observed.EDIT_TOOLS
+            and t["ts"] is not None
+            and t["ts"] > ts
+            and same_file(t["input"].get("file_path"), target)
+        ]
         head = (e.get("added_head") or "").strip()
         if not later:
             outcome = "abandoned"
-        elif e.get("input_hash") and any(
-                input_hash(t["input"]) == e["input_hash"] for t in later):
+        elif e.get("input_hash") and any(input_hash(t["input"]) == e["input_hash"] for t in later):
             outcome = "retried identical"
         elif head and any(touches_text(t["input"], head) for t in later):
             outcome = "repaired"
@@ -202,8 +207,7 @@ def rule_outcomes(entries: list[dict]) -> list[dict]:
 def refetch_needles(path: str, after: datetime.datetime) -> list[str]:
     """File names and command heads from the tool calls right after a
     compaction — what the session went back for."""
-    seen = [t for t in tool_events(path)
-            if t["ts"] is not None and t["ts"] > after][:NEXT_TOOLS]
+    seen = [t for t in tool_events(path) if t["ts"] is not None and t["ts"] > after][:NEXT_TOOLS]
     needles = []
     for t in seen:
         inp = t["input"]
@@ -240,16 +244,25 @@ def match(entries: list[dict]) -> list[dict]:
             prefix = (e.get("prompt") or "").strip()
             if observed.is_synthetic(prefix):
                 continue
-            seg = next((s for s in segs if s["text"].startswith(prefix[:120])), None) if prefix else None
+            seg = (
+                next((s for s in segs if s["text"].startswith(prefix[:120])), None)
+                if prefix
+                else None
+            )
             intent, fired = predicted_intent(e)
             conf = ((e.get("answers") or {}).get("intent") or {}).get("confidence", 0.0)
-            rows.append({
-                "ts": e.get("ts"), "prompt": prefix, "intent": intent, "fired": fired,
-                "conf": conf,
-                "matched": seg is not None,
-                "observed": seg["label"] if seg else None,
-                "n_tools": seg["n_tools"] if seg else None,
-            })
+            rows.append(
+                {
+                    "ts": e.get("ts"),
+                    "prompt": prefix,
+                    "intent": intent,
+                    "fired": fired,
+                    "conf": conf,
+                    "matched": seg is not None,
+                    "observed": seg["label"] if seg else None,
+                    "n_tools": seg["n_tools"] if seg else None,
+                }
+            )
     return rows
 
 
@@ -263,64 +276,83 @@ def print_calls(days: int | None) -> None:
     per = collections.defaultdict(list)
     for c in calls:
         per[c.get("caller") or "?"].append(c)
-    print(f"  {'caller':<16}{'calls':>7}{'median ms':>11}{'p95 ms':>9}"
-          f"{'errors':>8}{'median qs':>11}")
+    print(
+        f"  {'caller':<16}{'calls':>7}{'median ms':>11}{'p95 ms':>9}{'errors':>8}{'median qs':>11}"
+    )
     for caller, cs in sorted(per.items()):
         ms = [c["ms"] for c in cs]
-        qs = [c.get("n_questions") for c in cs
-              if isinstance(c.get("n_questions"), int)]
+        qs = [c.get("n_questions") for c in cs if isinstance(c.get("n_questions"), int)]
         errs = sum(1 for c in cs if not c.get("ok", True))
-        print(f"  {caller:<16}{len(cs):>7}{fmt_q(ms, 0.5):>11}{fmt_q(ms, 0.95):>9}"
-              f"{errs:>8}{fmt_q(qs, 0.5):>11}")
+        print(
+            f"  {caller:<16}{len(cs):>7}{fmt_q(ms, 0.5):>11}{fmt_q(ms, 0.95):>9}"
+            f"{errs:>8}{fmt_q(qs, 0.5):>11}"
+        )
     print("  Failures by caller (counts are failed calls, not HTTP status codes):")
     for caller, cs in sorted(per.items()):
         ordered = sorted(cs, key=lambda c: c.get("ts", ""))
         bad = [c for c in ordered if not c.get("ok", True)]
         recent = ordered[-20:]
         failures = sum(not c.get("ok", True) for c in recent)
-        print(f"    {caller}: latest {ordered[-1].get('ts')}; "
-              f"last {len(recent)} calls: {failures} failed")
+        print(
+            f"    {caller}: latest {ordered[-1].get('ts')}; "
+            f"last {len(recent)} calls: {failures} failed"
+        )
         categories = collections.Counter()
         for c in bad:
             error = str(c.get("error", "unknown"))
             status = re.match(r"HTTP (\d{3})\b", error)
-            category = (status.group(0) if status else
-                        "timeout" if "timed out" in error.lower() else "other")
+            category = (
+                status.group(0)
+                if status
+                else "timeout"
+                if "timed out" in error.lower()
+                else "other"
+            )
             categories[category] += 1
         if bad:
             print("      " + ", ".join(f"{k}: {v}" for k, v in sorted(categories.items())))
-            print(f"      last failure {bad[-1].get('ts')}: "
-                  f"{str(bad[-1].get('error'))[:160]}")
+            print(f"      last failure {bad[-1].get('ts')}: {str(bad[-1].get('error'))[:160]}")
             good = [c for c in ordered if c.get("ok", True)]
             print(f"      last success: {good[-1].get('ts') if good else 'none in window'}")
-    print("  Calls alone cannot measure coverage: disabled hooks and missing keys make no API call.")
+    print(
+        "  Calls alone cannot measure coverage: disabled hooks and missing keys make no API call."
+    )
 
 
 def print_rule_outcomes(entries: list[dict]) -> None:
     """Whether a block led to a repair, and how often the same edit came back."""
     outcomes = rule_outcomes(entries)
     print("\nRule outcomes (what happened after an edit was blocked):")
-    print("  Heuristics, not verified fixes: repaired = flagged text touched; "
-          "abandoned = no later edit to that file.")
+    print(
+        "  Heuristics, not verified fixes: repaired = flagged text touched; "
+        "abandoned = no later edit to that file."
+    )
     print("  Post-edit blocks do not undo writes. Outcomes exclude whole-turn blocks.")
     if not outcomes:
         print("  no blocked edits logged yet in this window.")
     else:
         totals = collections.Counter(o["outcome"] for o in outcomes)
-        print(f"  {len(outcomes)} blocks: " + ", ".join(
-            f"{k} {v}" for k, v in sorted(totals.items())))
+        print(
+            f"  {len(outcomes)} blocks: " + ", ".join(f"{k} {v}" for k, v in sorted(totals.items()))
+        )
         if totals["unscorable"]:
-            print("  unscorable: no transcript for the session, as with a hand-fed "
-                  "test event, or no file path on the edit")
+            print(
+                "  unscorable: no transcript for the session, as with a hand-fed "
+                "test event, or no file path on the edit"
+            )
         per_rule = collections.defaultdict(collections.Counter)
         for o in outcomes:
             for rid in o["rules"]:
                 per_rule[str(rid)][o["outcome"]] += 1
-        print(f"  {'rule':<34}{'repaired':>9}{'retried':>9}{'ignored':>9}"
-              f"{'abandoned':>11}{'unscorable':>11}")
+        print(
+            f"  {'rule':<34}{'repaired':>9}{'retried':>9}{'ignored':>9}"
+            f"{'abandoned':>11}{'unscorable':>11}"
+        )
         for rid, c in sorted(per_rule.items()):
-            print(f"  {rid:<34}{c['repaired']:>9}{c['retried identical']:>9}"
-                  f"{c['ignored']:>9}{c['abandoned']:>11}{c['unscorable']:>11}")
+            print(
+                f"  {rid:<34}{c['repaired']:>9}{c['retried identical']:>9}"
+                f"{c['ignored']:>9}{c['abandoned']:>11}{c['unscorable']:>11}"
+            )
     flagged = collections.Counter()
     for e in entries:
         if e.get("kind") != "rules":
@@ -373,11 +405,12 @@ def print_compaction(days: int | None) -> None:
             else:
                 n_trunc += 1
                 hit_trunc += back
-    print(f"  per-row records in {len(with_rows)} compactions "
-          f"(next {NEXT_TOOLS} tool calls examined):")
-    for label, n, hit in (("dropped", n_drop, hit_drop),
-                          ("truncated", n_trunc, hit_trunc)):
-        share = f"{100*hit/n:.0f}%" if n else "-"
+    print(
+        f"  per-row records in {len(with_rows)} compactions "
+        f"(next {NEXT_TOOLS} tool calls examined):"
+    )
+    for label, n, hit in (("dropped", n_drop, hit_drop), ("truncated", n_trunc, hit_trunc)):
+        share = f"{100 * hit / n:.0f}%" if n else "-"
         print(f"    {label:<10}{n:>6} rows, re-fetched {hit:>4} ({share})")
 
 
@@ -398,61 +431,72 @@ def main() -> int:
     rows = match(router_entries)
     fired = [r for r in rows if r["fired"]]
     scored = [r for r in fired if r["matched"] and r["observed"]]
-    span = f"{entries[0].get('ts','?')[:10]} to {entries[-1].get('ts','?')[:10]}"
+    span = f"{entries[0].get('ts', '?')[:10]} to {entries[-1].get('ts', '?')[:10]}"
 
-    print(f"{len(entries)} decisions logged, {span}; {len(router_entries)} from the "
-          f"prompt router")
-    skipped = sum(1 for e in router_entries
-                  if observed.is_synthetic((e.get("prompt") or "").strip()))
+    print(f"{len(entries)} decisions logged, {span}; {len(router_entries)} from the prompt router")
+    skipped = sum(
+        1 for e in router_entries if observed.is_synthetic((e.get("prompt") or "").strip())
+    )
     if skipped:
-        print(f"  not user prompts : {skipped} (Claude Code's own requests, "
-              f"skipped)")
-    print(f"  hints injected : {len(fired)} ({100*len(fired)/max(1, len(rows)):.0f}% "
-          f"of prompts)")
-    print(f"  suppressed     : {len(rows)-len(fired)} (an intent with no hint, or "
-          f"below the confidence floor)")
+        print(f"  not user prompts : {skipped} (Claude Code's own requests, skipped)")
+    print(
+        f"  hints injected : {len(fired)} ({100 * len(fired) / max(1, len(rows)):.0f}% of prompts)"
+    )
+    print(
+        f"  suppressed     : {len(rows) - len(fired)} (an intent with no hint, or "
+        f"below the confidence floor)"
+    )
 
     unmatched = len(fired) - len(scored)
     if unmatched:
-        print(f"  not scorable   : {unmatched} (session transcript not found, or the turn "
-              f"is still open)")
+        print(
+            f"  not scorable   : {unmatched} (session transcript not found, or the turn "
+            f"is still open)"
+        )
     counts = collections.Counter(r["observed"] for r in scored)
     pred = collections.Counter(r["intent"] for r in scored)
     if scored:
         ok = sum(1 for r in scored if r["intent"] == r["observed"])
         best = counts.most_common(1)[0]
         print(f"\nOf {len(scored)} scorable hints:")
-        print(f"  agreed with what the session did : {ok} ({100*ok/len(scored):.1f}%)")
-        print(f"  always guessing '{best[0]}' would give : "
-              f"{100*best[1]/len(scored):.1f}%")
+        print(f"  agreed with what the session did : {ok} ({100 * ok / len(scored):.1f}%)")
+        print(f"  always guessing '{best[0]}' would give : {100 * best[1] / len(scored):.1f}%")
 
-        harmful = [r for r in scored
-                   if r["intent"] == "chat" and (r["n_tools"] or 0) >= 5]
+        harmful = [r for r in scored if r["intent"] == "chat" and (r["n_tools"] or 0) >= 5]
         print(f"  said 'no tools', session used 5+  : {len(harmful)}")
 
         floor = prompt_router.MIN_CONFIDENCE
-        floored = [r for r in rows
-                   if not r["fired"] and r["matched"] and r["conf"] < floor
-                   and r["intent"] in prompt_router.GUIDANCE
-                   and r["intent"] != "chat"]
+        floored = [
+            r
+            for r in rows
+            if not r["fired"]
+            and r["matched"]
+            and r["conf"] < floor
+            and r["intent"] in prompt_router.GUIDANCE
+            and r["intent"] != "chat"
+        ]
         if floored:
             right = sum(1 for r in floored if r["observed"] == r["intent"])
-            print(f"\n  held back by the {floor} confidence floor: {len(floored)}, "
-                  f"of which {right} ({100*right/len(floored):.1f}%) would have "
-                  f"been correct")
+            print(
+                f"\n  held back by the {floor} confidence floor: {len(floored)}, "
+                f"of which {right} ({100 * right / len(floored):.1f}%) would have "
+                f"been correct"
+            )
     else:
         print("\nNothing scorable yet — come back after a few more sessions.")
 
     tiered = [e for e in entries if (e.get("answers") or {}).get("model_tier")]
     if tiered:
         dist = collections.Counter(
-            ((e["answers"]["model_tier"] or {}).get("choice") or "?") for e in tiered)
+            ((e["answers"]["model_tier"] or {}).get("choice") or "?") for e in tiered
+        )
         shown = sum(1 for e in tiered if e.get("tier_hint"))
         print("\nModel tier (cheapest tier Jev thinks each prompt needs):")
         print(f"  predicted: {dict(sorted(dist.items()))}   mismatch hints shown: {shown}")
 
-    rule_rows = [e for e in entries
-                 if e.get("kind") == "rules" and isinstance(e.get("probs"), dict)]
+    rule_rows = [
+        e for e in entries if e.get("kind") == "rules" and isinstance(e.get("probs"), dict)
+    ]
     if rule_rows:
         per_rule = collections.defaultdict(list)
         for e in rule_rows:
@@ -460,13 +504,11 @@ def main() -> int:
                 if isinstance(p, (int, float)):
                     per_rule[rid].append(p)
         print(f"\nRule calibration ({len(rule_rows)} checks logged):")
-        print(f"  {'rule':<34}{'checks':>7}{'median':>8}{'min':>6}{'max':>6}"
-              f"{'fired':>7}  verdict")
+        print(f"  {'rule':<34}{'checks':>7}{'median':>8}{'min':>6}{'max':>6}{'fired':>7}  verdict")
         for rid, ps in sorted(per_rule.items()):
             n = len(ps)
             ordered = sorted(ps)
-            med = ordered[n // 2] if n % 2 else (ordered[n // 2 - 1]
-                                                 + ordered[n // 2]) / 2
+            med = ordered[n // 2] if n % 2 else (ordered[n // 2 - 1] + ordered[n // 2]) / 2
             fired_n = sum(1 for p in ps if p >= 0.80)
 
             if n < 5:
@@ -477,27 +519,31 @@ def main() -> int:
                 verdict = "weak — sits in the middle; make it concrete"
             else:
                 verdict = "decisive"
-            print(f"  {rid:<34}{n:>7}{med:>8.2f}{min(ps):>6.2f}"
-                  f"{max(ps):>6.2f}{fired_n:>7}  {verdict}")
+            print(
+                f"  {rid:<34}{n:>7}{med:>8.2f}{min(ps):>6.2f}{max(ps):>6.2f}{fired_n:>7}  {verdict}"
+            )
 
     if scored:
         width = max(8, max(len(c) for c in set(list(counts) + list(pred))))
-        print(f"\n  {'intent':<{width+2}}{'predicted':<12}{'observed':<10}")
+        print(f"\n  {'intent':<{width + 2}}{'predicted':<12}{'observed':<10}")
         for c in sorted(set(list(pred) + list(counts))):
-            print(f"  {c:<{width+2}}{pred.get(c,0):<12}{counts.get(c,0):<10}")
+            print(f"  {c:<{width + 2}}{pred.get(c, 0):<12}{counts.get(c, 0):<10}")
 
     if args.examples:
         wrong = [r for r in scored if r["intent"] != r["observed"]][: args.examples]
         if wrong:
             print("\n  mismatches:")
             for r in wrong:
-                print(f"    said {r['intent']:<8} session did {r['observed']:<8} "
-                      f"({r['n_tools']} tools)  {r['prompt'][:60]!r}")
+                print(
+                    f"    said {r['intent']:<8} session did {r['observed']:<8} "
+                    f"({r['n_tools']} tools)  {r['prompt'][:60]!r}"
+                )
 
     print_calls(args.days)
     print_rule_outcomes(entries)
     print_compaction(args.days)
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

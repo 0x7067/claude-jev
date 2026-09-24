@@ -38,17 +38,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import jev
 
 VERSION = "0.45.3"
-RELEASE = ("https://github.com/ast-grep/ast-grep/releases/download/"
-           f"{VERSION}/app-%s.zip")
+RELEASE = f"https://github.com/ast-grep/ast-grep/releases/download/{VERSION}/app-%s.zip"
 SHA256 = {
-    "aarch64-apple-darwin":
-        "6d2279dea5bea2ad79c66ea93f5fe54ba926e398a8a26de76c56db68fe59eac6",
-    "x86_64-apple-darwin":
-        "b2ffd26f42810340326a9e8a084bdc3647a8795c1a3f21fc06bd7bef3c7c5b2c",
-    "aarch64-unknown-linux-gnu":
-        "b39cfbc58da4b869a88b8a4bc57bd5deb0d24541e704cf7c257da7b53ec81c8f",
-    "x86_64-unknown-linux-gnu":
-        "f8ac830881339d1edee6b2652f54798c0f4da5a827f2db38a08ee31117783ce8",
+    "aarch64-apple-darwin": "6d2279dea5bea2ad79c66ea93f5fe54ba926e398a8a26de76c56db68fe59eac6",
+    "x86_64-apple-darwin": "b2ffd26f42810340326a9e8a084bdc3647a8795c1a3f21fc06bd7bef3c7c5b2c",
+    "aarch64-unknown-linux-gnu": "b39cfbc58da4b869a88b8a4bc57bd5deb0d24541e704cf7c257da7b53ec81c8f",
+    "x86_64-unknown-linux-gnu": "f8ac830881339d1edee6b2652f54798c0f4da5a827f2db38a08ee31117783ce8",
 }
 BIN_DIR = os.path.join(jev.config_dir(), f"jev-bin/ast-grep-{VERSION}")
 BIN = os.path.join(BIN_DIR, "ast-grep")
@@ -60,8 +55,7 @@ MAX_HITS = 6
 MAX_CHARS = 1200
 MAX_LITERALS = 4
 
-LANGS = {".py": "python", ".ts": "ts", ".tsx": "tsx", ".js": "js",
-         ".jsx": "jsx", ".mjs": "js"}
+LANGS = {".py": "python", ".ts": "ts", ".tsx": "tsx", ".js": "js", ".jsx": "jsx", ".mjs": "js"}
 
 _no_download = False
 
@@ -69,8 +63,13 @@ _no_download = False
 def triple() -> str | None:
     """The release asset for this machine, or None where there is none."""
     machine = platform.machine().lower()
-    arch = ("aarch64" if machine in ("arm64", "aarch64")
-            else "x86_64" if machine in ("x86_64", "amd64") else None)
+    arch = (
+        "aarch64"
+        if machine in ("arm64", "aarch64")
+        else "x86_64"
+        if machine in ("x86_64", "amd64")
+        else None
+    )
     if arch is None or sys.platform.startswith("win"):
         return None
     if sys.platform == "darwin":
@@ -100,8 +99,11 @@ def spawn_fetch() -> None:
         with open(os.devnull, "wb") as null:
             subprocess.Popen(
                 [sys.executable, os.path.abspath(__file__), "fetch"],
-                stdout=null, stderr=null, stdin=subprocess.DEVNULL,
-                start_new_session=True)
+                stdout=null,
+                stderr=null,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
     except (OSError, ValueError):
         pass
 
@@ -145,19 +147,25 @@ def lang_for(rel: str) -> str | None:
     return LANGS.get(os.path.splitext(rel)[1].lower())
 
 
-def run(pattern: str, lang: str, cwd: str, timeout: float = RUN_TIMEOUT,
-        target: str = ".", stdin: str | None = None) -> list[dict]:
+def run(
+    pattern: str,
+    lang: str,
+    cwd: str,
+    timeout: float = RUN_TIMEOUT,
+    target: str = ".",
+    stdin: str | None = None,
+) -> list[dict]:
     """ast-grep matches as [{path, line, text}]. Empty on anything at all
     going wrong, which is the whole contract this module offers."""
     exe, _source = which()
     if not exe or not os.path.isdir(cwd):
         return []
     try:
-        argv = [exe, "run", "--pattern", pattern, "--lang", lang,
-                "--json=compact"]
+        argv = [exe, "run", "--pattern", pattern, "--lang", lang, "--json=compact"]
         argv += ["--stdin"] if stdin is not None else [target]
-        r = subprocess.run(argv, cwd=cwd, capture_output=True, text=True,
-                           timeout=timeout, input=stdin)
+        r = subprocess.run(
+            argv, cwd=cwd, capture_output=True, text=True, timeout=timeout, input=stdin
+        )
         if r.returncode != 0 or not r.stdout.strip():
             return []
         raw = json.loads(r.stdout)
@@ -166,6 +174,7 @@ def run(pattern: str, lang: str, cwd: str, timeout: float = RUN_TIMEOUT,
     if not isinstance(raw, list):
         return []
     import rules
+
     out = []
     for m in raw:
         if not isinstance(m, dict):
@@ -176,9 +185,14 @@ def run(pattern: str, lang: str, cwd: str, timeout: float = RUN_TIMEOUT,
         start = (m.get("range") or {}).get("start") or {}
         line = start.get("line")
         text = " ".join((m.get("lines") or m.get("text") or "").split())
-        out.append({"path": path,
-                    "line": (line + 1) if isinstance(line, int) else 0,
-                    "col": start.get("column", 0), "text": text[:200]})
+        out.append(
+            {
+                "path": path,
+                "line": (line + 1) if isinstance(line, int) else 0,
+                "col": start.get("column", 0),
+                "text": text[:200],
+            }
+        )
     return out
 
 
@@ -190,11 +204,11 @@ class _Budget:
         self.n = 0
 
     def ok(self) -> bool:
-        return (self.n < MAX_QUERIES
-                and time.monotonic() - self.t0 < QUERY_BUDGET)
+        return self.n < MAX_QUERIES and time.monotonic() - self.t0 < QUERY_BUDGET
 
-    def run(self, pattern: str, lang: str, cwd: str, target: str = ".",
-            stdin: str | None = None) -> list[dict]:
+    def run(
+        self, pattern: str, lang: str, cwd: str, target: str = ".", stdin: str | None = None
+    ) -> list[dict]:
         if not self.ok():
             return []
         self.n += 1
@@ -215,17 +229,39 @@ def block(label: str, hits: list[dict]) -> str:
             break
     return f"{label}\n" + "\n".join(lines)[:MAX_CHARS]
 
+
 COMMENT_LINE = re.compile(r"\s*(#|//|/\*|\*|<!--)")
 NUMBER = re.compile(r"(?<![\w.])(-?\d[\d_]*(?:\.\d+)?)\b")
 STRING = re.compile(r"[\"']([^\"'\n]{4,})[\"']")
 DECLARES = re.compile(r"(?:^|\s)(?:const|let|var)\s+\w+\s*=|^\s*[A-Z_][A-Z_0-9]*\s*=")
 CALLED = re.compile(r"\b([a-z_]\w{2,})\s*\(")
-DEFINED = re.compile(r"(?m)^\s*(?:export\s+)?(?:async\s+)?"
-                     r"(?:def|function)\s+(\w+)|"
-                     r"(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\(")
-NOT_A_CALL = {"if", "for", "while", "return", "print", "expect", "it",
-              "describe", "test", "require", "import", "def", "function",
-              "catch", "switch", "super", "len", "str", "int", "range"}
+DEFINED = re.compile(
+    r"(?m)^\s*(?:export\s+)?(?:async\s+)?"
+    r"(?:def|function)\s+(\w+)|"
+    r"(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\("
+)
+NOT_A_CALL = {
+    "if",
+    "for",
+    "while",
+    "return",
+    "print",
+    "expect",
+    "it",
+    "describe",
+    "test",
+    "require",
+    "import",
+    "def",
+    "function",
+    "catch",
+    "switch",
+    "super",
+    "len",
+    "str",
+    "int",
+    "range",
+}
 
 
 def literal_hits(added: str, lang: str, cwd: str, b: _Budget) -> str:
@@ -248,12 +284,10 @@ def literal_hits(added: str, lang: str, cwd: str, b: _Budget) -> str:
     for lit in lits[:MAX_LITERALS]:
         value = lit if not lit.startswith("'") else lit
         if lang == "python":
-            hits += [h for h in b.run(f"$N = {value}", lang, cwd)
-                     if h["col"] == 0]
+            hits += [h for h in b.run(f"$N = {value}", lang, cwd) if h["col"] == 0]
         else:
             hits += b.run(f"const $N = {value}", lang, cwd)
-    return block("Existing named constants with the same value as a literal "
-                 "this edit adds:", hits)
+    return block("Existing named constants with the same value as a literal this edit adds:", hits)
 
 
 def test_hits(added: str, rel: str, lang: str, cwd: str, b: _Budget) -> str:
@@ -261,12 +295,12 @@ def test_hits(added: str, rel: str, lang: str, cwd: str, b: _Budget) -> str:
     assertion compare a value with itself, and what does the code under test
     actually do?"""
     import rules
+
     if not rules.TESTISH.search(rel):
         return ""
 
     same: list[dict] = []
-    for pattern in ("expect($X).toBe($X)", "expect($X).toEqual($X)",
-                    "assert $X == $X"):
+    for pattern in ("expect($X).toBe($X)", "expect($X).toEqual($X)", "assert $X == $X"):
         same += b.run(pattern, lang, cwd, target=rel)
         for h in b.run(pattern, lang, cwd, stdin=added):
             h["path"] = rel
@@ -283,17 +317,22 @@ def test_hits(added: str, rel: str, lang: str, cwd: str, b: _Budget) -> str:
         else:
             bodies += b.run(f"function {name}", lang, cwd)
             bodies += b.run(f"const {name} = $ARROW", lang, cwd)
-    out = [block("Assertions in this file whose two sides are identical:", same),
-           block("Bodies of the functions under test:", bodies)]
+    out = [
+        block("Assertions in this file whose two sides are identical:", same),
+        block("Bodies of the functions under test:", bodies),
+    ]
     return "\n\n".join(p for p in out if p)
 
-ENCLOSING = re.compile(r"(?:^|\s)(?:def|function)\s+(\w+)|"
-                       r"(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\(")
+
+ENCLOSING = re.compile(
+    r"(?:^|\s)(?:def|function)\s+(\w+)|"
+    r"(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\("
+)
 
 
 def enclosing_name(path: str, added: str) -> list[str]:
     """The function the edit landed in, when the hunk itself defines none."""
-    anchor = next((l.strip() for l in added.splitlines() if l.strip()), "")
+    anchor = next((line.strip() for line in added.splitlines() if line.strip()), "")
     if not anchor:
         return []
     try:
@@ -301,7 +340,7 @@ def enclosing_name(path: str, added: str) -> list[str]:
             lines = f.read().splitlines()
     except OSError:
         return []
-    at = next((i for i, l in enumerate(lines) if anchor in l), None)
+    at = next((i for i, line in enumerate(lines) if anchor in line), None)
     if at is None:
         return []
     fallback = []
@@ -314,6 +353,7 @@ def enclosing_name(path: str, added: str) -> list[str]:
 
         fallback = fallback or [m.group(2)]
     return fallback
+
 
 CATCHES = re.compile(r"\b(catch|except)\b")
 THROWS = re.compile(r"\b(throw|raise|reject)\b")
@@ -334,9 +374,9 @@ def error_hits(added: str, rel: str, lang: str, cwd: str, b: _Budget) -> str:
         what = "returns a value instead of re-raising"
     else:
         what = "neither re-raises nor returns"
-    summary = (f"The error handling this edit adds {what}"
-               + (" and logs." if LOGS.search(added) else
-                  " and does not log."))
+    summary = f"The error handling this edit adds {what}" + (
+        " and logs." if LOGS.search(added) else " and does not log."
+    )
     names: list[str] = []
     for m in DEFINED.finditer(added):
         name = m.group(1) or m.group(2)
@@ -346,10 +386,12 @@ def error_hits(added: str, rel: str, lang: str, cwd: str, b: _Budget) -> str:
         names = enclosing_name(os.path.join(cwd, rel), added)
     hits = []
     for name in names[:MAX_LITERALS]:
-        hits += [h for h in b.run(f"{name}($$$)", lang, cwd)
-                 if os.path.normpath(h["path"]) != os.path.normpath(rel)]
-    listed = block("Callers of the function whose error handling this edit "
-                   "changes:", hits)
+        hits += [
+            h
+            for h in b.run(f"{name}($$$)", lang, cwd)
+            if os.path.normpath(h["path"]) != os.path.normpath(rel)
+        ]
+    listed = block("Callers of the function whose error handling this edit changes:", hits)
     return f"{summary}\n{listed}" if listed else summary
 
 
@@ -358,6 +400,7 @@ def comparator(subject: str, hunk: str, rel: str, cwd: str) -> str:
     Never raises: the caller is a hook that must not fail."""
     try:
         import rules
+
         lang = lang_for(rel)
         if not lang or not cwd:
             return ""
@@ -388,6 +431,7 @@ def main() -> int:
     path, source = which()
     print(f"{path or '(none)'}  [{source}]  pinned {VERSION} -> {BIN}")
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

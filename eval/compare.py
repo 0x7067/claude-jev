@@ -44,8 +44,8 @@ import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
 import compactor
-import prompt_router
 import planted
+import prompt_router
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "data")
@@ -97,6 +97,7 @@ def tool_key(name: str, inp: dict) -> str | None:
         return f"url:{u}" if u else None
     return None
 
+
 REFETCH_KINDS = ("file", "grep", "glob", "url")
 
 
@@ -104,11 +105,11 @@ def tool_calls(lines, lo: int, hi: int) -> list[dict]:
     """Every tool_use in lines[lo:hi] with its line index, name, and key."""
     out = []
     for i in range(lo, hi):
-        l = lines[i]
-        if len(l) > 2_000_000:
+        line = lines[i]
+        if len(line) > 2_000_000:
             continue
         try:
-            d = json.loads(l)
+            d = json.loads(line)
         except ValueError:
             continue
         if d.get("isSidechain") or d.get("type") != "assistant":
@@ -128,8 +129,9 @@ def refetches(pre: list[dict], post: list[dict]) -> list[str]:
     session needed again. The agent's own edits count as fetched artifacts:
     a kept digest can hold the edit block just like the read block."""
     fetched = {c["key"] for c in pre}
-    return [c["key"] for c in post
-            if c["key"].split(":", 1)[0] in REFETCH_KINDS and c["key"] in fetched]
+    return [
+        c["key"] for c in post if c["key"].split(":", 1)[0] in REFETCH_KINDS and c["key"] in fetched
+    ]
 
 
 def key_terms(key: str) -> list[str]:
@@ -152,17 +154,17 @@ def boundaries(lines) -> list[dict]:
     """Every compaction event in one transcript: boundary line index, its
     metadata, the injected summary, and the preserved tail's text."""
     by_uuid = {}
-    for i, l in enumerate(lines):
+    for i, line in enumerate(lines):
         try:
-            d = json.loads(l)
+            d = json.loads(line)
         except ValueError:
             continue
         if d.get("uuid"):
             by_uuid[d["uuid"]] = d
     out = []
-    for i, l in enumerate(lines):
+    for i, line in enumerate(lines):
         try:
-            d = json.loads(l)
+            d = json.loads(line)
         except ValueError:
             continue
         if d.get("subtype") != "compact_boundary":
@@ -220,8 +222,9 @@ def load_compact_cache() -> tuple[dict, dict]:
     return judged, summaries
 
 
-def replay(pre_lines, cache: dict, summaries: dict, cache_f,
-           gen=None) -> tuple[list[str], dict, str | None]:
+def replay(
+    pre_lines, cache: dict, summaries: dict, cache_f, gen=None
+) -> tuple[list[str], dict, str | None]:
     """Replay Jev's selection on the exact lines a boundary compacted. `gen`
     is a thunk producing the default-side summary — called only when no
     summary is cached for these lines, so re-judging never re-summarizes."""
@@ -242,8 +245,7 @@ def replay(pre_lines, cache: dict, summaries: dict, cache_f,
         summary = gen()
         summaries[key] = summary
     if stats.get("judged"):
-        d = {"key": key, "sig": sig, "kept": kept, "stats": stats,
-             "summary": summary}
+        d = {"key": key, "sig": sig, "kept": kept, "stats": stats, "summary": summary}
         cache[(key, sig)] = d
         if cache_f:
             cache_f.write(json.dumps(d) + "\n")
@@ -254,9 +256,9 @@ def replay(pre_lines, cache: dict, summaries: dict, cache_f,
 def flatten(lines, hi: int) -> str:
     """The conversation as flat text — the summarizer's input."""
     parts = []
-    for l in lines[:hi]:
+    for line in lines[:hi]:
         try:
-            d = json.loads(l)
+            d = json.loads(line)
         except ValueError:
             continue
         if d.get("isSidechain") or d.get("type") not in ("user", "assistant"):
@@ -271,9 +273,9 @@ def tail_text(lines, hi: int, n: int = 6) -> str:
     """The last n content blocks verbatim — the preserved-tail equivalent
     the default side carries alongside its summary."""
     texts = []
-    for l in reversed(lines[:hi]):
+    for line in reversed(lines[:hi]):
         try:
-            d = json.loads(l)
+            d = json.loads(line)
         except ValueError:
             continue
         if d.get("type") not in ("user", "assistant"):
@@ -293,11 +295,11 @@ def synth_cut(lines) -> int | None:
     lines[cut:] the session that follows."""
     total = blocks = 0
     cut = None
-    for i, l in enumerate(lines):
-        if len(l) > 2_000_000:
+    for i, line in enumerate(lines):
+        if len(line) > 2_000_000:
             continue
         try:
-            d = json.loads(l)
+            d = json.loads(line)
         except ValueError:
             continue
 
@@ -321,7 +323,11 @@ def gen_summary(conversation: str, model: str) -> str | None:
     try:
         r = subprocess.run(
             ["claude", "-p", "--model", model, SUMMARY_PROMPT],
-            input=conversation, capture_output=True, text=True, timeout=600)
+            input=conversation,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
         return r.stdout.strip() or None
     except Exception:
         return None
@@ -329,8 +335,8 @@ def gen_summary(conversation: str, model: str) -> str | None:
 
 def cmd_compact(args) -> int:
     files = sorted(
-        f for f in
-        (os.path.join(dp, fn) for dp, _dn, fns in os.walk(PROJECTS) for fn in fns)
+        f
+        for f in (os.path.join(dp, fn) for dp, _dn, fns in os.walk(PROJECTS) for fn in fns)
         if f.endswith(".jsonl")
     )
     cache, summaries = load_compact_cache()
@@ -353,7 +359,10 @@ def cmd_compact(args) -> int:
             duration_s = round((meta.get("durationMs") or 0) / 1000, 1)
             trigger = meta.get("trigger")
         else:
-            gen = lambda: gen_summary(flatten(lines, i), args.model)
+
+            def gen():
+                return gen_summary(flatten(lines, i), args.model)
+
             kept, stats, summary = replay(lines[:i], cache, summaries, cache_f, gen)
             default_ctx = (summary or "") + "\n" + tail_text(lines, i)
             post_tokens = len(default_ctx) // 4
@@ -394,11 +403,11 @@ def cmd_compact(args) -> int:
 
         if "/subagents/" in fp:
             norm = []
-            for l in lines:
+            for line in lines:
                 try:
-                    d = json.loads(l)
+                    d = json.loads(line)
                 except ValueError:
-                    norm.append(l)
+                    norm.append(line)
                     continue
                 d.pop("isSidechain", None)
                 norm.append(json.dumps(d) + "\n")
@@ -411,7 +420,7 @@ def cmd_compact(args) -> int:
                 real_todo.append((fp, lines, ev["i"], end, prev, ev, "real"))
                 prev = ev["i"]
         else:
-            if any(CONTINUED in l for l in lines[:200]):
+            if any(CONTINUED in line for line in lines[:200]):
                 skipped.append(fp)
             cut = synth_cut(lines)
             if cut is not None:
@@ -427,15 +436,16 @@ def cmd_compact(args) -> int:
     done = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as ex:
         futs = {ex.submit(analyze, *t): t for t in todo}
-        plant_futs = [ex.submit(planted.run_event, compactor, fp, lines, i, kind, args.seed)
-                      for fp, lines, i, _e, _p, _ev, kind in todo]
+        plant_futs = [
+            ex.submit(planted.run_event, compactor, fp, lines, i, kind, args.seed)
+            for fp, lines, i, _e, _p, _ev, kind in todo
+        ]
         for f in concurrent.futures.as_completed(futs):
             fp, _l, _i, _e, _p, _ev, kind = futs[f]
             try:
                 (real if kind == "real" else synth).append(f.result())
             except Exception as e:
-                print(f"  {kind} event failed in {os.path.basename(fp)}: {e}",
-                      file=sys.stderr)
+                print(f"  {kind} event failed in {os.path.basename(fp)}: {e}", file=sys.stderr)
             done += 1
             if done % 5 == 0 or done == len(todo):
                 print(f"\r  analyzed {done}/{len(todo)}", end="", file=sys.stderr, flush=True)
@@ -452,57 +462,103 @@ def cmd_compact(args) -> int:
         tot = collections.Counter()
         for r in sorted(rows, key=lambda r: (r["session"], r["event_i"])):
             name = ("⌄ " if r["subagent"] else "") + r["session"]
-            print("  " + "".join(str(c).ljust(w) for c, w in zip([
-                name[:33], r["post_tokens"], r["duration_s"] or "—",
-                r["jev_ms"], r["jev_tokens"],
-                f"{r['jev_kept']}{'*' if r['jev_gated'] else ''}",
-                r["refetch_reads"], r["refetch_default_covered"],
-                r["refetch_jev_covered"], r["refetch_jev_full"],
-            ], widths)))
-            tot.update({k: r[k] or 0 for k in
-                        ("post_tokens", "duration_s", "jev_ms", "jev_tokens",
-                         "refetch_reads", "refetch_default_covered",
-                         "refetch_jev_covered", "refetch_jev_full")})
+            print(
+                "  "
+                + "".join(
+                    str(c).ljust(w)
+                    for c, w in zip(
+                        [
+                            name[:33],
+                            r["post_tokens"],
+                            r["duration_s"] or "—",
+                            r["jev_ms"],
+                            r["jev_tokens"],
+                            f"{r['jev_kept']}{'*' if r['jev_gated'] else ''}",
+                            r["refetch_reads"],
+                            r["refetch_default_covered"],
+                            r["refetch_jev_covered"],
+                            r["refetch_jev_full"],
+                        ],
+                        widths,
+                    )
+                )
+            )
+            tot.update(
+                {
+                    k: r[k] or 0
+                    for k in (
+                        "post_tokens",
+                        "duration_s",
+                        "jev_ms",
+                        "jev_tokens",
+                        "refetch_reads",
+                        "refetch_default_covered",
+                        "refetch_jev_covered",
+                        "refetch_jev_full",
+                    )
+                }
+            )
             tot["events"] += 1
             tot["gated"] += bool(r["jev_gated"])
             tot["no_summary"] += bool(r.get("no_summary"))
         n = tot["events"]
         print("  " + "-" * sum(widths))
-        print(f"  {'TOTAL ' + str(n) + ' events':<34}"
-              f"{tot['post_tokens']:<8}{tot['duration_s']:<8.0f}"
-              f"{tot['jev_ms']:<9}{tot['jev_tokens']:<8.0f}{'':<7}{tot['refetch_reads']:<8}"
-              f"{tot['refetch_default_covered']:<9}{tot['refetch_jev_covered']:<9}"
-              f"{tot['refetch_jev_full']:<9}")
-        print(f"    per event: default {tot['post_tokens']/n:.0f} tok injected"
-              + (f" (+{tot['duration_s']/n:.0f}s summarizing)" if tot['duration_s'] else "")
-              + f" vs jev {tot['jev_tokens']/n:.0f} tok (+{tot['jev_ms']/n:.0f}ms judging)")
+        print(
+            f"  {'TOTAL ' + str(n) + ' events':<34}"
+            f"{tot['post_tokens']:<8}{tot['duration_s']:<8.0f}"
+            f"{tot['jev_ms']:<9}{tot['jev_tokens']:<8.0f}{'':<7}{tot['refetch_reads']:<8}"
+            f"{tot['refetch_default_covered']:<9}{tot['refetch_jev_covered']:<9}"
+            f"{tot['refetch_jev_full']:<9}"
+        )
+        print(
+            f"    per event: default {tot['post_tokens'] / n:.0f} tok injected"
+            + (f" (+{tot['duration_s'] / n:.0f}s summarizing)" if tot["duration_s"] else "")
+            + f" vs jev {tot['jev_tokens'] / n:.0f} tok (+{tot['jev_ms'] / n:.0f}ms judging)"
+        )
         if tot["gated"]:
             print(f"    * {tot['gated']} kept no rows — jev applied nothing")
         if tot["no_summary"]:
             print(f"    ! {tot['no_summary']} synthetic events have no summary (claude -p failed)")
         if tot["refetch_reads"]:
             rd = tot["refetch_reads"]
-            print(f"    re-reads: {rd} | default still mentioned {tot['refetch_default_covered']} "
-                  f"({100*tot['refetch_default_covered']/rd:.0f}%) | jev held "
-                  f"{tot['refetch_jev_covered']} ({100*tot['refetch_jev_covered']/rd:.0f}%), "
-                  f"{tot['refetch_jev_full']} ({100*tot['refetch_jev_full']/rd:.0f}%) verbatim")
+            print(
+                f"    re-reads: {rd} | default still mentioned {tot['refetch_default_covered']} "
+                f"({100 * tot['refetch_default_covered'] / rd:.0f}%) | jev held "
+                f"{tot['refetch_jev_covered']} ({100 * tot['refetch_jev_covered'] / rd:.0f}%), "
+                f"{tot['refetch_jev_full']} ({100 * tot['refetch_jev_full'] / rd:.0f}%) verbatim"
+            )
         return tot
 
     widths = [34, 8, 8, 9, 8, 7, 8, 9, 9, 9]
-    hdr = ["session", "post_tok", "def_s", "jev_ms", "jev_tok", "kept",
-           "reread", "cov_def", "cov_jev", "cov_full"]
+    hdr = [
+        "session",
+        "post_tok",
+        "def_s",
+        "jev_ms",
+        "jev_tok",
+        "kept",
+        "reread",
+        "cov_def",
+        "cov_jev",
+        "cov_full",
+    ]
     print("default compaction vs Jev selection, replayed on the same blocks")
     report(real, f"real compaction events ({len(real)})", widths, hdr)
-    report(synth, f"synthetic cuts — default side generated by claude -p "
-                  f"{args.model} ({len(synth)})", widths, hdr)
+    report(
+        synth,
+        f"synthetic cuts — default side generated by claude -p {args.model} ({len(synth)})",
+        widths,
+        hdr,
+    )
     if skipped:
-        print(f"\nskipped {len(skipped)} transcripts whose compaction happened in an "
-              "earlier session file (summary present, pre-compact history elsewhere)")
+        print(
+            f"\nskipped {len(skipped)} transcripts whose compaction happened in an "
+            "earlier session file (summary present, pre-compact history elsewhere)"
+        )
 
     out = os.path.join(DATA, "compare_compact.jsonl")
     with open(out, "w") as f:
-        for r in real + synth:
-            f.write(json.dumps(r) + "\n")
+        f.writelines(json.dumps(r) + "\n" for r in real + synth)
     print(f"\nrows -> {out}")
     return gate(real + synth, [f.result() for f in plant_futs if f.result()])
 
@@ -521,15 +577,19 @@ def gate(rows: list[dict], plants: list[dict]) -> int:
     buried = [p["buried"] for p in plants if p["buried"]]
     su = sum(1 for v in user if v == "kept") / len(user) if user else float("nan")
     sb = sum(1 for v in buried if v == "kept") / len(buried) if buried else float("nan")
-    checks = [("re-fetch verbatim coverage", full, FLOOR_REFETCH_FULL, reads),
-              ("planted user constraint survival", su, FLOOR_PLANTED_USER, len(user)),
-              ("planted buried restatement survival", sb, FLOOR_PLANTED_BURIED, len(buried))]
+    checks = [
+        ("re-fetch verbatim coverage", full, FLOOR_REFETCH_FULL, reads),
+        ("planted user constraint survival", su, FLOOR_PLANTED_USER, len(user)),
+        ("planted buried restatement survival", sb, FLOOR_PLANTED_BURIED, len(buried)),
+    ]
     print("\ncompaction gate (both goals, one verdict):")
     failed = False
     for name, val, floor, n in checks:
         ok = val >= floor
         failed |= not ok
-        print(f"  {'ok  ' if ok else 'FAIL'} {name:38} {100*val:5.1f}%  floor {100*floor:.0f}%  n={n}")
+        print(
+            f"  {'ok  ' if ok else 'FAIL'} {name:38} {100 * val:5.1f}%  floor {100 * floor:.0f}%  n={n}"
+        )
     return 2 if failed else 0
 
 
@@ -554,12 +614,14 @@ def cmd_router(args) -> int:
             continue
         hint, _ = prompt_router.decide(dict(answers))
         m = re.search(r"intent=(\w+)", hint or "")
-        rows.append({
-            "id": pid,
-            "hint": m.group(1) if m else None,
-            "n_tools": rec["n_tools"],
-            "label": rec.get("label"),
-        })
+        rows.append(
+            {
+                "id": pid,
+                "hint": m.group(1) if m else None,
+                "n_tools": rec["n_tools"],
+                "label": rec.get("label"),
+            }
+        )
 
     hinted = [r for r in rows if r["hint"]]
     chat = [r for r in rows if r["hint"] == "chat"]
@@ -567,23 +629,30 @@ def cmd_router(args) -> int:
     chat_used = [r for r in chat if r["n_tools"] > 0]
     harmful = [r for r in chat if r["n_tools"] >= 5]
 
-    print(f"router — shipped hints vs what the unhinted agent did next "
-          f"({len(rows)} real prompts)\n")
-    print(f"  hint fired on          : {len(hinted)} ({100*len(hinted)/len(rows):.0f}%)")
+    print(
+        f"router — shipped hints vs what the unhinted agent did next ({len(rows)} real prompts)\n"
+    )
+    print(f"  hint fired on          : {len(hinted)} ({100 * len(hinted) / len(rows):.0f}%)")
     print(f"  'answer, no tools'     : {len(chat)} prompts")
     if chat:
-        print(f"    default Claude used tools anyway on {len(chat_used)} "
-              f"({100*len(chat_used)/len(chat):.0f}%), burning {chat_tools} calls "
-              f"(mean {chat_tools/len(chat):.1f}/prompt) — work the hint prevents")
-        print(f"    ...but {len(harmful)} of those sessions went on to make 5+ calls, "
-              f"where the hint is harmful, not saving")
+        print(
+            f"    default Claude used tools anyway on {len(chat_used)} "
+            f"({100 * len(chat_used) / len(chat):.0f}%), burning {chat_tools} calls "
+            f"(mean {chat_tools / len(chat):.1f}/prompt) — work the hint prevents"
+        )
+        print(
+            f"    ...but {len(harmful)} of those sessions went on to make 5+ calls, "
+            f"where the hint is harmful, not saving"
+        )
     by_hint = collections.defaultdict(list)
     for r in hinted:
         by_hint[r["hint"]].append(r["n_tools"])
     print("\n  observed tool calls per hinted prompt (default behavior, unhinted):")
     for h, ts in sorted(by_hint.items()):
-        print(f"    {h:<8} n={len(ts):<5} mean {sum(ts)/len(ts):.1f}  "
-              f"zero-tool {100*sum(1 for t in ts if t == 0)/len(ts):.0f}%")
+        print(
+            f"    {h:<8} n={len(ts):<5} mean {sum(ts) / len(ts):.1f}  "
+            f"zero-tool {100 * sum(1 for t in ts if t == 0) / len(ts):.0f}%"
+        )
 
     out = os.path.join(DATA, "compare_router.jsonl")
     with open(out, "w") as f:
@@ -597,10 +666,14 @@ def main() -> int:
     p = argparse.ArgumentParser(prog="compare", description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("compact", help="default compaction vs jev selection on real events")
-    c.add_argument("--synth", type=int, default=0,
-                   help="add up to N synthetic cut points in long sessions")
-    c.add_argument("--model", default="sonnet",
-                   help="model for claude -p default-side summaries on synthetic cuts")
+    c.add_argument(
+        "--synth", type=int, default=0, help="add up to N synthetic cut points in long sessions"
+    )
+    c.add_argument(
+        "--model",
+        default="sonnet",
+        help="model for claude -p default-side summaries on synthetic cuts",
+    )
     c.add_argument("--seed", type=int, default=0)
     c.add_argument("--workers", type=int, default=6)
     c.set_defaults(fn=cmd_compact)
@@ -608,6 +681,7 @@ def main() -> int:
     r.set_defaults(fn=cmd_router)
     args = p.parse_args()
     return args.fn(args)
+
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -13,9 +13,9 @@ anything.
 
 Checks, all run in plan mode too: version is X.Y.Z and not below
 plugin.json; working tree clean; branch is main and not behind origin/main;
-tag vX.Y.Z unused; `compileall` over scripts and eval; `compactor.py rows`
-falls back on empty input. Needs `git` with push rights and `gh-axi`
-authenticated for the repository.
+tag vX.Y.Z unused; `compileall` over scripts and eval; `ruff format --check`
+and `ruff check`; `compactor.py rows` falls back on empty input. Needs
+`git` with push rights and `gh-axi` authenticated for the repository.
 """
 
 from __future__ import annotations
@@ -65,21 +65,31 @@ def preflight(version: str) -> None:
     if tuple(map(int, version.split("."))) < tuple(map(int, current.split("."))):
         fail(f"{version} is below the plugin.json version {current}")
     sh("python3", "-m", "compileall", "-q", "scripts", "eval")
-    smoke = subprocess.run(["python3", os.path.join(ROOT, "scripts", "compactor.py"), "rows"],
-                           input="", text=True, capture_output=True, cwd=ROOT)
+    try:
+        sh("ruff", "format", "--check", ".")
+        sh("ruff", "check", ".")
+    except FileNotFoundError:
+        fail("ruff is not installed")
+    smoke = subprocess.run(
+        ["python3", os.path.join(ROOT, "scripts", "compactor.py"), "rows"],
+        input="",
+        text=True,
+        capture_output=True,
+        cwd=ROOT,
+    )
     if smoke.returncode or '"fallback"' not in smoke.stdout:
         fail("compactor.py rows did not fall back cleanly on empty input")
 
 
 def split_changelog(text: str) -> tuple[str, str, str]:
     """(head, unreleased_body, tail) around the `## [Unreleased]` section."""
-    m = re.search(r"^## \[Unreleased\]\s*\n", text, re.M)
+    m = re.search(r"^## \[Unreleased\]\s*\n", text, re.MULTILINE)
     if not m:
         fail("CHANGELOG.md has no `## [Unreleased]` section")
-    rest = text[m.end():]
-    nxt = re.search(r"^## \[", rest, re.M)
+    rest = text[m.end() :]
+    nxt = re.search(r"^## \[", rest, re.MULTILINE)
     body = rest[: nxt.start()] if nxt else rest
-    tail = rest[nxt.start():] if nxt else ""
+    tail = rest[nxt.start() :] if nxt else ""
     if not body.strip():
         fail("`## [Unreleased]` is empty; write the notes for this release first")
     return text[: m.start()], body.strip("\n") + "\n", tail
@@ -98,7 +108,11 @@ def bump_json(path: str, version: str, execute: bool) -> str:
 def main() -> int:
     argv = sys.argv[1:]
     trailer = argv[argv.index("--trailer") + 1] if "--trailer" in argv else ""
-    argv = [a for i, a in enumerate(argv) if not (a == "--trailer" or (i and argv[i - 1] == "--trailer"))]
+    argv = [
+        a
+        for i, a in enumerate(argv)
+        if not (a == "--trailer" or (i and argv[i - 1] == "--trailer"))
+    ]
     args = [a for a in argv if not a.startswith("--")]
     execute = "--execute" in argv
     if len(args) != 1:
@@ -111,9 +125,11 @@ def main() -> int:
     head, notes, tail = split_changelog(open(CHANGELOG).read())
     today = datetime.date.today().isoformat()
     prev = sh("git", "describe", "--tags", "--abbrev=0", check=False) or None
-    compare = (f"{REPO_URL}/compare/{prev}...{tag}" if prev else f"{REPO_URL}/releases/tag/{tag}")
-    new_changelog = (f"{head}## [Unreleased]\n\n## [{version}] - {today}\n\n{notes}\n"
-                     f"[{version}]: {compare}\n\n{tail}")
+    compare = f"{REPO_URL}/compare/{prev}...{tag}" if prev else f"{REPO_URL}/releases/tag/{tag}"
+    new_changelog = (
+        f"{head}## [Unreleased]\n\n## [{version}] - {today}\n\n{notes}\n"
+        f"[{version}]: {compare}\n\n{tail}"
+    )
     first = re.split(r"(?<=[.!?])\s", notes.strip().splitlines()[0].lstrip("-* "))[0].rstrip(".")
     title = first if len(first) <= 72 else first[:72].rsplit(" ", 1)[0]
     files = [os.path.relpath(CHANGELOG, ROOT)]
@@ -124,7 +140,7 @@ def main() -> int:
     print(f"  CHANGELOG.md: [Unreleased] -> [{version}] - {today}, new empty [Unreleased]")
     print(f"  commit '{version}: {title}', tag {tag}, push main and {tag}")
     print(f"  gh-axi release create {tag} with these notes:\n")
-    print("\n".join(f"    {l}" for l in notes.splitlines()))
+    print("\n".join(f"    {line}" for line in notes.splitlines()))
     if not execute:
         print("\nplan only; re-run with --execute to release")
         return 0
@@ -141,8 +157,17 @@ def main() -> int:
         tf.write(notes)
         notes_path = tf.name
     try:
-        out = sh("gh-axi", "release", "create", tag, "--title", tag,
-                 "--notes-file", notes_path, "--verify-tag")
+        out = sh(
+            "gh-axi",
+            "release",
+            "create",
+            tag,
+            "--title",
+            tag,
+            "--notes-file",
+            notes_path,
+            "--verify-tag",
+        )
     finally:
         os.unlink(notes_path)
     print(f"\nreleased {tag}\n{out}")
