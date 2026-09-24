@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Rule enforcement hooks: PostToolUse on Edit|Write|MultiEdit|NotebookEdit,
+PreToolUse and PostToolUse on Bash to record what a shell command changed,
 and Stop for turn-level rules.
 
 Rules come straight from the instruction files a person already keeps:
@@ -38,6 +39,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -468,19 +470,17 @@ def outside(rel: str) -> bool:
     return rel.startswith(os.pardir + os.sep) or rel == os.pardir
 
 
-def last_user_prompt(transcript_path: str | None) -> tuple[str, str, bool]:
-    """What the user last asked for, the uuid of that message, and whether
-    the turn since then ran Bash — rules like "don't touch generated files"
-    only mean something against the task, the uuid marks which turn a hunk
-    belongs to, and Bash writes never reach the recorded hunks."""
+def last_user_prompt(transcript_path: str | None) -> tuple[str, str]:
+    """The uuid of the user's last request and its text — rules like "don't
+    touch generated files" only mean something against the task, and the
+    uuid marks which turn a hunk belongs to."""
     if not transcript_path:
-        return "", "", False
+        return "", ""
     try:
         with open(transcript_path, errors="replace") as f:
             lines = f.readlines()[-400:]
     except OSError:
-        return "", "", False
-    bash = False
+        return "", ""
     for line in reversed(lines):
         if len(line) > 500_000:
             continue
@@ -490,19 +490,8 @@ def last_user_prompt(transcript_path: str | None) -> tuple[str, str, bool]:
             continue
         text = user_prompt(d)
         if text:
-            return d.get("uuid") or "", text[:MAX_TASK_CHARS], bash
-        bash = bash or ran_bash(d)
-    return "", "", bash
-
-
-def ran_bash(d: dict) -> bool:
-    """Whether a transcript entry is an assistant message calling Bash."""
-    if d.get("type") != "assistant" or d.get("isSidechain"):
-        return False
-    c = (d.get("message") or {}).get("content")
-    return isinstance(c, list) and any(
-        isinstance(b, dict) and b.get("type") == "tool_use"
-        and b.get("name") == "Bash" for b in c)
+            return d.get("uuid") or "", text[:MAX_TASK_CHARS]
+    return "", ""
 
 
 def user_prompt(d: dict) -> str:
@@ -793,10 +782,15 @@ def update_state(session_id: str, change):
         return result
 
 
-def record_hunk(state: dict, turn: str, rel: str, hunk: str) -> None:
-    """What the agent changed this turn, kept for the Stop-time turn check."""
+def enter_turn(state: dict, turn: str) -> None:
     if state.get("turn") != turn:
         state["turn"], state["hunks"], state["files"] = turn, [], []
+        state["partial"], state["snapshots"] = False, {}
+
+
+def record_hunk(state: dict, turn: str, rel: str, hunk: str) -> None:
+    """What the agent changed this turn, kept for the Stop-time turn check."""
+    enter_turn(state, turn)
     total = sum(len(h) for h in state["hunks"])
     room = MAX_TURN_CHARS - total
     if room <= 0:
@@ -1050,7 +1044,7 @@ def handle_edit(event: dict) -> dict:
     if not state:
         return {}
     sid = event.get("session_id") or "unknown"
-    turn, task, _ = last_user_prompt(event.get("transcript_path"))
+    turn, task = last_user_prompt(event.get("transcript_path"))
     update_state(sid, lambda st: record_hunk(st, turn, rel, state))
     if not in_scope:
         return {}
@@ -1099,14 +1093,110 @@ def handle_edit(event: dict) -> dict:
     return out
 
 
+def git(cwd: str, *args: str, env: dict | None = None) -> str:
+    r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True,
+                       timeout=4, env=env)
+    if r.returncode != 0:
+        raise subprocess.SubprocessError(r.stderr.strip())
+    return r.stdout
+
+
+def worktree_tree(cwd: str) -> tuple[str, str, str]:
+    """The repository root, a tree object of its working tree as it is now,
+    untracked files included, and a hash of the ignored paths git leaves out
+    of that tree. The tree is built in a scratch copy of the index so the
+    user's staging area is never touched."""
+    root = git(cwd, "rev-parse", "--show-toplevel").strip()
+    index = os.path.join(root, git(root, "rev-parse", "--git-path", "index").strip())
+    scratch = os.path.join(BLOCK_DIR, f"index-{os.getpid()}")
+    os.makedirs(BLOCK_DIR, exist_ok=True)
+    try:
+        if os.path.exists(index):
+            shutil.copy2(index, scratch)
+        env = {**os.environ, "GIT_INDEX_FILE": scratch}
+        git(root, "add", "-A", env=env)
+        ignored = git(root, "ls-files", "-z", "--others", "--ignored",
+                      "--exclude-standard", "--directory")
+        return (root, git(root, "write-tree", env=env).strip(),
+                hashlib.sha256(ignored.encode()).hexdigest())
+    finally:
+        if os.path.exists(scratch):
+            os.remove(scratch)
+
+
+def snapshot_key(event: dict) -> str:
+    return event.get("tool_use_id") or json.dumps(event.get("tool_input"), sort_keys=True)
+
+
+def handle_bash_before(event: dict) -> dict:
+    """Snapshot the working tree before a shell command, so the matching
+    PostToolUse can record what it changed. A failed snapshot marks the turn's
+    diff as partial."""
+    sid = event.get("session_id") or "unknown"
+    cwd = event.get("cwd") or os.getcwd()
+    turn, _ = last_user_prompt(event.get("transcript_path"))
+    if not turn:
+        return {}
+    try:
+        tree = worktree_tree(cwd)
+    except (OSError, subprocess.SubprocessError):
+        tree = None
+
+    def keep(st: dict) -> None:
+        enter_turn(st, turn)
+        if tree:
+            st["snapshots"][snapshot_key(event)] = tree
+        else:
+            st["partial"] = True
+    update_state(sid, keep)
+    return {}
+
+
+def handle_bash_after(event: dict) -> dict:
+    """Record each file a shell command changed as a hunk, like an edit."""
+    sid = event.get("session_id") or "unknown"
+    cwd = event.get("cwd") or os.getcwd()
+    turn, _ = last_user_prompt(event.get("transcript_path"))
+    key = snapshot_key(event)
+    before = update_state(sid, lambda st: st.get("snapshots", {}).pop(key, None)
+                          if st.get("turn") == turn else None)
+    if not turn or not before:
+        return {}
+    root, old, old_ignored = before
+    try:
+        _, new, new_ignored = worktree_tree(root)
+        if new_ignored != old_ignored:
+            update_state(sid, lambda st: st.update(partial=True))
+        names = git(root, "diff", "--name-only", "-z", old, new).split("\0")
+        hunks = []
+        for name in filter(None, names):
+            rel = relative(os.path.join(root, name), os.path.realpath(cwd))
+            if EXCLUDED.search(rel) or outside(rel):
+                continue
+            hunk = git(root, "diff", "--no-color", "--no-ext-diff", "-U3",
+                       old, new, "--", name)
+            hunks.append((rel, hunk))
+    except (OSError, subprocess.SubprocessError):
+        update_state(sid, lambda st: st.update(partial=True))
+        return {}
+
+    def keep(st: dict) -> None:
+        for rel, hunk in hunks:
+            record_hunk(st, turn, rel, hunk)
+    if hunks:
+        update_state(sid, keep)
+    return {}
+
+
 def handle_stop(event: dict) -> dict:
     """Turn rules judge the turn's changes as a whole — the questions a
     per-edit hunk can't answer (scope creep, an abstraction with one caller,
     a file that grew past its cap)."""
     sid = event.get("session_id") or "unknown"
     sstate = session_state(sid)
-    turn, task, bash = last_user_prompt(event.get("transcript_path"))
-    if not turn or not sstate["hunks"] or sstate.get("turn") != turn:
+    turn, task = last_user_prompt(event.get("transcript_path"))
+    if (not turn or sstate.get("turn") != turn
+            or not (sstate["hunks"] or sstate.get("partial"))):
         return {}
     cwd = event.get("cwd") or os.getcwd()
     rules = load_rules(cwd)
@@ -1115,8 +1205,8 @@ def handle_stop(event: dict) -> dict:
         return {}
 
     diff = "\n\n".join(sstate["hunks"])
-    parts = [f"Files changed this turn: {', '.join(sstate['files'])}"]
-    if bash:
+    parts = [f"Files changed this turn: {', '.join(sstate['files']) or 'none recorded'}"]
+    if sstate.get("partial"):
         parts.append("This turn also ran shell commands. Changes they made "
                      "are not in the diff below, so it is partial.")
     if task:
@@ -1172,7 +1262,13 @@ def main() -> None:
             return
         event = json.load(sys.stdin)
         name = event.get("hook_event_name") or "PostToolUse"
-        out = handle_stop(event) if name == "Stop" else handle_edit(event)
+        bash = event.get("tool_name") == "Bash"
+        if name == "Stop":
+            out = handle_stop(event)
+        elif name == "PreToolUse":
+            out = handle_bash_before(event) if bash else {}
+        else:
+            out = handle_bash_after(event) if bash else handle_edit(event)
         if out:
             json.dump(out, sys.stdout)
             sys.stdout.write("\n")

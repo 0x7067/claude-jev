@@ -134,10 +134,14 @@ In order of how much of this incident each one removes:
 2. **Judge each hunk against its own prompt.** If a rule really needs the
    whole session, send the pairs (prompt, hunks) instead of one prompt and a
    pooled diff.
+   Resolved by fix 1: the hunks reset on each new prompt, so every hunk the
+   Stop check sees shares one prompt. No rule needs the whole session.
 3. **Say what the hook didn't see.** When the turn ran Bash commands that
    write files, either skip the turn check or tell Jev that the diff is
    partial. Recording Bash writes is harder: the hook would need a `git
    diff` or mtime snapshot at turn start.
+   *Done in 0.19.2:* a git tree snapshot around each Bash call records its
+   writes as hunks. The partial note remains for a failed snapshot.
 4. **Name the files from this turn in the message,** so the repair
    instruction never points at approved work.
 5. **Lock or merge the session state file** so parallel edits can't drop

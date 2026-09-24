@@ -53,8 +53,6 @@ SHA256 = {
 BIN_DIR = os.path.join(jev.config_dir(), f"jev-bin/ast-grep-{VERSION}")
 BIN = os.path.join(BIN_DIR, "ast-grep")
 
-USER_AGENT = "OpenAI File Downloader, XaiImageApiFetch/1.0"
-
 RUN_TIMEOUT = 1.5
 QUERY_BUDGET = 3.0
 MAX_QUERIES = 6
@@ -117,10 +115,8 @@ def fetch() -> bool:
         return False
     if os.access(BIN, os.X_OK):
         return True
-    req = urllib.request.Request(RELEASE % plat,
-                                 headers={"User-Agent": USER_AGENT})
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with urllib.request.urlopen(RELEASE % plat, timeout=120) as resp:
             payload = resp.read()
     except Exception:
         return False
