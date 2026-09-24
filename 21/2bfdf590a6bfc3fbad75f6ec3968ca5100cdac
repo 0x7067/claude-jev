@@ -1,0 +1,19 @@
+README.md
+  s_af150310e8bfbf::t_d1c57facb41720 3,5-7,9-12,14-16,23-39,41,43,45,47-57,66,68-75,77,79,81,83-87,89,91,93-96,98,100,102-106,108-116,120,122,124-129,133-164,183,185,189,197,220,232
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "212bfdf590a6bfc3fbad75f6ec3968ca5100cdac",
+  "prompts": {},
+  "sessions": {
+    "s_af150310e8bfbf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7c168d59-4100-4a0f-8cb2-9b9b3d4cdb13",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
