@@ -1,0 +1,21 @@
+CHANGELOG.md
+  s_8a580af607c2f7::t_181104d7b2a8d2 7
+scripts/rules.py
+  s_8a580af607c2f7::t_e60575287b2492 471-475,477,482-483,493-506,1054,1109,1120-1122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "34925bcd65e60b77426ac65989dc9844b5dcc2ac",
+  "prompts": {},
+  "sessions": {
+    "s_8a580af607c2f7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fae89405-07f0-4260-8f52-58cc82d0062f",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
