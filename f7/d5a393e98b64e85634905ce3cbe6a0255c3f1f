@@ -1,0 +1,22 @@
+eval/replay.py
+  s_80510317242b65::t_5423a6ea7184cc 338
+  s_80510317242b65::t_79b30ef23de66b 290
+  s_80510317242b65::t_0d313786f61193 248
+  s_80510317242b65::t_3d7db21a023d14 222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f7d5a393e98b64e85634905ce3cbe6a0255c3f1f",
+  "prompts": {},
+  "sessions": {
+    "s_80510317242b65": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "9f93a1cb-cc6d-48b2-aa26-caf56dd86371",
+        "model": "grok-4.7"
+      },
+      "human_author": null
+    }
+  }
+}
