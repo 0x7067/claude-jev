@@ -208,7 +208,10 @@ def judge(rec: dict, rule_cache: dict) -> dict:
     out["rel"] = rel
     if rec.get("sha"):
         with _lock:
-            cwd = at_commit(cwd, rec["sha"])
+            if repo_root(cwd):
+                cwd = at_commit(cwd, rec["sha"])
+            else:
+                out["sha"] = ""
     if rules.EXCLUDED.search(rel) or rules.outside(rel):
         out["skipped"] = "excluded path"
         return out
