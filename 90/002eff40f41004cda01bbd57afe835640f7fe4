@@ -1,0 +1,31 @@
+CHANGELOG.md
+  s_8919e5912302ac::t_94a604ffd09309 7-8
+scripts/rules.py
+  s_8919e5912302ac::t_8b782a8e741857 56
+  s_8919e5912302ac::t_4f089896de7887 485,495-501,505-526
+  s_c9d1dd237676a1::t_fd71fbd977541f 527-528
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "90002eff40f41004cda01bbd57afe835640f7fe4",
+  "prompts": {},
+  "sessions": {
+    "s_8919e5912302ac": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a313bcf9-573c-4fee-ba6b-49c20b5ea6ea",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    },
+    "s_c9d1dd237676a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2fd3d952-d689-4f81-86db-688bcca0148d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
