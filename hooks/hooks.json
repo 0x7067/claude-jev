@@ -65,6 +65,18 @@
           }
         ]
       }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/rules.py",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   },
   "modules": [

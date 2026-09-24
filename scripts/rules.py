@@ -1101,10 +1101,11 @@ def git(cwd: str, *args: str, env: dict | None = None) -> str:
     return r.stdout
 
 
-def worktree_tree(cwd: str) -> tuple[str, str]:
-    """The repository root and a tree object of its working tree as it is
-    now, untracked files included, built in a scratch copy of the index so
-    the user's staging area is never touched."""
+def worktree_tree(cwd: str) -> tuple[str, str, str]:
+    """The repository root, a tree object of its working tree as it is now,
+    untracked files included, and a hash of the ignored paths git leaves out
+    of that tree. The tree is built in a scratch copy of the index so the
+    user's staging area is never touched."""
     root = git(cwd, "rev-parse", "--show-toplevel").strip()
     index = os.path.join(root, git(root, "rev-parse", "--git-path", "index").strip())
     scratch = os.path.join(BLOCK_DIR, f"index-{os.getpid()}")
@@ -1114,7 +1115,10 @@ def worktree_tree(cwd: str) -> tuple[str, str]:
             shutil.copy2(index, scratch)
         env = {**os.environ, "GIT_INDEX_FILE": scratch}
         git(root, "add", "-A", env=env)
-        return root, git(root, "write-tree", env=env).strip()
+        ignored = git(root, "ls-files", "-z", "--others", "--ignored",
+                      "--exclude-standard", "--directory")
+        return (root, git(root, "write-tree", env=env).strip(),
+                hashlib.sha256(ignored.encode()).hexdigest())
     finally:
         if os.path.exists(scratch):
             os.remove(scratch)
@@ -1158,9 +1162,11 @@ def handle_bash_after(event: dict) -> dict:
                           if st.get("turn") == turn else None)
     if not turn or not before:
         return {}
-    root, old = before
+    root, old, old_ignored = before
     try:
-        _, new = worktree_tree(root)
+        _, new, new_ignored = worktree_tree(root)
+        if new_ignored != old_ignored:
+            update_state(sid, lambda st: st.update(partial=True))
         names = git(root, "diff", "--name-only", "-z", old, new).split("\0")
         hunks = []
         for name in filter(None, names):
@@ -1189,7 +1195,8 @@ def handle_stop(event: dict) -> dict:
     sid = event.get("session_id") or "unknown"
     sstate = session_state(sid)
     turn, task = last_user_prompt(event.get("transcript_path"))
-    if not turn or not sstate["hunks"] or sstate.get("turn") != turn:
+    if (not turn or sstate.get("turn") != turn
+            or not (sstate["hunks"] or sstate.get("partial"))):
         return {}
     cwd = event.get("cwd") or os.getcwd()
     rules = load_rules(cwd)
@@ -1198,7 +1205,7 @@ def handle_stop(event: dict) -> dict:
         return {}
 
     diff = "\n\n".join(sstate["hunks"])
-    parts = [f"Files changed this turn: {', '.join(sstate['files'])}"]
+    parts = [f"Files changed this turn: {', '.join(sstate['files']) or 'none recorded'}"]
     if sstate.get("partial"):
         parts.append("This turn also ran shell commands. Changes they made "
                      "are not in the diff below, so it is partial.")
