@@ -536,7 +536,7 @@ def last_user_prompt(transcript_path: str | None) -> tuple[str, str, int]:
         return "", "", 0
     try:
         with open(transcript_path, errors="replace") as f:
-            lines = f.readlines()[-400:]
+            lines = f.readlines()[-MAX_PROMPT_TAIL:]
     except OSError:
         return "", "", 0
     answers: list[str] = []
