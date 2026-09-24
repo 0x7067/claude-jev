@@ -4,6 +4,7 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+- The rules hook records what a Bash command changes. A `PreToolUse` hook snapshots the git working tree, untracked files included, in a scratch index. The matching `PostToolUse` diffs it and records each changed file as a hunk, so the `Stop` check judges shell writes like edits. A turn whose snapshot fails, such as outside a git repo, still tells Jev its diff is partial. Snapshots took under 0.7s on the five slowest repos checked.
 ## [0.19.1] - 2026-09-24
 
 - The rules `Stop` check judges only the edits made since the latest user prompt, and skips a turn with none. It had pooled every edit since the session began and judged them against the newest prompt. In session `ccb4b920`, that blocked twice on approved `.zprofile`/`.zshenv` edits from an earlier turn (0.91, 0.92) and spent the session's block budget. Hunks are keyed by the transcript uuid of the prompt they were made under. The request and the repair message now name this turn's files. See `docs/stop-hook-false-positive.md`.

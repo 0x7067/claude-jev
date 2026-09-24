@@ -138,6 +138,8 @@ In order of how much of this incident each one removes:
    write files, either skip the turn check or tell Jev that the diff is
    partial. Recording Bash writes is harder: the hook would need a `git
    diff` or mtime snapshot at turn start.
+   *Done in 0.19.2:* a git tree snapshot around each Bash call records its
+   writes as hunks. The partial note remains for a failed snapshot.
 4. **Name the files from this turn in the message,** so the repair
    instruction never points at approved work.
 5. **Lock or merge the session state file** so parallel edits can't drop
