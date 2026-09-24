@@ -347,6 +347,10 @@ function drawPane($, e, rows) {
           label: "Status",
           onPress: () => {
             menuRow = "menu:status";
+            if (info) {
+              statusLine = describeStatus();
+              void redraw(menuRow);
+            }
             run(async () => {
               await refreshInfo($);
               statusLine = describeStatus();

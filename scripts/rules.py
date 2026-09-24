@@ -467,16 +467,17 @@ def outside(rel: str) -> bool:
     return rel.startswith(os.pardir + os.sep) or rel == os.pardir
 
 
-def last_user_prompt(transcript_path: str | None) -> str:
-    """What the user last asked for — rules like "don't touch generated
-    files" only mean something against the task."""
+def last_user_prompt(transcript_path: str | None) -> tuple[str, str]:
+    """What the user last asked for, and the uuid of that message — rules
+    like "don't touch generated files" only mean something against the task,
+    and the uuid marks which turn a hunk belongs to."""
     if not transcript_path:
-        return ""
+        return "", ""
     try:
         with open(transcript_path, errors="replace") as f:
             lines = f.readlines()[-400:]
     except OSError:
-        return ""
+        return "", ""
     for line in reversed(lines):
         if len(line) > 500_000:
             continue
@@ -493,8 +494,8 @@ def last_user_prompt(transcript_path: str | None) -> str:
                              if isinstance(b, dict) and b.get("type") == "text")
         text = (text or "").strip()
         if text and not text.startswith(("<", "/", "#")):
-            return text[:MAX_TASK_CHARS]
-    return ""
+            return d.get("uuid") or text[:MAX_TASK_CHARS], text[:MAX_TASK_CHARS]
+    return "", ""
 
 
 def write_hunk(cwd: str, rel: str, content: str) -> str:
@@ -758,8 +759,10 @@ def save_state(session_id: str, state: dict) -> None:
         pass
 
 
-def record_hunk(state: dict, rel: str, hunk: str) -> None:
-    """What the agent changed, kept for the Stop-time turn check."""
+def record_hunk(state: dict, turn: str, rel: str, hunk: str) -> None:
+    """What the agent changed this turn, kept for the Stop-time turn check."""
+    if state.get("turn") != turn:
+        state["turn"], state["hunks"], state["files"] = turn, [], []
     total = sum(len(h) for h in state["hunks"])
     room = MAX_TURN_CHARS - total
     if room <= 0:
@@ -1014,12 +1017,12 @@ def handle_edit(event: dict) -> dict:
         return {}
     sid = event.get("session_id") or "unknown"
     sstate = session_state(sid)
-    record_hunk(sstate, rel, state)
+    turn, task = last_user_prompt(event.get("transcript_path"))
+    record_hunk(sstate, turn, rel, state)
     if not in_scope:
         save_state(sid, sstate)
         return {}
 
-    task = last_user_prompt(event.get("transcript_path"))
     context = file_context(file_path, needle_of(inp))
     siblings = sibling_modules(file_path)
     block = enclosing_block(file_path, needle_of(inp)) if ESCALATE else ""
@@ -1064,12 +1067,13 @@ def handle_edit(event: dict) -> dict:
 
 
 def handle_stop(event: dict) -> dict:
-    """Turn rules judge the session's changes as a whole — the questions a
+    """Turn rules judge the turn's changes as a whole — the questions a
     per-edit hunk can't answer (scope creep, an abstraction with one caller,
     a file that grew past its cap)."""
     sid = event.get("session_id") or "unknown"
     sstate = session_state(sid)
-    if not sstate["hunks"]:
+    turn, task = last_user_prompt(event.get("transcript_path"))
+    if not sstate["hunks"] or sstate.get("turn") != turn:
         return {}
     cwd = event.get("cwd") or os.getcwd()
     rules = load_rules(cwd)
@@ -1077,9 +1081,8 @@ def handle_stop(event: dict) -> dict:
     if not turn_rules:
         return {}
 
-    task = last_user_prompt(event.get("transcript_path"))
     diff = "\n\n".join(sstate["hunks"])
-    parts = [f"Files changed this session: {', '.join(sstate['files'])}"]
+    parts = [f"Files changed this turn: {', '.join(sstate['files'])}"]
     if task:
         parts.append(f"The user's current request: {task}")
     parts.append(f"The changes:\n{diff[:MAX_TURN_CHARS]}")
