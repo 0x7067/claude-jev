@@ -1,0 +1,19 @@
+CHANGELOG.md
+  s_f73d9ba9e717ea::t_13749e1e01075c 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b5feb4fc8b60f671235d2e026a40e887d1c7d7f6",
+  "prompts": {},
+  "sessions": {
+    "s_f73d9ba9e717ea": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d4bf-842e-755c-aa45-de62e40a40b3",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
