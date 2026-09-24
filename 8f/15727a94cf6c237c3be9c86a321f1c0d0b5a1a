@@ -1,0 +1,19 @@
+scripts/rules.py
+  s_8a580af607c2f7::t_dc2529fcd571d6 493,1109,1169,1180,1184,1192-1194
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8f15727a94cf6c237c3be9c86a321f1c0d0b5a1a",
+  "prompts": {},
+  "sessions": {
+    "s_8a580af607c2f7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fae89405-07f0-4260-8f52-58cc82d0062f",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
