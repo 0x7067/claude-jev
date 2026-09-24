@@ -77,9 +77,10 @@ handles, required state, commands, and observable proof.
 
 ## Features
 
-- [Prompt routing](./prompt-routing.md) covers UserPromptSubmit skip and fail-open.
-- [Subagent routing](./subagent-routing.md) covers PreToolUse model picking and fail-open.
-- [Rule enforcement](./rule-enforcement.md) covers PostToolUse / Stop fail-open and event shape.
+- [Prompt routing](./prompt-routing.md) covers UserPromptSubmit skip, fail-open, and the on/off toggle.
+- [Subagent routing](./subagent-routing.md) covers PreToolUse model picking, fail-open, and the on/off toggle.
+- [Rule enforcement](./rule-enforcement.md) covers PostToolUse / Stop fail-open, event shape, Bash snapshot hunks, and the on/off toggle.
 - [Session compaction](./session-compaction.md) covers the `rows` bridge: bad-input fallback, pin-tail keep, and no-key multi-row Jev-error fallback.
-- [Jev CLI](./jev-cli.md) covers the `scripts/jev.py` CLI missing-key and ask surfaces.
+- [Jev CLI](./jev-cli.md) covers the `scripts/jev.py` CLI: missing key, bad input, `status`, and a pinned provider.
+- [Stats](./stats.md) covers `scripts/stats.py`, the report the pane's Stats row shows.
 - [Settings pane](./settings-pane.md) covers the `/claude-jev` pane (out-of-band only).
