@@ -1,0 +1,19 @@
+README.md
+  s_2a556dd01fbb78::t_77cc669357364c 183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "96060b36b5eb32785ecdc14dc5c9a02fa7f84b14",
+  "prompts": {},
+  "sessions": {
+    "s_2a556dd01fbb78": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d9e5-500d-7253-bb45-7a2833c600f6",
+        "model": "qwen3.8-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
