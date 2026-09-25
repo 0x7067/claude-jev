@@ -1,0 +1,31 @@
+CHANGELOG.md
+  s_5240f1ce47a6de::t_534150d8f2e2e8 7
+  s_5240f1ce47a6de::t_70d2a6c192cf20 8-10
+  s_5240f1ce47a6de::t_003c95fa069931 11-16
+README.md
+  s_5240f1ce47a6de::t_335da988a6e977 125-127,131
+  s_5240f1ce47a6de::t_6ba81272de46c4 207
+docs/compaction-design.md
+  s_5240f1ce47a6de::t_0433eede501336 34-38
+  s_5240f1ce47a6de::t_b069a313dd4f6e 26-29
+scripts/compactor.py
+  s_5240f1ce47a6de::t_87c193c6d9398f 245-247,250,253-254,257,259-260,263-264,271-273,282-294
+  s_5240f1ce47a6de::t_45199947b0328e 295-297
+  s_5240f1ce47a6de::t_759488c85d18ea 41-42,205,302,304,308,311,395,412,432-434,441-447,450-451,454-463,465-478,480-481,527,529-530,538,643
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4a055e8a65f90b746ecf1e2d26bc7bbc3297f225",
+  "prompts": {},
+  "sessions": {
+    "s_5240f1ce47a6de": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d6d9-378a-74b2-9e2c-1eed99654dd1",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
