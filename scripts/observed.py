@@ -68,8 +68,7 @@ def reports_bash_diffs(version: str | None) -> bool:
 
 def bash_changed_files(result: object) -> list[str]:
     """The project files Claude Code's own diff says one Bash command wrote.
-    Gitignored paths and paths outside the project never appear in it, which
-    is the scope this scorer wants: a scratch file in /tmp is not an edit."""
+    Gitignored paths and paths outside the project never appear in it."""
     if not isinstance(result, dict):
         return []
     diff = result.get("bashEditDiff")
