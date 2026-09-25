@@ -1,0 +1,63 @@
+.cursor/skills/verify-claude-jev/features/jev-cli.md
+  s_2a556dd01fbb78::t_6bed549e0298ae 5-6,33,42-44
+  s_2a556dd01fbb78::t_1283859ba0521d 34-35
+.cursor/skills/verify-claude-jev/features/settings-pane.md
+  s_2a556dd01fbb78::t_0fd54d6a55430a 18-20,50-57,72-75
+  s_2a556dd01fbb78::t_ad0c66a5960691 34-41
+.cursor/skills/verify-claude-jev/features/subagent-routing.md
+  s_2a556dd01fbb78::t_69812dfa4156ed 34-35,41,52-53
+  s_2a556dd01fbb78::t_6a1becf0a9cd92 12,20,39-40,46-51
+.cursor/skills/verify-claude-jev/features/README.md
+  s_2a556dd01fbb78::t_8953e17c63d518 21-22,29-31,57-62,119
+  s_2a556dd01fbb78::t_f1bd086e43a92e 23-28
+  s_2a556dd01fbb78::t_be7698288c4297 42-53
+  s_2a556dd01fbb78::t_6ce837cdac0be3 32-35
+  s_2a556dd01fbb78::t_ba770eae8404d0 63-71
+.cursor/skills/verify-claude-jev/features/stats.md
+  s_2a556dd01fbb78::t_a49667ba2b0fcd 26-27,33-36
+  s_2a556dd01fbb78::t_eff1e2884b1236 28,38,41
+  s_2a556dd01fbb78::t_feea76770c408f 12,29,39-40
+.cursor/skills/verify-claude-jev/features/prompt-routing.md
+  s_2a556dd01fbb78::t_f7078062313113 4-5,41
+  s_2a556dd01fbb78::t_1771ba7174b68e 10,40,42-44
+  s_2a556dd01fbb78::t_9e114ae49fd2db 33
+.cursor/skills/verify-claude-jev/SKILL.md
+  s_2a556dd01fbb78::t_b703a76f278aac 47-55,115-123,128-129,236-244
+  s_2a556dd01fbb78::t_8c821fe894ddbe 34-37,124-127,185-188
+  s_2a556dd01fbb78::t_05ec897ecc2987 39-40,43
+  s_2a556dd01fbb78::t_5f6a0bcb985006 58-60,229-232
+  s_2a556dd01fbb78::t_fc633893b2cba8 84-92
+  s_2a556dd01fbb78::t_2d52b9d434412c 233
+  s_2a556dd01fbb78::t_65f08eae5d02df 245
+.cursor/skills/verify-claude-jev/features/comparators.md
+  s_2a556dd01fbb78::t_aa02d477246ef9 1-37,45-54,59-67,70-74,81-85
+  s_2a556dd01fbb78::t_498264ecf2a855 56-58,75-80
+  s_2a556dd01fbb78::t_1cb37608a73df5 38-44,55,68-69
+.cursor/skills/verify-claude-jev/features/session-compaction.md
+  s_2a556dd01fbb78::t_107be077a6e51d 12,14,32-35,38-39,42-43,46,51-56
+  s_2a556dd01fbb78::t_a229507c44fd6e 11
+.cursor/skills/verify-claude-jev/features/rule-enforcement.md
+  s_2a556dd01fbb78::t_fddecf8b15028b 15,41,58-60,62-65
+  s_2a556dd01fbb78::t_fa974ee5e89a14 16-18,24,44-48,52-55
+  s_2a556dd01fbb78::t_9f660f32d7d8de 42-43,61
+.cursor/skills/verify-claude-jev/bin/control-jev
+  s_2a556dd01fbb78::t_3615d41b4ad2bc 178-180,183
+CHANGELOG.md
+  s_2a556dd01fbb78::t_1f51635c344b0e 7-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0f099cc76caab0e0ee0f071e77b6cc706604821c",
+  "prompts": {},
+  "sessions": {
+    "s_2a556dd01fbb78": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d9e5-500d-7253-bb45-7a2833c600f6",
+        "model": "qwen3.8-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
