@@ -1,0 +1,19 @@
+scripts/observed.py
+  s_68ce895461894e::t_923a3dbbb3b4a6 71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f641278a54e03bee07ec831c34292782adbb7b2d",
+  "prompts": {},
+  "sessions": {
+    "s_68ce895461894e": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d9b1-c7ba-7215-a5b8-40cbf2a5c86e",
+        "model": "qwen3.8-max"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
