@@ -69,6 +69,27 @@ Preconditions:
   Typed earlier, the prompt goes to the model.
 - A key saved in this pane reaches hooks only through Claude Code, as
   `CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY`; `control-jev` never sees it.
+- **The toggle→config→hook chain is proved live once** (installed 0.23.0, four rows
+  deep in `Rule checks`): the write lands in the user `settings.json` at
+  `pluginConfigs["claude-jev@claude-jev"].options.rules` as a boolean — the field name
+  lowercased — and the toast reads exactly `Rule checks off (all sessions).` and
+  `Rule checks on (all sessions).` The `API key` row showed `from the environment ·
+  OpenRouter`, which is `KEY_LABELS`' wording, not a doc guess.
+- That write then reaches the hook, as an A/B over one identical `Write` tool call: with
+  `rules: false` the turn appended **0** rows carrying `"kind":"rules"` to
+  `jev-router-log.jsonl`; with `rules: true` the same prompt appended **2** —
+  `phase:"edit"` (with `file` and `n_rules: 27`) and `phase:"turn"` from the Stop hook.
+  `control-jev` cannot produce this evidence because it sets
+  `CLAUDE_PLUGIN_OPTION_RULES` itself rather than deriving it from saved config.
+- Saving a toggle reloads the function-hook module in place; the transcript shows
+  `claude-jev: options changed — reloaded (6 hooks: session.start, command.run,
+  config.describe, …)`. Claude Code prints that line, the plugin does not.
+- `hooks module claude-jev@inline loaded` is the **`--plugin-dir`** id. The installed
+  marketplace copy loads as `claude-jev@claude-jev`, so match the line to how the
+  session got the plugin. To load only the installed copy, mask the other with
+  `--settings '{"enabledPlugins":{"claude-jev@inline":false}}'` — a one-session
+  override that writes nothing to `settings.json`. The same flag in reverse updates or
+  replaces what `claude plugin update` installed.
 - The pane writes through Claude Code's config API (`$.config.set`), so the file
   it lands in is whatever config dir the session started with. Under an isolated
   `CLAUDE_CONFIG_DIR` the write is disposable; in a normal session it edits the

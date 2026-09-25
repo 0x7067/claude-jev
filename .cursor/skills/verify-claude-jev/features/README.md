@@ -58,7 +58,12 @@ A label of "out-of-band" that names only a key (no Claude Code) is drivable here
 after all: a live `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` plus `control-jev
 hook` proves the router hint, the subagent route and brief denial, the rule
 block and its per-session budget, `jev noul`, and the populated stats report.
-Only the settings pane and function-hook `/compact` truly need a real session.
+Only the settings pane and function-hook `/compact` truly need a real session, and
+both were proved that way once (2026-09-25) against the **installed** copy: see the
+toggle A/B in `settings-pane.md` and the two debug lines in `session-compaction.md`.
+`claude plugin update claude-jev@claude-jev` moves that copy to current, so such a
+run needs no `--plugin-dir` — and after updating, the session must be restarted
+before the new code is the one under test.
 
 The eval gates (`eval/replay.py`, `eval/rules_eval.py`, `eval/compare.py`) are
 out-of-band and are the only evidence allowed to change a number in `README.md`.
