@@ -169,7 +169,7 @@ Any part scored at or below 0.25 counts as missing. The hook denies the spawn on
 
 The rule eval judges edits inside real repos, against those repos' own rules, so its corpora aren't committed. `eval/rules_eval.py extract` pulls the reachable Edits and Writes from `~/.claude/projects`. Those edits were accepted at the time, so any block counts as a measured false positive.
 
-The v0.21.0 run judged a fresh 250-edit extract, each edit at its own commit, with the AskUserQuestion answers of the 22 edits that had them composed into the request the way the hook sends them. The v0.23.0 column is those same 247 judged records re-scored at the current source on cached answers (`eval/rules_eval.py run --sample 250 --seed 0`, 0 errors, 22/247 still carrying their answers), so the two columns are a same-corpus comparison rather than a new sample:
+The v0.21.0 run judged a fresh 250-edit extract, each edit at its own commit, with the AskUserQuestion answers of the 22 edits that had them composed into the request the way the hook sends them. The v0.23.0 column is those same 247 judged records re-scored at the current source on cached answers (`eval/rules_eval.py run --sample 250 --seed 0`, 0 errors, 22/247 still carrying their answers), so the two columns are a same-corpus comparison rather than a new sample. Every v0.23.0 cell except latency comes from that pass:
 
 | | v0.21.0 | v0.23.0 |
 |---|---|---|
@@ -178,9 +178,9 @@ The v0.21.0 run judged a fresh 250-edit extract, each edit at its own commit, wi
 | Hand-written violations blocked | 17/29 | 17/29 |
 | Compliant near-misses blocked | 0/24 | 0/24 |
 | Rules asked per edit, median | 8 | 8 |
-| Latency, median | 0.80s | not measured |
+| Latency, median | 0.80s | 0.40s |
 
-The latency row is empty on purpose. A re-score reads the cached answers instead of asking again, so the time it reports belongs to the cache, not the hook — a 0.01s median against the 0.80s a live pass costs. Only a run that re-judges every edit live can fill that cell.
+Latency is the one row a cached re-score cannot produce. `--out` moves the answer file, not the cache, so a re-score times the cache and prints 0.01s. The 0.40s above comes from a live pass instead — `JEV_RULES_CACHE=$(mktemp -d)/cache.jsonl python3 eval/rules_eval.py run --sample 250 --seed 0 --out /tmp/live.jsonl` — which re-judged all 247 edits over 326 real calls with 0 errors and the pinned ast-grep present, and returned the same 23 blocks and 9 flags as the cached column. The drop from 0.80s is consistent with the per-chunk parallelism and the 9s deadline budget added since v0.21.0, but the two passes ran on different days against the same endpoint, so read it as an observation rather than a controlled before-and-after.
 
 Most of the v0.21.0 blocks come from one repo's own `code-comments-are-banned-in` rule firing on 17 accepted edits (0.82–0.91): the current corpus reaches repos the old sample never did, so conflicts between a rule and the practice it governs are now visible in the number instead of hidden by the sample.
 

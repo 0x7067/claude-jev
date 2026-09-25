@@ -189,6 +189,10 @@ user said, or the reverse, cannot pass on one number. `eval/sweep.py` and
 `README.md`; keep it when comparing. A rule-question wording change misses
 the answer cache and re-costs the run.
 
+- `run --out` moves the answer file, not the cache, so a re-score times the cache
+  and its latency row is meaningless. Set `JEV_RULES_CACHE` to a fresh path to
+  re-ask every question; the live 247-edit pass is ~320 calls and ~40s.
+
 The rules eval judges each record at its `sha`, and reads
 `eval/global_CLAUDE.md` in place of `~/.claude/CLAUDE.md`. Change a case's
 sha only when a rule-file change in that repo is the thing being measured.

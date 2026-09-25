@@ -69,6 +69,14 @@ re-read without spending, and only uncached or re-worded cases bill. Confirm the
 cache holds what you need (`wc -l eval/observed/pred_<variant>.jsonl`) before
 asking to run.
 
+`rules_eval.py run --out` does **not** bypass the answer cache — it moves the
+prediction file only, while `eval/observed/rules_cache.jsonl` is still read, so a
+re-score reports a latency that belongs to the cache (0.01s) and not the hook
+(0.40s live). `JEV_RULES_CACHE=<fresh path>` is the only live route: it re-asks
+every question, ~320 calls and ~40s for the 247-edit sample, and that is what
+`README.md`'s latency cell is measured by. Set it to a throwaway path so the
+standing cache keeps its answers.
+
 ## Driving conventions
 
 - Start every recipe from the baseline state unless its preconditions say otherwise.

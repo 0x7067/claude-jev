@@ -10,7 +10,9 @@
             near-miss compliant edits against the real rules of real repos)
             and the extracted edits through scripts/rules.judge_edit — the
             same function the PostToolUse hook calls. Cached per (state,
-            questions); re-runs are free.
+            questions) in eval/observed/rules_cache.jsonl, so re-runs are free.
+            `--out` moves the answer file, not the cache: point JEV_RULES_CACHE
+            at another path to judge live without touching the standing cache.
   turns     the live Stop-hook log rows (kind rules, phase turn) split by
             whether that turn made an Edit/Write of its own since the user's
             prompt. A row with none judged an earlier turn's edits, the
@@ -61,7 +63,7 @@ PRED = os.path.join(DATA, "rules_pred.jsonl")
 AT = os.path.join(DATA, "at")
 
 GLOBAL = os.path.join(HERE, "global_CLAUDE.md")
-CACHE = os.path.join(DATA, "rules_cache.jsonl")
+CACHE = os.environ.get("JEV_RULES_CACHE") or os.path.join(DATA, "rules_cache.jsonl")
 PROJECTS = os.path.expanduser("~/.claude/projects")
 
 _lock = threading.RLock()
