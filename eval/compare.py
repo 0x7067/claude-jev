@@ -10,7 +10,7 @@
             compaction mark context the agent still needed — each approach is
             scored on whether its injected context still contained them.
 
-  router    joins the shipped variant's cached predictions (eval/data) to the
+  router    joins the shipped variant's cached predictions (eval/observed) to the
             behavior that actually followed each prompt: on prompts Jev would
             have steered to "no tools needed", the observed tool calls are the
             work the hint would have prevented.
@@ -24,7 +24,7 @@ replica of the internal routine, labeled as such.
 
 The router side reuses predictions already computed by replay.py — no API
 calls. The compact side calls Jev once per event (cached in
-eval/data/compact_cache.jsonl; re-runs are free). Synthetic events also
+eval/observed/compact_cache.jsonl; re-runs are free). Synthetic events also
 cache the generated summary — claude -p is only called on first run.
 """
 
@@ -48,7 +48,7 @@ import planted
 import prompt_router
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, "data")
+DATA = os.path.join(HERE, "observed")
 COMPACT_CACHE = os.path.join(DATA, "compact_cache.jsonl")
 DATASET = os.path.join(DATA, "dataset.jsonl")
 PREDICTIONS = os.path.join(DATA, "pred_v7_no_unclear.jsonl")

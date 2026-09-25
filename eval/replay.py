@@ -45,7 +45,7 @@ from observed import (
 )
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, "data")
+DATA = os.path.join(HERE, "observed")
 DATASET = os.path.join(DATA, "dataset.jsonl")
 PREDICTIONS = os.path.join(DATA, "predictions.jsonl")
 CACHE = os.path.join(DATA, "cache.jsonl")

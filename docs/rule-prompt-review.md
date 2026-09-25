@@ -1,7 +1,7 @@
 # Rule prompt review
 
 The first bounded screen uses one reconstructed live intervention and nine
-constructed contrasts. Private inputs live in `eval/private/prompt_review.jsonl`;
+constructed contrasts. Private inputs live in `eval/authored/prompt_review.jsonl`;
 they are intentionally not committed and are not available in a fresh clone.
 
 ## Reviewed live evidence
@@ -38,8 +38,8 @@ into the live session statistics. Existing output files are never overwritten.
 
 ```bash
 python3 eval/rule_prompts.py \
-  --cases eval/private/prompt_review.jsonl \
-  --output eval/data/prompt_review_results_v2.jsonl
+  --cases eval/authored/prompt_review.jsonl \
+  --output eval/observed/prompt_review_results_v2.jsonl
 ```
 
 For analysis, count blocks at the existing `rules.ACT` threshold separately on
@@ -53,6 +53,6 @@ The user explicitly approved the twenty-call external comparison. The first
 approved request reached TypeSafe but returned HTTP 402 with `billing_error`:
 the organization associated with the environment key had no available credits.
 The runner stopped after that request; zero comparison records were produced.
-The failure is recorded in `eval/data/prompt_review_approved.calls.jsonl`.
+The failure is recorded in `eval/observed/prompt_review_approved.calls.jsonl`.
 No model comparison results are available yet, and the shipped prompts remain
 unchanged. After credits are available, rerun with a new output filename.

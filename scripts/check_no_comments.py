@@ -2,7 +2,7 @@
 """Fail if any scanned source file contains a code comment.
 
 Scans the files git tracks or would track (gitignored paths such as
-`eval/data/` are skipped) under `scripts/`, `eval/`, and `hooks/` for
+`eval/observed/` are skipped) under `scripts/`, `eval/`, and `hooks/` for
 `.py`, `.ts`, and `.js`.
 Shebangs (`#!...`) are allowed. Python docstrings and string/URL contents
 are not comments. Markdown and LICENSE are out of scope.

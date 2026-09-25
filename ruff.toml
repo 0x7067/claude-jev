@@ -4,8 +4,8 @@ force-exclude = true
 include = ["*.py"]
 
 extend-exclude = [
-    "eval/data",
-    "eval/private",
+    "eval/observed",
+    "eval/authored",
 ]
 
 [lint]

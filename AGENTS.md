@@ -198,7 +198,7 @@ running a full sweep.
 
 ## Data and numbers
 
-- `eval/data/` and `eval/private/` are gitignored. They hold extracted
+- `eval/observed/` and `eval/authored/` are gitignored. They hold extracted
   transcripts and repo-specific cases, and they do not survive a clone. Do not
   commit them or write code that assumes they exist.
 - Numbers in `README.md` and `eval/README.md` come from eval runs. Change one
