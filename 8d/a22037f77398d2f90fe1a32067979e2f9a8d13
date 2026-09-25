@@ -1,0 +1,25 @@
+eval/.gitignore
+  s_3ce2c3a9869a6d::t_bb3c41f3e39167 1-2
+eval/compare.py
+  s_3ce2c3a9869a6d::t_9c6d7d767bedfa 13,27,51
+eval/replay.py
+  s_3ce2c3a9869a6d::t_19012f743c085e 48
+ruff.toml
+  s_3ce2c3a9869a6d::t_b965bc3719337a 7-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8da22037f77398d2f90fe1a32067979e2f9a8d13",
+  "prompts": {},
+  "sessions": {
+    "s_3ce2c3a9869a6d": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d58e-5292-77e1-9614-1f7a5d1af569",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
