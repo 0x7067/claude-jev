@@ -1,0 +1,27 @@
+eval/rules_eval.py
+  s_2a556dd01fbb78::t_96e042ca0c5b36 13-15,66
+AGENTS.md
+  s_2a556dd01fbb78::t_39f426376ad9aa 192-195
+.cursor/skills/verify-claude-jev/features/README.md
+  s_2a556dd01fbb78::t_17bbae4524e2f2 72-79
+CHANGELOG.md
+  s_2a556dd01fbb78::t_c5d7819a66fd0d 9
+README.md
+  s_2a556dd01fbb78::t_7d96020b837e99 172,181,183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd8d73c459dc1c72add0188ae895284b6fe598e3",
+  "prompts": {},
+  "sessions": {
+    "s_2a556dd01fbb78": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d9e5-500d-7253-bb45-7a2833c600f6",
+        "model": "qwen3.8-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
