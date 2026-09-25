@@ -4,6 +4,8 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-09-25
+
 - Compaction asks a fifth `rerunnable` check: output a rerun would print again — a listing, a passing check's log, build or install output, warnings a rebuild repeats. A rerunnable answer at `KEEP_THRESHOLD` silences `error`'s verbatim claim, so a regenerable dump keeps as a `HEAD_CHARS` head with the re-run pointer instead of `KEEP_CHARS` whole; an exact error no command would repeat, and any user constraint, still hold verbatim. The four keep reasons are unchanged, so pure noise still drops and its ref stays in the row list. Replaces rule-based scrubbing of verbose output with the same judgment Jev already makes per block. Gate behind it (`eval/compare.py compact --synth 60` on this source, 60 events, live re-judgment): re-fetch verbatim coverage 76.8% (floor 70%, n=760 reads — inside the standing 76-82% band), planted user constraint 100% (n=87), buried restatement 98.8% (n=82).
 - `jev.ask` accepts a `deadline` (monotonic timestamp) alongside `timeout`, and retries once when a network failure returns in under a second — a refused connection costs milliseconds, a timeout costs the budget.
 - The rules hook now works inside its 10s `hooks.json` budget instead of hoping two sequential Jev calls fit: `main` stamps a 9s deadline, every `ask` gets the time left, and the escalation pass is skipped when under 3s remain — the first-pass verdict still lands instead of the hook being killed with no output.
@@ -14,6 +16,8 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 - Ruff formats and lints the Python sources. `ruff.toml` selects pycodestyle errors (`E4`, `E7`, `E9`), Pyflakes (`F`), and import sorting (`I`), at a line length of 100, and skips `eval/observed` and `eval/authored`. It is tool config, not a dependency: hooks still import only the standard library. `ruff format --check` and `ruff check` run in release preflight and in GitHub Actions, next to `compileall` and the two `check_no_*.py` scripts. A machine with only `python3` can still claim those stdlib checks.
 - `eval/data/` is now `eval/observed/` and `eval/private/` is now `eval/authored/` — the names say what they hold: machine-extracted transcripts and predictions vs hand-written cases. Both stay gitignored.
+
+[0.22.0]: https://github.com/0x7067/claude-jev/compare/v0.21.0...v0.22.0
 
 ## [0.21.0] - 2026-09-24
 
