@@ -196,20 +196,24 @@ Stats also reports failures by HTTP status or timeout, recent call health, and l
 
 `eval/replay.py` replays your past prompts, and `scripts/observed.py` scores them. Change the scorer and every number here moves.
 
-| 1,613 prompts, taxonomy v7 | Coverage | Accuracy | Lift over always guessing | Harmful hints |
+Whether a shell command wrote anything is not guessed from its text. A Bash result in the transcript carries `bashEditDiff`, the file-state diff Claude Code took around the command, and it names the git-visible project files that changed — the same notion of a write the live hook uses, and the reason `then tee out`, `{ sed … ; }` and `perl -pi` all count while a scratch file in `/tmp` does not. Claude Code 2.1.274 started recording it. On older transcripts the command-text patterns still decide, and against that diff they measure precision 0.25 over 6,143 real Bash calls.
+
+| 2,464 prompts, taxonomy v7 | Coverage | Accuracy | Lift over always guessing | Harmful hints |
 |---|---|---|---|---|
-| Every hint v7 predicts | 42% | 34.6% | **+6.0** | **8** |
-| Only hints the hook shows | 13.8% | 50.2% | **+18.4** | **8** |
+| Every hint v7 predicts | 43.1% | 33.8% | **+8.3** | **8** |
+| Only hints the hook shows | 14.1% | 48.0% | **+5.2** | **8** |
 
 A harmful hint is "no tools" followed by 5+ tool calls. The first row counts the `feature` and `ops` hints the hook never shows. The second scores the hook as it ships:
 
 ```bash
+python3 eval/replay.py run --variant v7_no_unclear
+python3 eval/replay.py report --variant v7_no_unclear
 python3 eval/replay.py report --variant v9_hinted_only --preds eval/observed/pred_v7_no_unclear.jsonl
 ```
 
 Humans labeled 16 of the hints the hook shows, and agreed with 11.
 
-34.6% is a floor, because the labels come from transcripts. On 120 hand-labeled prompts (`eval/audit_labels.json`), humans agreed with the derived labels only 52.5% of the time. Coarser taxonomies score higher and help less: talk/read/act gets 58.8%, while a constant guess gets 64.7%.
+33.8% is a floor, because the labels come from transcripts. On 120 hand-labeled prompts (`eval/audit_labels.json`), humans agreed with the derived labels only 51.7% of the time. Coarser taxonomies score higher and help less: collapsing to talk/read/act reaches 65.0%, but always guessing `act` gets 63.6%, so the three-way router earns 1.4 points over a constant (`python3 eval/replay.py report --variant v5_three_way`, over the 1,627 prompts its predictions are cached for).
 
 ### Compaction
 

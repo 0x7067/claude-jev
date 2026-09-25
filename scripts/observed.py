@@ -5,6 +5,13 @@ Shared by the eval harness (eval/replay.py) and the stats command
 (scripts/stats.py) so both score a turn the same way. Labels here describe
 observed behavior, not intent — they are evidence about a prediction, not a
 verdict on it.
+
+Whether a shell command wrote anything comes from Claude Code, not from
+reading the command: a Bash result carries `bashEditDiff`, the file-state diff
+Claude Code took around the command, naming the git-visible project files it
+changed. That is the same notion of a write the live hook in `rules.py` uses.
+The command-text patterns below are the fallback for transcripts whose Claude
+Code predates the field, where they measure precision 0.25 against it.
 """
 
 from __future__ import annotations
@@ -16,12 +23,16 @@ import re
 EDIT_TOOLS = {"Edit", "Write", "NotebookEdit", "MultiEdit"}
 READ_TOOLS = {"Read", "Grep", "Glob", "NotebookRead"}
 
+CMD_START = r"(?:^|[;&|]\s*|\n\s*|(?:then|else|do|{)\s+)"
+
+BASH_DIFF_VERSION = (2, 1, 274)
+
 BASH_WRITE = re.compile(
-    r"(^|[;&|]\s*)(rm|mv|cp|mkdir|touch|patch|tee|install)\b"
-    r"|sed\s+-i|>>|(?<![0-9&])>(?!&)|<<\s*['\"]?[A-Z]"
+    CMD_START + r"(rm|mv|cp|mkdir|touch|patch|tee|install)\b"
+    r"|sed\s+(?:-i|--in-place)\b|>>|(?<![0-9&])>(?!&)|<<\s*['\"]?[A-Z]"
 )
 BASH_OPS = re.compile(
-    r"(^|[;&|]\s*)(npm|pnpm|yarn|bun|pip|uv|poetry|make|cargo|go|docker|kubectl|"
+    CMD_START + r"(npm|pnpm|yarn|bun|pip|uv|poetry|make|cargo|go|docker|kubectl|"
     r"gh|railway|vercel|pytest|jest|vitest|tsc|eslint|ruff|mypy|black|prettier|"
     r"terraform|ansible|systemctl|brew|claude)\b"
 )
@@ -31,10 +42,46 @@ GIT_OPS = re.compile(
 )
 GIT_READ = re.compile(r"\bgit\s+(log|diff|status|show|blame|describe|ls-files|remote)\b")
 BASH_READ = re.compile(
-    r"(^|[;&|]\s*)(cat|head|tail|less|more|grep|rg|ag|ls|find|fd|wc|jq|yq|awk|cut|"
+    CMD_START + r"(cat|head|tail|less|more|grep|rg|ag|ls|find|fd|wc|jq|yq|awk|cut|"
     r"sort|uniq|stat|file|which|tree|column|diff|du|env|printenv|pwd|date)\b"
     r"|sed\s+-n"
 )
+
+
+def version_tuple(version: str | None) -> tuple[int, ...]:
+    parts = []
+    for piece in str(version or "").split(".")[:3]:
+        digits = "".join(c for c in piece if c.isdigit())
+        parts.append(int(digits) if digits else 0)
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts)
+
+
+def reports_bash_diffs(version: str | None) -> bool:
+    """Whether this session's Claude Code records what a shell command changed.
+    2.1.274 is where `bashEditDiff` first appears in the transcript corpus;
+    below it a missing field means "unknown", not "wrote nothing", so the
+    command-text patterns still decide."""
+    return version_tuple(version) >= BASH_DIFF_VERSION
+
+
+def bash_changed_files(result: object) -> list[str]:
+    """The project files Claude Code's own diff says one Bash command wrote.
+    Gitignored paths and paths outside the project never appear in it, which
+    is the scope this scorer wants: a scratch file in /tmp is not an edit."""
+    if not isinstance(result, dict):
+        return []
+    diff = result.get("bashEditDiff")
+    if not isinstance(diff, dict):
+        return []
+    found = [p for p in diff.get("changedFiles") or [] if isinstance(p, str)]
+    found += [
+        f["filePath"]
+        for f in diff.get("files") or []
+        if isinstance(f, dict) and isinstance(f.get("filePath"), str)
+    ]
+    return sorted(set(found))
 
 
 def bash_kind(cmd: str) -> str:
@@ -97,8 +144,34 @@ def is_synthetic(txt: str) -> bool:
     )
 
 
+def is_bash_result(result: object) -> bool:
+    """Whether a tool result came from Bash, so a missing `bashEditDiff` on it
+    means the command changed no project file. A result from another tool, or
+    one Claude Code never finished writing, says nothing either way and leaves
+    the turn to the command-text patterns."""
+    return isinstance(result, dict) and "stdout" in result
+
+
+def flush_tools(pending: list[dict], results: dict, version: str | None):
+    """Hand back the tools of one turn with Claude Code's verdict on what each
+    Bash call wrote. Results follow their tool call in the transcript, so the
+    turn is buffered until its boundary and joined here."""
+    diffed = reports_bash_diffs(version)
+    for tool in pending:
+        if tool["name"] == "Bash" and tool["id"] in results:
+            tool["changed"] = results[tool["id"]]
+            tool["diffed"] = diffed
+        yield "tool", tool
+    pending.clear()
+
+
 def walk_session(path: str):
-    """Yield (kind, payload) turns in order. kind is prompt | tool | text."""
+    """Yield (kind, payload) turns in order. kind is prompt | tool | text. A
+    Bash tool's payload carries `changed`, the files Claude Code's diff says it
+    wrote, and `diffed`, whether that verdict is available for this session."""
+    version = None
+    pending: list[dict] = []
+    results: dict[str, list[str]] = {}
     with open(path, errors="replace") as f:
         for line in f:
             if len(line) > 500_000:
@@ -107,24 +180,40 @@ def walk_session(path: str):
                 d = json.loads(line)
             except Exception:
                 continue
+            if version is None and isinstance(d.get("version"), str):
+                version = d["version"]
             if d.get("isSidechain"):
                 continue
             t = d.get("type")
+            msg = d.get("message") or {}
             if t == "user":
-                txt = prompt_text(d.get("message") or {})
+                result = d.get("toolUseResult")
+                if is_bash_result(result) and isinstance(msg.get("content"), list):
+                    for b in msg["content"]:
+                        if isinstance(b, dict) and b.get("type") == "tool_result":
+                            results[b.get("tool_use_id")] = bash_changed_files(result)
+                txt = prompt_text(msg)
                 if txt and is_real_prompt(txt.strip()):
+                    yield from flush_tools(pending, results, version)
                     yield (
                         "prompt",
                         {"text": txt.strip(), "ts": d.get("timestamp"), "cwd": d.get("cwd")},
                     )
             elif t == "assistant":
-                for b in (d.get("message") or {}).get("content") or []:
+                for b in msg.get("content") or []:
                     if not isinstance(b, dict):
                         continue
                     if b.get("type") == "tool_use":
-                        yield "tool", {"name": b.get("name", "?"), "input": b.get("input") or {}}
+                        pending.append(
+                            {
+                                "name": b.get("name", "?"),
+                                "input": b.get("input") or {},
+                                "id": b.get("id"),
+                            }
+                        )
                     elif b.get("type") == "text" and b.get("text"):
                         yield "text", {"text": b["text"]}
+    yield from flush_tools(pending, results, version)
 
 
 def summarize(tools: list[dict]) -> dict:
@@ -140,8 +229,12 @@ def summarize(tools: list[dict]) -> dict:
             n_read += 1
         elif name == "Bash":
             k = bash_kind(inp.get("command") or "")
+            changed = t.get("changed") or []
+            if t.get("diffed"):
+                k = "write" if changed else ("other" if k == "write" else k)
             if k == "write":
                 n_edit += 1
+                files.update(changed)
             elif k == "read":
                 n_read += 1
             elif k == "ops":
