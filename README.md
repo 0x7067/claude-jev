@@ -15,6 +15,8 @@ Every hook fails open. An error, a missing key, or a timeout produces no output 
 
 ## Install
 
+### Claude Code (Python)
+
 ```bash
 claude plugin marketplace add 0x7067/claude-jev
 claude plugin install claude-jev@claude-jev
@@ -162,6 +164,15 @@ The same call reviews the brief. When Jev is confident the task changes files, f
 - states a commit policy
 
 Any part scored at or below 0.25 counts as missing. The hook denies the spawn once and lists the missing parts, so the parent can rewrite the prompt. If the same brief comes back in that session, it goes through with a `systemMessage`. Read-only briefs skip the checks.
+
+### AFK (TypeScript)
+
+```bash
+cd adapters/afk && npm install && npm run build
+cp -r adapters/afk ~/.afk/plugins/claude-jev
+```
+
+Same hooks, TypeScript, installable as an AFK plugin. See [`adapters/afk/README.md`](adapters/afk/README.md).
 
 ## Does it work?
 
