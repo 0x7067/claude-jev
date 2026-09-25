@@ -31,22 +31,33 @@ gotchas when hooks or skills drift.
   no-key multi-row Jev-error fallback (`fallback` when >`PIN_TAIL` rows need
   judging and both `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY` are unset)
 - `jev.py` missing-key exit `2`, `status`, and the pinned-provider key rule
-- Each hook's on/off toggle (`CLAUDE_PLUGIN_OPTION_<FIELD>=false`): no Jev call
+- Each command hook's on/off toggle (`CLAUDE_PLUGIN_OPTION_<FIELD>=false`): no Jev
+  call, for `PROMPTROUTER`, `SUBAGENTROUTER`, and `RULES`. **Not** `COMPACTION` —
+  `compactor.py` has no gate and that toggle lives only in `register.ts`, so it
+  cannot be proved in-band.
 - `stats.py` on an empty home
+- `comparators.py which` naming the pinned version under the verify home, and a
+  rules judgment that completes with no ast-grep installed (`sg: none`)
 - Bash snapshot hooks recording a shell write as a turn hunk, and marking the diff partial outside git
 
-**Out-of-band (not proved on a ship without Claude Code + API key):**
+**Out-of-band (needs a real key; the pane and `/compact` also need Claude Code):**
 
 - A real Claude Code session with the plugin loaded (`claude`, function hooks,
   trusted workspace)
-- Live Jev classification / routing / rule blocks that need `TYPESAFE_API_KEY`
-  or `OPENROUTER_API_KEY`
-- The `/claude-jev` settings pane (see `features/settings-pane.md`)
-- End-to-end `/compact` through `hooks/register.ts`
+- Live Jev classification / routing / rule judgments. These need a real
+  `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` but **not** Claude Code: with a key
+  in the environment, `control-jev hook` drives the router hint, the subagent
+  route, the brief-check denial, the rule block and its budget, `jev noul`, and
+  the populated `stats` report. Without a key those paths are unproven, not
+  failing.
+- End-to-end `/compact` through `hooks/register.ts`, and the `/claude-jev`
+  settings pane (see `features/settings-pane.md`) — the only paths that need a
+  real interactive Claude Code session.
 
 Do not report an out-of-band path as verified because the in-band fail-open
-path passed. Feature files mark live entries **out-of-band**; run those only on
-a machine that has Claude Code and a real key.
+path passed. Feature files mark live entries **out-of-band**; run those on a
+machine that has a real key, and remember that the settings pane and
+function-hook `/compact` additionally need Claude Code itself.
 
 ## Launch
 
@@ -70,7 +81,15 @@ Teardown is `control-jev cleanup` (see Cleanup). Never drive an instance whose
 verify home was not created by `control-jev launch` for this run.
 
 Isolation: each run uses `VERIFY_HOME=/tmp/jev-verify-$RUN_ID`; child
-processes see that path as `HOME`. Active-run state lives under
+processes see that path as `HOME`, and `control-jev` also pins
+`CLAUDE_CONFIG_DIR=$VERIFY_HOME/.claude` for every child. That pin matters:
+`jev.config_dir()` prefers `CLAUDE_CONFIG_DIR` over `~/.claude`, so an inherited
+one (this repo's AGENTS.md tells agents to export it for hand-fed hook events)
+would silently send every log, cache, and rule-count assertion in the feature
+map somewhere else. Consequence for you: a run's state lives in
+`$VERIFY_HOME/.claude/`, and bypassing the harness — calling
+`python3 scripts/…` directly with only `HOME=` set — re-exposes the hole, so
+add `env -u CLAUDE_CONFIG_DIR` there. Active-run state lives under
 `$XDG_RUNTIME_DIR/jev-verify-control` when set, otherwise
 `/tmp/jev-verify-control-<uid>` (mode 0700) — never a world-writable shared
 path. The state file is a validated `RUN_ID=` line only (never `source`d).
@@ -93,7 +112,21 @@ exists. Writes `$EVIDENCE_DIR/doctor.txt`. Fail the run if `doctor=fail`.
 `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY` may both be unset. Doctor reports
 `typesafe_api_key=unset` and `openrouter_api_key=unset` and still passes —
 fail-open without a key is the in-band expectation. Live classification is
-out-of-band; see feature files.
+out-of-band; see feature files. Doctor also runs `comparators.py which` and
+records the result as `comparators_which=`: `(none)` on a home with no
+ast-grep, which is the state every comparator must degrade to.
+
+**Read those two key lines before driving anything.** `control-jev` passes the
+caller's environment through, so on a machine that has real keys the no-key
+recipes silently become live calls: they cost money, they append real rows to
+the verify home, and an empty stdout then proves nothing about fail-open. If
+doctor prints `set`, start every in-band recipe with
+`unset TYPESAFE_API_KEY OPENROUTER_API_KEY CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY`
+in the same shell — the third is the pane-saved key, it resolves a provider on its
+own (`status` then reports `"key": "saved"`), and a "no-key" fixture with it set
+makes a real call. A bare
+assignment does not reach the child either way — use `export` when a recipe
+wants a fake key), and run the live recipes in a shell that keeps the keys.
 
 ## Drive
 
@@ -149,7 +182,10 @@ Override with `JE_VERIFY_EVIDENCE` if needed. Capture:
   pin-tail keep, bad-input fallback, or no-key multi-row Jev-error fallback
   matches the feature file (including `fallback-nokey.json` when that path ran).
 - For mutations of disposable state under `$VERIFY_HOME/.claude/`: a second
-  read of the file after the action (hooks append logs only when Jev answers).
+  read of the file after the action. The three command hooks append decision rows
+  only when Jev answers, so an empty log means no answer — but `compactor.py rows`
+  appends a `"source": "rows"` line to `jev-compact-log.jsonl` on every keep,
+  **including the zero-call pin-tail keep**, so that file is not a live-call counter.
 
 ```bash
 control-jev evidence doctor.txt
@@ -190,7 +226,22 @@ test -d .cursor/skills/verify-claude-jev/artifacts/<RUN_ID>
 ls .cursor/skills/verify-claude-jev/artifacts/<RUN_ID>
 ```
 
+`cleanup` empties the single active-run slot, so a later run's cleanup leaves an
+earlier run unaddressable by `control-jev save` (`no active run`) even though its
+home and evidence are still on disk. Re-adopt it before writing more evidence:
+`JE_VERIFY_RUN_ID=<that run id> control-jev launch`.
+
 Never `pkill` by script name. Never remove another run's home.
+
+## Cost
+
+Every live recipe calls `api.typesafe.ai` (or OpenRouter) with the key in your
+environment and spends real money; one rules edit event is several chunked
+calls. Prove a live path once per audit, keep the run's logs, and read them for
+the rest (`jev-router-log.jsonl`, `jev-calls.jsonl`) instead of re-driving. Do
+not launch a second run to confirm a line a finished run already produced, and
+never hand a live recipe to a helper agent: one coordinator drives, or the same
+fixture gets billed once per helper.
 
 ## Helpers
 

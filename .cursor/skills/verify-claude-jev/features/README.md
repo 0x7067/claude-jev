@@ -15,26 +15,59 @@ feature file as the recipe.
   `$CLAUDE_PLUGIN_ROOT`, `$EVIDENCE_DIR`, or `$RUN_ID`. That command exports
   those assignments without replacing your shell `HOME`.
 - Never drive a verify home that was not started by this verification run.
-- Do not `source` the control-jev state file into your shell.
 - `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY` may both be unset. Without them,
   hooks must fail open (exit 0, no stdout) and `jev.py` must exit 2 with
   `jev: set TYPESAFE_API_KEY or OPENROUTER_API_KEY`. That is the **in-band**
-  contract for this skill. A key saved in the `/claude-jev` settings pane does
-  not apply here: Claude Code hands it to hooks as `CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY`, and `control-jev` runs the scripts directly.
+  contract for this skill. `control-jev` passes your environment through, so if
+  your shell has real keys, every no-key recipe must start with
+  `unset TYPESAFE_API_KEY OPENROUTER_API_KEY CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY`
+  in the same shell — otherwise the recipe makes live paid calls and stops proving
+  fail-open. The third is the pane-saved key, and **doctor does not report it**:
+  it only prints the two env vars. Catch it with
+  `control-jev jev -- status` — `"key": "saved"` means a "no-key" fixture will
+  really call Jev.
+- Run one `control-jev launch` per audit. There is a single active-run slot and
+  `cleanup` empties it, which orphans an earlier run's home and evidence until
+  you re-adopt it with `JE_VERIFY_RUN_ID=<id> control-jev launch`.
+- Do not `source` the control-jev state file into your shell.
+- A key saved in the `/claude-jev` settings pane does not apply here: Claude
+  Code hands it to hooks as `CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY`, and
+  `control-jev` runs the scripts directly.
 - Put evidence under `.cursor/skills/verify-claude-jev/artifacts/$RUN_ID/` via
   `control-jev save`.
 
 ## In-band vs out-of-band
 
 **In-band** (this skill's proved contract without Claude Code): `compileall`,
-hook stdin fail-open / skip, `rows` bad-input fallback, pin-tail keep, and
-no-key multi-row Jev-error fallback, `jev.py` missing-key.
+hook stdin fail-open / skip, `rows` bad-input fallback (all four reasons) and its
+exit-2 usage path, pin-tail keep including `KEEP_CHARS` truncation, and no-key
+multi-row Jev-error fallback, `jev.py` missing-key and usage exits, each command
+hook's on/off toggle (`PROMPTROUTER` / `SUBAGENTROUTER` / `RULES` — not
+`COMPACTION`, which is gated only in `register.ts`), the Bash snapshot hunks with
+all three `partial` triggers, `stats.py` on an empty home, and
+`comparators.py which` with no ast-grep installed. `SKILL.md`'s "What this skill
+proves here" is the same list; keep the two in step.
 
-**Out-of-band** (needs a machine with Claude Code + `TYPESAFE_API_KEY` or
-`OPENROUTER_API_KEY`): live classify/route/block answers, a real plugin
-session, function-hook `/compact`, and the `/claude-jev` settings pane.
+**Out-of-band** (needs a real key; the last two also need Claude Code): live
+classify/route/block answers, the populated stats report, a real plugin session,
+function-hook `/compact`, and the `/claude-jev` settings pane.
 Feature bullets labeled out-of-band are recipes for that machine only — never
 count an in-band fail-open pass as verifying them.
+
+A label of "out-of-band" that names only a key (no Claude Code) is drivable here
+after all: a live `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` plus `control-jev
+hook` proves the router hint, the subagent route and brief denial, the rule
+block and its per-session budget, `jev noul`, and the populated stats report.
+Only the settings pane and function-hook `/compact` truly need a real session.
+
+The eval gates (`eval/replay.py`, `eval/rules_eval.py`, `eval/compare.py`) are
+out-of-band and are the only evidence allowed to change a number in `README.md`.
+They bill differently: `run` judges prompts through Jev and costs calls, while
+`report` reads the cached prediction and answer files and is free — with
+`eval/observed/` populated, all three routing rows and the compaction gate can be
+re-read without spending, and only uncached or re-worded cases bill. Confirm the
+cache holds what you need (`wc -l eval/observed/pred_<variant>.jsonl`) before
+asking to run.
 
 ## Driving conventions
 
@@ -83,4 +116,5 @@ handles, required state, commands, and observable proof.
 - [Session compaction](./session-compaction.md) covers the `rows` bridge: bad-input fallback, pin-tail keep, and no-key multi-row Jev-error fallback.
 - [Jev CLI](./jev-cli.md) covers the `scripts/jev.py` CLI: missing key, bad input, `status`, and a pinned provider.
 - [Stats](./stats.md) covers `scripts/stats.py`, the report the pane's Stats row shows.
+- [Comparators](./comparators.md) covers the pinned ast-grep the rules hook consults: `which`, a judgment with no binary, and the detached fetch.
 - [Settings pane](./settings-pane.md) covers the `/claude-jev` pane (out-of-band only).

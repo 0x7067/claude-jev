@@ -175,9 +175,12 @@ write_state() {
 }
 
 # Run a command with the disposable home as HOME for that process only.
+# CLAUDE_CONFIG_DIR is forced to the verify home because jev.config_dir() prefers
+# it over HOME; leaving it inherited would send every log, cache, and rule-count
+# assertion in the feature map to some other directory.
 with_verify_home() {
   assert_run_paths
-  env HOME="$VERIFY_HOME" CLAUDE_PLUGIN_ROOT="$ROOT" "$@"
+  env HOME="$VERIFY_HOME" CLAUDE_CONFIG_DIR="$VERIFY_HOME/.claude" CLAUDE_PLUGIN_ROOT="$ROOT" "$@"
 }
 
 require_active() {
