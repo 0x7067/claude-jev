@@ -1,0 +1,21 @@
+.claude-plugin/plugin.json
+  s_68ce895461894e::t_52113aaa55d868 3
+.claude-plugin/marketplace.json
+  s_68ce895461894e::t_f81ef38f7bd79e 12-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "979dcd8f74c82261f856b6be34584de04bea1e5a",
+  "prompts": {},
+  "sessions": {
+    "s_68ce895461894e": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d9b1-c7ba-7215-a5b8-40cbf2a5c86e",
+        "model": "qwen3.8-max"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
