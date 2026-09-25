@@ -6,7 +6,7 @@ A coding agent makes dozens of quick calls every turn. What kind of prompt is th
 
 What you get:
 
-- **Rules that hold.** Edits that break your instruction files get blocked with a file:line citation. The v0.21.0 run over the current corpus blocked 22 of 247 real edits (8.9%), 17 of them under a single repo's own comment-ban rule.
+- **Rules that hold.** Edits that break your instruction files get blocked with a file:line citation. Re-scoring the same 247 accepted edits at v0.23.0 blocks 23 of them (9.3%); the v0.21.0 run blocked 22 (8.9%), 17 of them under a single repo's own comment-ban rule.
 - **Compaction in about a second instead of a minute or two.** Jev keeps the exact rows that matter instead of writing a summary. Planted user constraints survived 100% of the time.
 - **Right-sized subagents.** Each spawn gets a model tier. A brief that changes files but leaves out paths, acceptance criteria, verification, or commit policy is sent back once.
 - **Routing hints.** Each prompt gets a one-line hint such as "one search" or "focused edit, narrow verification."
@@ -169,16 +169,18 @@ Any part scored at or below 0.25 counts as missing. The hook denies the spawn on
 
 The rule eval judges edits inside real repos, against those repos' own rules, so its corpora aren't committed. `eval/rules_eval.py extract` pulls the reachable Edits and Writes from `~/.claude/projects`. Those edits were accepted at the time, so any block counts as a measured false positive.
 
-The v0.21.0 run judged a fresh 250-edit extract, each edit at its own commit, with the AskUserQuestion answers of the 22 edits that had them composed into the request the way the hook sends them:
+The v0.21.0 run judged a fresh 250-edit extract, each edit at its own commit, with the AskUserQuestion answers of the 22 edits that had them composed into the request the way the hook sends them. The v0.23.0 column is those same 247 judged records re-scored at the current source on cached answers (`eval/rules_eval.py run --sample 250 --seed 0`, 0 errors, 22/247 still carrying their answers), so the two columns are a same-corpus comparison rather than a new sample:
 
-| | v0.21.0 |
-|---|---|
-| Real edits blocked | 22 (8.9%) |
-| Real edits flagged only | 8 |
-| Hand-written violations blocked | 17/29 |
-| Compliant near-misses blocked | 0/24 |
-| Rules asked per edit, median | 8 |
-| Latency, median | 0.80s |
+| | v0.21.0 | v0.23.0 |
+|---|---|---|
+| Real edits blocked | 22 (8.9%) | 23 (9.3%) |
+| Real edits flagged only | 8 | 9 |
+| Hand-written violations blocked | 17/29 | 17/29 |
+| Compliant near-misses blocked | 0/24 | 0/24 |
+| Rules asked per edit, median | 8 | 8 |
+| Latency, median | 0.80s | not measured |
+
+The latency row is empty on purpose. A re-score over cached answers measures the cache, not the hook — it reports a 0.01s median against the 0.80s a live run costs — and the 1,105 of 2,222 calls that failed on a bad key in the same window distort any percentile taken from that log. Only a run that re-judges every edit live can fill that cell.
 
 Most of the v0.21.0 blocks come from one repo's own `code-comments-are-banned-in` rule firing on 17 accepted edits (0.82–0.91): the current corpus reaches repos the old sample never did, so conflicts between a rule and the practice it governs are now visible in the number instead of hidden by the sample.
 
