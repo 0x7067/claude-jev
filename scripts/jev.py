@@ -48,6 +48,7 @@ PROVIDERS = (
 )
 DEFAULT_MODEL = "jev-latest"
 DEFAULT_TIMEOUT = 8.0
+FAST_FAIL = 1.0
 
 
 def config_dir() -> str:
@@ -161,8 +162,19 @@ def provider_for(key: str) -> Provider:
     )
 
 
-def ask(state, questions: dict, model: str | None = None, timeout: float | None = None) -> dict:
-    """Evaluate `questions` against `state`. Returns the `answers` map."""
+def ask(
+    state,
+    questions: dict,
+    model: str | None = None,
+    timeout: float | None = None,
+    deadline: float | None = None,
+) -> dict:
+    """Evaluate `questions` against `state`. Returns the `answers` map.
+
+    `deadline` is a monotonic timestamp the whole call must finish by; each
+    attempt gets the smaller of `timeout` and the time left. A network
+    failure that returns in under FAST_FAIL seconds is retried once — a
+    refused connection costs milliseconds, a timeout costs the budget."""
     body = {
         "state": state,
         "model": model or DEFAULT_MODEL,
@@ -180,21 +192,32 @@ def ask(state, questions: dict, model: str | None = None, timeout: float | None 
         },
         method="POST",
     )
-    t = timeout if timeout is not None else DEFAULT_TIMEOUT
     n = len(questions) if isinstance(questions, dict) else 0
-    t0 = time.monotonic()
-    try:
-        with urllib.request.urlopen(req, timeout=t) as resp:
-            payload = json.loads(resp.read().decode())
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode(errors="replace")[:500]
-        log_call(provider, body["model"], n, t0, f"HTTP {e.code}: {detail}")
-        raise JevError(f"HTTP {e.code}: {detail}") from e
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        log_call(provider, body["model"], n, t0, str(e))
-        raise JevError(str(e)) from e
-    log_call(provider, body["model"], n, t0, None)
-    return payload.get("answers", {})
+    attempts = 0
+    while True:
+        attempts += 1
+        t = timeout if timeout is not None else DEFAULT_TIMEOUT
+        if deadline is not None:
+            t = min(t, max(0.1, deadline - time.monotonic()))
+        t0 = time.monotonic()
+        try:
+            with urllib.request.urlopen(req, timeout=t) as resp:
+                payload = json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode(errors="replace")[:500]
+            log_call(provider, body["model"], n, t0, f"HTTP {e.code}: {detail}")
+            raise JevError(f"HTTP {e.code}: {detail}") from e
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            log_call(provider, body["model"], n, t0, str(e))
+            if (
+                attempts == 1
+                and t0 + FAST_FAIL > time.monotonic()
+                and (deadline is None or deadline - time.monotonic() > FAST_FAIL)
+            ):
+                continue
+            raise JevError(str(e)) from e
+        log_call(provider, body["model"], n, t0, None)
+        return payload.get("answers", {})
 
 
 def last_call() -> dict | None:

@@ -3,7 +3,7 @@
 
   extract   every Edit/Write/MultiEdit/NotebookEdit in ~/.claude/projects,
             with the repo it happened in and the prompt that asked for it
-            -> eval/data/rules_edits.jsonl. These edits were accepted by the
+            -> eval/observed/rules_edits.jsonl. These edits were accepted by the
             person at the time, so the block rate on them is the hook's
             false-positive rate under the repo's *current* instruction files.
   run       judge eval/rules_cases.jsonl (hand-written violations and
@@ -21,7 +21,7 @@
             on compliant cases and real edits, per-rule calibration.
 
 A record with a `sha` is judged at that commit (a detached worktree under
-eval/data/at/), not the live checkout, so editing a repo's rules does not
+eval/observed/at/), not the live checkout, so editing a repo's rules does not
 move old numbers. `extract` stamps the repo's HEAD on every edit.
 
 The judge sees exactly what the hook would send: file path, the user's
@@ -53,10 +53,10 @@ import stats
 from observed import EDIT_TOOLS, prompt_text
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DATA = os.path.join(HERE, "data")
+DATA = os.path.join(HERE, "observed")
 EDITS = os.path.join(DATA, "rules_edits.jsonl")
 
-CASES = os.path.join(HERE, "private", "rules_cases.jsonl")
+CASES = os.path.join(HERE, "authored", "rules_cases.jsonl")
 PRED = os.path.join(DATA, "rules_pred.jsonl")
 AT = os.path.join(DATA, "at")
 
@@ -257,9 +257,11 @@ def judge(rec: dict, rule_cache: dict) -> dict:
         out["skipped"] = "excluded path"
         return out
     with _lock:
-        if cwd not in rule_cache:
-            rule_cache[cwd] = rules.load_rules(cwd)
-    all_rules = rule_cache[cwd]
+        all_rules = rule_cache.get(cwd)
+    if all_rules is None:
+        all_rules = rules.load_rules(cwd)
+        with _lock:
+            rule_cache[cwd] = all_rules
     in_scope = rules.scoped_rules(all_rules, "edit", [rel])
     hunk = case_hunk(rec, cwd, rel).strip()
     out.update(n_rules=len(all_rules), n_scope=len(in_scope), hunk_chars=len(hunk))

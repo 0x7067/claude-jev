@@ -33,6 +33,7 @@ Env:
 Off when `rules` ("Rule checks" in /claude-jev or /config) is off.
 """
 
+import concurrent.futures
 import datetime
 import fcntl
 import hashlib
@@ -56,6 +57,8 @@ MAX_TASK_CHARS = 600
 MAX_ANSWER_CHARS = 1500
 MAX_BLOCKS = 2
 MAX_STOP_BLOCKS = 2
+HOOK_BUDGET = 9.0
+ESCALATE_MIN = 3.0
 MAX_HUNK_CHARS = 2000
 MAX_TURN_CHARS = 16000
 MAX_PROMPT_TAIL = 400
@@ -81,6 +84,18 @@ RELEVANCE_GATE = True
 COMPARATORS = True
 DEFAULT_LOG = os.path.join(jev.config_dir(), "jev-router-log.jsonl")
 BLOCK_DIR = os.path.join(jev.config_dir(), "jev-rule-blocks")
+
+_DEADLINE: float | None = None
+
+
+def budget() -> float | None:
+    """Seconds left in this hook's budget, or None outside a hook run (evals
+    call these functions directly). hooks.json gives each hook 10s; the
+    margin covers rule loading, comparators, and output."""
+    if _DEADLINE is None:
+        return None
+    return max(0.1, _DEADLINE - time.monotonic())
+
 
 RULE_FILES = ("CLAUDE.md", "AGENTS.md")
 RULE_DIRS = (".claude/rules", ".cursor/rules")
@@ -312,38 +327,21 @@ def choice_of(answer: dict | None, criteria: dict, default: str) -> str:
 def classify_items(lines: list[str], items: list[tuple[int, str]]) -> dict[int, dict]:
     """Item index -> {"when", "polarity", "subject"} for the items Jev judges
     to be instructions; items that are not instructions are left out.
-    Keyed by index, not line: one prose paragraph can yield several items. One batched
-    request per file, cached by content hash — the file changes rarely, the
-    hook runs on every edit, and a changed file misses the cache and is
-    reclassified. This is the whole of what a compiled rubric used to hold
-    that markdown parsing couldn't recover: it happens on first use, in
+    Keyed by index, not line: one prose paragraph can yield several items.
+    One batched request per chunk of ITEMS_PER_REQUEST items, cached by the
+    chunk's own content hash — a file edit re-judges only the chunks that
+    changed, and a hook killed mid-classification keeps the chunks that
+    landed. This is the whole of what a compiled rubric used to hold that
+    markdown parsing couldn't recover: it happens on first use, in
     ~/.claude, with nothing for the user to run or commit."""
-    digest = hashlib.sha256(
-        (
-            INSTRUCTION_Q
-            + TURN_Q
-            + POLARITY_Q
-            + SUBJECT_Q
-            + json.dumps([TURN_CRITERIA, POLARITY_CRITERIA, SUBJECT_CRITERIA], sort_keys=True)
-            + "".join(lines)
-        ).encode()
-    ).hexdigest()
     try:
         with open(CLASSIFY_CACHE) as f:
             cache = json.load(f)
     except (OSError, ValueError):
         cache = {}
-    hit = cache.get(digest)
-    if isinstance(hit, dict):
-        return {
-            int(k): v
-            for k, v in hit.items()
-            if isinstance(v, dict) and v.get("when") in ("edit", "turn")
-        }
-
     headings = section_headings(lines, items)
-    meta: dict[int, dict] = {}
-    for start in range(0, len(items), ITEMS_PER_REQUEST):
+
+    def chunk_request(start: int) -> tuple[str, str, dict]:
         chunk = items[start : start + ITEMS_PER_REQUEST]
         state = "\n\n".join(f"[{i}] ({headings[ln]}) {text}" for i, (ln, text) in enumerate(chunk))
         questions = {}
@@ -364,24 +362,58 @@ def classify_items(lines: list[str], items: list[tuple[int, str]]) -> dict[int, 
                 "instructions": SUBJECT_Q.format(i=i),
                 "criteria": SUBJECT_CRITERIA,
             }
-        answers = jev.ask(state, questions)
+        key = hashlib.sha256(json.dumps([state, questions], sort_keys=True).encode()).hexdigest()
+        return key, state, questions
+
+    def classify_chunk(start: int) -> dict[int, dict]:
+        key, state, questions = chunk_request(start)
+        hit = cache.get(key)
+        if isinstance(hit, dict):
+            return {
+                start + int(k): v
+                for k, v in hit.items()
+                if k.isdigit() and isinstance(v, dict) and v.get("when") in ("edit", "turn")
+            }
+        chunk = items[start : start + ITEMS_PER_REQUEST]
+        answers = jev.ask(state, questions, timeout=budget())
+        out = {}
         for i in range(len(chunk)):
             p = (answers.get(f"q{i}") or {}).get("noul")
             if not (isinstance(p, (int, float)) and p >= INSTRUCTION_MIN):
                 continue
             t = (answers.get(f"t{i}") or {}).get("noul")
             turn = isinstance(t, (int, float)) and t >= TURN_MIN
-            meta[start + i] = {
+            out[i] = {
                 "when": "turn" if turn else "edit",
                 "polarity": choice_of(answers.get(f"p{i}"), POLARITY_CRITERIA, DEFAULT_POLARITY),
                 "subject": choice_of(answers.get(f"s{i}"), SUBJECT_CRITERIA, DEFAULT_SUBJECT),
             }
-    cache[digest] = {str(k): v for k, v in meta.items()}
-    try:
-        with open(CLASSIFY_CACHE, "w") as f:
-            json.dump(cache, f)
-    except OSError:
-        pass
+        cache[key] = {str(k): v for k, v in out.items()}
+        tmp = CLASSIFY_CACHE + f".{os.getpid()}.tmp"
+        try:
+            with open(tmp, "w") as f:
+                json.dump(cache, f)
+            os.replace(tmp, CLASSIFY_CACHE)
+        except OSError:
+            pass
+        return {start + k: v for k, v in out.items()}
+
+    meta: dict[int, dict] = {}
+    starts = list(range(0, len(items), ITEMS_PER_REQUEST))
+    if len(starts) <= 1:
+        for start in starts:
+            meta.update(classify_chunk(start))
+        return meta
+    errors = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(starts), 8)) as ex:
+        futs = {ex.submit(classify_chunk, s): s for s in starts}
+        for f in concurrent.futures.as_completed(futs):
+            try:
+                meta.update(f.result())
+            except Exception as e:
+                errors.append(e)
+    if errors and not meta:
+        raise errors[0]
     return meta
 
 
@@ -1006,7 +1038,6 @@ def log_decision(
                         "violations": violations,
                         "blocked": blocked or [],
                         "rule_hashes": hashes or {},
-                        "answers": answers,
                         "user_answers": user_answers,
                     }
                 )
@@ -1039,7 +1070,7 @@ def ask_rules(state_text: str, rules: list[dict], strict: bool = False) -> dict:
         seen.add(key)
         r["_qkey"] = key
         questions[key] = rule_question(r, strict)
-    return jev.ask(state_text, questions)
+    return jev.ask(state_text, questions, timeout=budget())
 
 
 def load_calib() -> dict:
@@ -1164,7 +1195,7 @@ def judge_edit(
 
     escalated: list[str] = []
     undecided = [r for r in asked if flag <= probs.get(r["id"], 0.0) < act_for(r, act)]
-    if ESCALATE and undecided:
+    if ESCALATE and undecided and (budget() is None or budget() >= ESCALATE_MIN):
         extra = list(parts)
         if block:
             extra.append(f"The function or block this edit landed in, after the edit:\n{block}")
@@ -1438,8 +1469,10 @@ def handle_stop(event: dict) -> dict:
 
 
 def main() -> None:
+    global _DEADLINE
     event = {}
     try:
+        _DEADLINE = time.monotonic() + HOOK_BUDGET
         if not jev.enabled("rules"):
             return
         event = json.load(sys.stdin)
