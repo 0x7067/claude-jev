@@ -1,0 +1,19 @@
+scripts/jev.py
+  s_3ce2c3a9869a6d::t_3966c845e6f18c 51,165-177,196-220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "39645fe130f29573278b539cb9571d897d0faecb",
+  "prompts": {},
+  "sessions": {
+    "s_3ce2c3a9869a6d": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d58e-5292-77e1-9614-1f7a5d1af569",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
