@@ -23,14 +23,19 @@ is in `docs/claude-code-compaction-research.md`.
    rows). For the eval, `transcript_blocks` applies the same rules to a
    recorded transcript, plus the harness-injection flags (`injected`) and
    `compaction_marker`, which cuts the pre-0.10 `/claude-jev:compact` turn.
-2. `select_blocks` takes the newest `MAX_BLOCKS = 150` blocks. The newest `PIN_TAIL = 4`
+2. `select_blocks` takes the newest `MAX_BLOCKS = 150` blocks for the full
+   checks, plus the `RESCUE_BLOCKS = 150` before them for the constraint
+   check alone — a requirement stated early in a long session survives
+   instead of falling off the window. The newest `PIN_TAIL = 4`
    are kept unjudged. The rest are judged in chunks of `BLOCKS_PER_CHUNK = 10`,
    each request carrying a `HEADER_CHARS = 1500` goal header plus only its own
    blocks (`compact_state`), up to `MAX_WORKERS = 16` requests in flight.
 3. `keep_questions` asks five concrete, positively framed `noul` checks per
-   block (`CHECKS`: constraint, decision, error, open, artifact), following
-   `docs/prompt-craft.md`. `verdicts` turns them into a keep score (max of
-   the first four) and a verbatim score (max of constraint and error). Keep
+   block (`CHECKS`: constraint, decision, error, open, rerunnable),
+   following `docs/prompt-craft.md`. `verdicts` turns them into a keep score
+   (max of the four keep checks) and a verbatim score (constraint, or error
+   unless rerunnable answers yes — output a rerun would print again keeps a
+   head, not whole). Keep
    at `KEEP_THRESHOLD = 0.5`; a low verbatim score keeps a `HEAD_CHARS = 400`
    head plus a re-read pointer. Unscored blocks and failed chunks are kept
    whole. Measured in `eval/planted.py`: a planted user constraint survives

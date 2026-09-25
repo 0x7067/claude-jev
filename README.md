@@ -122,13 +122,13 @@ The ast-grep binary is 51 MB, pinned by sha256, and fetched once in a detached p
 The hook keeps bytes, not prose:
 
 - Harness rows (slash-command wrappers, caveats) and one-word acks are dropped locally.
-- Every other row gets five yes/no checks. Does it state a user constraint? Record a decision and its reason? Hold an exact error? Name open work? Show re-fetchable tool output?
-- Code turns the answers into a verdict. The keep score is the strongest of the first four checks.
-- A row with a high constraint or error score stays verbatim. Any other kept row becomes a truncated head plus a pointer to re-read it.
+- Every other row gets five yes/no checks. Does it state a user constraint? Record a decision and its reason? Hold an exact error? Name open work? Would a rerun print the same output again?
+- Code turns the answers into a verdict. The keep score is the strongest of the four keep checks.
+- A row with a high constraint or error score stays verbatim — unless rerunnable answers yes, in which case the rerun would print it again and a head with the re-run pointer stands in for the whole dump. Any other kept row becomes a truncated head plus a pointer to re-read it.
 - Kept plain messages come back byte-identical. Kept tool calls and results come back as text. Unscored rows are kept.
 - A fixed one-line header opens the compacted context. Any text you type after `/compact` is named in the state, and every check defers to it.
 
-Jev judges only the newest 150 rows. Kept text is capped at 16k chars, and the lowest-confidence keeps are downgraded first. Jev's rows replace the summary however much they shrink it. Only a missing key, a Jev outage, or an error in the bridge falls through to the built-in summary.
+Jev judges only the newest 150 rows with all five checks, plus the 150 before them with the constraint check alone, so a requirement stated early in a long session still reaches Jev. Kept text is capped at 16k chars, and the lowest-confidence keeps are downgraded first. Jev's rows replace the summary however much they shrink it. Only a missing key, a Jev outage, or an error in the bridge falls through to the built-in summary.
 
 To see which path ran, start Claude Code with `-d` and read `~/.claude/debug/<session-id>.txt` after a compaction:
 
@@ -204,7 +204,7 @@ Stats also reports failures by HTTP status or timeout, recent call health, and l
 A harmful hint is "no tools" followed by 5+ tool calls. The first row counts the `feature` and `ops` hints the hook never shows. The second scores the hook as it ships:
 
 ```bash
-python3 eval/replay.py report --variant v9_hinted_only --preds eval/data/pred_v7_no_unclear.jsonl
+python3 eval/replay.py report --variant v9_hinted_only --preds eval/observed/pred_v7_no_unclear.jsonl
 ```
 
 Humans labeled 16 of the hints the hook shows, and agreed with 11.

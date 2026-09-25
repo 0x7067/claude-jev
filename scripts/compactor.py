@@ -38,6 +38,8 @@ import jev
 
 KEEP_THRESHOLD = 0.5
 MAX_BLOCKS = 150
+RESCUE_BLOCKS = 150
+ASK_TIMEOUT = 4.0
 
 PIN_TAIL = 4
 CHUNK = 20
@@ -200,6 +202,7 @@ def session_context(blocks: list[dict], cwd: str | None, directive: str | None) 
         lines.append(f"Working directory: {cwd}")
     if directive:
         lines.append(f"The user asked this compaction to: {directive}")
+        lines.append("A block that request covers counts as yes on every check below.")
     goal = "\n".join(b["text"][:300] for b in blocks if b["role"] == "user")[-HEADER_CHARS:]
     if goal.strip():
         lines.append(f"Most recent user requests:\n{goal}")
@@ -239,38 +242,35 @@ CHECKS = {
     "reproduce to see again?",
     "open": "Does block [{i}] name work still to be done: a next step, a pending "
     "task, or a question waiting for the user's answer?",
-    "artifact": "Does block [{i}] show file contents, a directory listing, or "
-    "command output that the agent could get again by re-running "
-    "the same tool?",
+    "rerunnable": "Does block [{i}] hold output that would come back the same "
+    "on a rerun: a listing, a passing check's log, build or install "
+    "output, or warnings a rebuild would print again?",
 }
 KEEP_CHECKS = ("constraint", "decision", "error", "open")
-VERBATIM_CHECKS = ("constraint", "error")
+ASK_CHECKS = tuple(CHECKS)
 
 
-def keep_questions(n: int, directive: str | None = None) -> dict:
-    """Five concrete yes/no checks per block, each positively framed and
+def keep_questions(n: int, names: tuple = ASK_CHECKS) -> dict:
+    """Concrete yes/no checks per block, each positively framed and
     settleable by a reader in ten seconds. The policy that turns them into
     keep / verbatim / head / drop lives in `verdicts`, not in the question.
+    `names` narrows the check set — the rescue pass asks only `constraint`.
 
-    `/compact <text>` is named in the state, not repeated per question; the
-    checks defer to it: what the user asked to keep outranks their score."""
-    asked = (
-        " The state names what the user asked this compaction to keep; "
-        "a block that request covers counts as yes here."
-        if directive
-        else ""
-    )
+    `/compact <text>` is named once in the state, not repeated per question;
+    the checks defer to it: what the user asked to keep outranks their score."""
     questions = {}
     for i in range(n):
-        for name, text in CHECKS.items():
-            questions[f"{name}_{i}"] = {"type": "noul", "instructions": text.format(i=i) + asked}
+        for name in names:
+            questions[f"{name}_{i}"] = {"type": "noul", "instructions": CHECKS[name].format(i=i)}
     return questions
 
 
 def verdicts(answers: dict, i: int) -> tuple[float | None, float | None, dict]:
     """(keep, full, checks) for block i from its check scores. keep is the
     strongest reason to hold the block; full is the strongest reason to hold
-    it byte for byte. None when no check was answered."""
+    it byte for byte. A rerunnable score at KEEP_THRESHOLD silences error:
+    output a rerun would print again keeps a head with the re-run pointer,
+    not whole. None when no check was answered."""
     checks = {}
     for name in CHECKS:
         a = answers.get(f"{name}_{i}")
@@ -279,26 +279,36 @@ def verdicts(answers: dict, i: int) -> tuple[float | None, float | None, dict]:
     if not checks:
         return None, None, checks
     keep = max((checks.get(c, 0.0) for c in KEEP_CHECKS), default=0.0)
-    full = max((checks.get(c, 0.0) for c in VERBATIM_CHECKS), default=0.0)
-    return keep, full, checks
+    error = checks.get("error", 0.0)
+    if checks.get("rerunnable", 0.0) >= KEEP_THRESHOLD:
+        error = 0.0
+    return keep, max(checks.get("constraint", 0.0), error), checks
 
 
-def ask_chunked(blocks: list[dict], cwd: str | None, n: int, directive: str | None = None) -> dict:
-    """Judge the first `n` blocks, one request per BLOCKS_PER_CHUNK of them.
+def ask_chunked(
+    blocks: list[dict],
+    cwd: str | None,
+    lo: int,
+    hi: int,
+    directive: str | None = None,
+    names: tuple = ASK_CHECKS,
+) -> dict:
+    """Judge blocks[lo:hi], one request per BLOCKS_PER_CHUNK of them, with
+    answer keys indexed by the block's position in `blocks`.
 
     Each request carries only its own blocks, so wall time stays ~1 round trip
     and request size stays flat however long the session is.
     """
-    questions = keep_questions(n, directive)
+    questions = keep_questions(hi, names)
     context = session_context(blocks, cwd, directive)
-    ranges = [(i, min(i + BLOCKS_PER_CHUNK, n)) for i in range(0, n, BLOCKS_PER_CHUNK)]
+    ranges = [(i, min(i + BLOCKS_PER_CHUNK, hi)) for i in range(lo, hi, BLOCKS_PER_CHUNK)]
 
     def one(r: tuple[int, int]) -> dict:
         lo, hi = r
-        q = {k: questions[k] for i in range(lo, hi) for k in (f"{name}_{i}" for name in CHECKS)}
+        q = {k: questions[k] for i in range(lo, hi) for k in (f"{name}_{i}" for name in names)}
 
         try:
-            return jev.ask(compact_state(blocks, lo, hi, context), q)
+            return jev.ask(compact_state(blocks, lo, hi, context), q, timeout=ASK_TIMEOUT)
         except jev.JevError:
             return {}
 
@@ -382,7 +392,7 @@ def block_kind(text: str) -> str:
     return "text"
 
 
-def block_rows(blocks: list[dict], kept: list[dict], answers: dict, n_judged: int) -> list[dict]:
+def block_rows(blocks: list[dict], kept: list[dict], answers: dict) -> list[dict]:
     """One record per input block: what Jev scored it and what became of it.
 
     Built after `fit_kept`, so a block the digest cap dropped or downgraded
@@ -399,7 +409,7 @@ def block_rows(blocks: list[dict], kept: list[dict], answers: dict, n_judged: in
             verdict = "pinned"
         else:
             verdict = k["kind"]
-        keep, full, checks = verdicts(answers, i) if i < n_judged else (None, None, {})
+        keep, full, checks = verdicts(answers, i)
         out.append(
             {
                 "checks": checks,
@@ -419,24 +429,56 @@ def block_rows(blocks: list[dict], kept: list[dict], answers: dict, n_judged: in
 def judge(transcript_path: str, cwd: str | None) -> tuple[list[str], dict]:
     """The whole selection pass: transcript -> Jev keep/truncate/drop ->
     digest entries. The newest PIN_TAIL blocks are never judged."""
-    kept, stats = select_blocks(transcript_blocks(transcript_path)[-MAX_BLOCKS:], cwd)
+    kept, stats = select_blocks(
+        transcript_blocks(transcript_path)[-(MAX_BLOCKS + RESCUE_BLOCKS) :], cwd
+    )
     return [k["text"] for k in kept], stats
 
 
 def select_blocks(
     blocks: list[dict], cwd: str | None, directive: str | None = None
 ) -> tuple[list[dict], dict]:
-    """Jev keep/truncate/drop over labeled blocks. Each kept entry carries the
-    block index `i`, its digest `text`, and `kind` (full or truncated), so the
-    caller can hand back either the text or the row the block came from."""
+    """Jev keep/truncate/drop over labeled blocks. The newest MAX_BLOCKS get
+    the full four checks; the RESCUE_BLOCKS before them get only the
+    constraint check, so a requirement stated early in a long session still
+    reaches Jev instead of falling off the window silently. Each kept entry
+    carries the block index `i`, its digest `text`, and `kind` (full or
+    truncated), so the caller can hand back either the text or the row the
+    block came from."""
     if not blocks:
         return [], {"judged": 0}
+    window = max(0, len(blocks) - MAX_BLOCKS)
+    rescue_lo = max(0, window - RESCUE_BLOCKS)
     n_judged = max(0, len(blocks) - PIN_TAIL)
     t0 = time.monotonic()
-    answers = ask_chunked(blocks, cwd, n_judged, directive) if n_judged else {}
+    answers = ask_chunked(blocks, cwd, window, n_judged, directive) if n_judged > window else {}
+    rescue_answers: dict = {}
+    if window > rescue_lo:
+        try:
+            rescue_answers = ask_chunked(
+                blocks, cwd, rescue_lo, window, directive, names=("constraint",)
+            )
+        except jev.JevError:
+            pass
+    answers.update(rescue_answers)
     ms = int((time.monotonic() - t0) * 1000)
+    rescued: list[dict] = []
+    for i in range(rescue_lo, window):
+        p = (rescue_answers.get(f"constraint_{i}") or {}).get("noul")
+        if isinstance(p, (int, float)) and p >= KEEP_THRESHOLD:
+            rescued.append(
+                {
+                    "i": i,
+                    "text": cut_marked(blocks[i]["text"], KEEP_CHARS),
+                    "kind": "full",
+                    "keep": p,
+                    "full": p,
+                    "rescued": True,
+                }
+            )
     kept: list[dict] = []
-    for i, b in enumerate(blocks):
+    for i in range(window, len(blocks)):
+        b = blocks[i]
         if i >= n_judged:
             kept.append(
                 {"i": i, "text": cut_marked(b["text"], KEEP_CHARS), "kind": "full", "pinned": True}
@@ -482,9 +524,10 @@ def select_blocks(
             )
             kept_idx.add(i - 1)
         paired.append(k)
-    kept = fit_kept(paired, blocks)
+    kept = fit_kept(rescued + paired, blocks)
     stats = {
-        "judged": n_judged,
+        "judged": n_judged - window,
+        "rescued": len(rescued),
         "pinned": len(blocks) - n_judged,
         "kept": len(kept),
         "truncated": sum(1 for k in kept if k["kind"] == "truncated"),
@@ -492,7 +535,7 @@ def select_blocks(
         "chars_before": sum(len(b["text"]) for b in blocks),
         "chars_after": sum(len(k["text"]) for k in kept),
         "ms": ms,
-        "rows": block_rows(blocks, kept, answers, n_judged),
+        "rows": block_rows(blocks, kept, answers),
     }
     stats["est_tokens_after"] = stats["chars_after"] // 4
     stats["reduction"] = round(1 - stats["chars_after"] / max(stats["chars_before"], 1), 3)
@@ -597,7 +640,7 @@ def rows(stdin) -> int:
 
     blocks = []
     for r in reversed(incoming):
-        if len(blocks) == MAX_BLOCKS:
+        if len(blocks) == MAX_BLOCKS + RESCUE_BLOCKS:
             break
         text = row_text(r)
         if text is not None:
