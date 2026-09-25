@@ -1,0 +1,27 @@
+README.md
+  s_68ce895461894e::t_5948e892e682e8 199-201,203-204,209-210,216
+CHANGELOG.md
+  s_68ce895461894e::t_a350b32deeda09 7-12
+scripts/observed.py
+  s_68ce895461894e::t_9f0f42d90d9608 73
+  s_68ce895461894e::t_b3c9b3c9cf99a5 8-14,26-29,31-32,35,45,51-72,74-84
+  s_68ce895461894e::t_1787534fd95205 147-154,191
+  s_68ce895461894e::t_30464f2ffccd95 155-167,169-174,183-184,188,190,192-195,197,203,207-213,216,232-234,237
+  s_68ce895461894e::t_7837535c2c48d2 85-86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f1a664b100f1629b574e15ffbeb16aa0a5bdc4bf",
+  "prompts": {},
+  "sessions": {
+    "s_68ce895461894e": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0d9b1-c7ba-7215-a5b8-40cbf2a5c86e",
+        "model": "qwen3.8-max"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
