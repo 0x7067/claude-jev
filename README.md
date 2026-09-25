@@ -180,7 +180,7 @@ The v0.21.0 run judged a fresh 250-edit extract, each edit at its own commit, wi
 | Rules asked per edit, median | 8 | 8 |
 | Latency, median | 0.80s | not measured |
 
-The latency row is empty on purpose. A re-score over cached answers measures the cache, not the hook — it reports a 0.01s median against the 0.80s a live run costs — and the 1,105 of 2,222 calls that failed on a bad key in the same window distort any percentile taken from that log. Only a run that re-judges every edit live can fill that cell.
+The latency row is empty on purpose. A re-score reads the cached answers instead of asking again, so the time it reports belongs to the cache, not the hook — a 0.01s median against the 0.80s a live pass costs. Only a run that re-judges every edit live can fill that cell.
 
 Most of the v0.21.0 blocks come from one repo's own `code-comments-are-banned-in` rule firing on 17 accepted edits (0.82–0.91): the current corpus reaches repos the old sample never did, so conflicts between a rule and the practice it governs are now visible in the number instead of hidden by the sample.
 
