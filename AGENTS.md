@@ -214,6 +214,14 @@ The rules eval judges each record at its `sha`, and reads
 `eval/global_CLAUDE.md` in place of `~/.claude/CLAUDE.md`. Change a case's
 sha only when a rule-file change in that repo is the thing being measured.
 
+Second decision models: name them `backend:model` (bare id = System One) in
+`--decision-model` / `--judge-model`; unknown backends raise, and caches key
+on model so providers are interchangeable. The decisions endpoint 503s above
+~24 requests in flight, so pair `--workers 8 --max-inflight 12`. When the
+TypeSafe account is out of credits, pin
+`CLAUDE_PLUGIN_OPTION_PROVIDER=openrouter`: provider order does not fall
+through.
+
 These call `api.typesafe.ai` with real past prompts and cost money. Ask before
 running a full sweep.
 
