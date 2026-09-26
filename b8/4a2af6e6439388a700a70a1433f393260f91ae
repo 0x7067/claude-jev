@@ -1,0 +1,69 @@
+adapters/afk/src/shared/stdout.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 1
+src/prompt-router.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 5-6,13-15,22-23
+AGENTS.md
+  s_192292c6e473ef::t_063d3d762ecbeb 18,20-21,47,171,195
+adapters/afk/src/subagent-router.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 3-8
+src/session-start.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 4-8
+adapters/afk/src/shared/comparators.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 7-10
+eval/compact.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 10,24,33
+src/rules.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 7-8,15,21-22,31-33
+adapters/afk/src/shared/rule-parser.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 5,14,25-27
+adapters/afk/src/stop-sweep.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 6-13
+adapters/afk/tsconfig.json
+  s_192292c6e473ef::t_8e1f7f6e669948 7
+src/subagent-router.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 5-6,12-15
+hooks/hooks.json
+  s_192292c6e473ef::t_be1ee2b9c6ded5 8,20,30,42,52,63,75
+adapters/afk/src/session-start.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 16-19
+adapters/afk/src/prompt-router.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 3-6
+tsconfig.json
+  s_192292c6e473ef::t_13aaf73cf94c6a 7-9
+adapters/afk/src/shared/digest.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 1
+adapters/afk/src/shared/jev-client.ts
+  s_192292c6e473ef::t_74d1cdcf4e697a 93-98
+hooks/register.ts
+  s_192292c6e473ef::t_820abd4d37be0a 78,499
+adapters/afk/src/shared/config.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 5
+adapters/afk/src/shared/questions.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 1
+adapters/afk/src/rules.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 6-9,15-17,84,161
+adapters/afk/src/shared/state.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 4
+.gitignore
+  s_192292c6e473ef::t_a96d73460b8d9c 12
+src/compactor.ts
+  s_192292c6e473ef::t_9272213ae4e1fe 5-7,16
+.github/workflows/check.yml
+  s_192292c6e473ef::t_760381fd550b34 17,27,33-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b84a2af6e6439388a700a70a1433f393260f91ae",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
