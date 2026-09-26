@@ -4,6 +4,11 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import {
+  resolveDecisionBackend,
+  DEFAULT_BACKEND,
+  type DecisionBackend,
+} from "../adapters/afk/src/shared/jev-client.js";
+import {
   judge,
   blockText,
   visibleText,
@@ -228,8 +233,13 @@ function boundaries(lines: string[]): Boundary[] {
   return out;
 }
 
-function selectionSig(): string {
-  return crypto.createHash("sha256").update(fs.readFileSync(COMPACTOR_SRC)).digest("hex").slice(0, 16);
+function selectionSig(decisionBackend: DecisionBackend): string {
+  return crypto
+    .createHash("sha256")
+    .update(fs.readFileSync(COMPACTOR_SRC))
+    .update(decisionBackend.name)
+    .digest("hex")
+    .slice(0, 16);
 }
 
 interface CacheRow {
@@ -316,10 +326,11 @@ async function replay(
   cache: Map<string, CacheRow>,
   summaries: Map<string, string | null>,
   cacheF: number | null,
+  decisionBackend: DecisionBackend,
   gen?: () => Promise<string | null>
 ): Promise<ReplayResult> {
   const key = crypto.createHash("sha256").update(preLines.join("")).digest("hex");
-  const sig = selectionSig();
+  const sig = selectionSig(decisionBackend);
   let summary = summaries.get(key) ?? null;
 
   if (summary === null && gen) {
@@ -342,7 +353,7 @@ async function replay(
   let stats: Stats;
 
   try {
-    [kept, stats] = await judge(tmp, null);
+    [kept, stats] = await judge(tmp, null, decisionBackend);
   } finally {
     fs.rmSync(tmp, { force: true });
   }
@@ -571,7 +582,8 @@ async function runEvent(
   lines: string[],
   i: number,
   kind: string,
-  seed: number
+  seed: number,
+  decisionBackend: DecisionBackend
 ): Promise<PlantResult | null> {
   const tmp = path.join(os.tmpdir(), `jev-planted-${process.pid}-${Math.random().toString(36).slice(2)}.jsonl`);
   fs.writeFileSync(tmp, lines.slice(0, i).join("\n"));
@@ -589,7 +601,7 @@ async function runEvent(
   let stats: Stats;
 
   try {
-    [kept, stats] = await selectBlocks(plantedBlocks, null);
+    [kept, stats] = await selectBlocks(plantedBlocks, null, null, decisionBackend);
   } catch (e) {
     process.stderr.write(`  jev failed on ${path.basename(fp)}: ${String(e)}\n`);
 
@@ -658,6 +670,7 @@ interface Args {
   seed: number;
   workers: number;
   explain: boolean;
+  decisionModel?: string;
   out?: string;
   projects?: string;
 }
@@ -670,6 +683,7 @@ function parseArgs(argv: string[]): Args {
     else if (argv[i] === "--seed") args.seed = Number(argv[++i]);
     else if (argv[i] === "--workers") args.workers = Number(argv[++i]);
     else if (argv[i] === "--explain") args.explain = true;
+    else if (argv[i] === "--decision-model") args.decisionModel = argv[++i];
     else if (argv[i] === "--out") args.out = argv[++i];
     else if (argv[i] === "--projects") args.projects = argv[++i];
   }
@@ -689,6 +703,11 @@ async function pooled<T, R>(items: T[], workers: number, fn: (item: T) => Promis
 }
 
 export async function cmdCompact(args: Args): Promise<number> {
+  const decisionBackend: DecisionBackend =
+    args.decisionModel === undefined
+      ? DEFAULT_BACKEND
+      : resolveDecisionBackend(args.decisionModel);
+
   const files = (function walk(dir: string): string[] {
     const out: string[] = [];
 
@@ -780,7 +799,7 @@ export async function cmdCompact(args: Args): Promise<number> {
     let stats: Stats;
 
     if (kind === "real") {
-      ({ kept, stats } = await replay(lines.slice(0, i), cache, summaries, cacheF));
+      ({ kept, stats } = await replay(lines.slice(0, i), cache, summaries, cacheF, decisionBackend));
       defaultCtx = ev!.summary + "\n" + ev!.preserved;
       const meta = ev!.meta;
       const durationMs = meta["durationMs"];
@@ -788,7 +807,14 @@ export async function cmdCompact(args: Args): Promise<number> {
       durationS = Math.round((isNumber(durationMs) ? durationMs : 0) / 100) / 10;
       trigger = meta["trigger"] ?? null;
     } else {
-      const r = await replay(lines.slice(0, i), cache, summaries, cacheF, () => genSummary(flatten(lines, i)));
+      const r = await replay(
+        lines.slice(0, i),
+        cache,
+        summaries,
+        cacheF,
+        decisionBackend,
+        () => genSummary(flatten(lines, i))
+      );
 
       ({ kept, stats } = r);
       defaultCtx = (r.summary ?? "") + "\n" + tailText(lines, i);
@@ -866,7 +892,9 @@ export async function cmdCompact(args: Args): Promise<number> {
   if (todo.length > 0) process.stderr.write("\n");
   fs.closeSync(cacheF);
 
-  const plantFuts = await pooled(todo, args.workers, (t) => runEvent(t[0], t[1], t[2], t[6], args.seed));
+  const plantFuts = await pooled(todo, args.workers, (t) =>
+    runEvent(t[0], t[1], t[2], t[6], args.seed, decisionBackend)
+  );
 
   const plantResults = plantFuts.filter((f): f is PromiseFulfilledResult<PlantResult> => f.status === "fulfilled" && f.value !== null).map((f) => f.value);
 

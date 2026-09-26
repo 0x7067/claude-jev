@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { readStdinJson } from "../adapters/afk/src/shared/stdin.js";
-import { jevAsk, type Answers } from "../adapters/afk/src/shared/jev-client.js";
+import { DEFAULT_BACKEND, type Answers, type DecisionBackend } from "../adapters/afk/src/shared/jev-client.js";
 import { configDir } from "../adapters/afk/src/shared/config.js";
 import {
   isJsonObject,
@@ -324,6 +324,7 @@ async function askChunked(
   lo: number,
   hi: number,
   directive: string | null = null,
+  decisionBackend: DecisionBackend = DEFAULT_BACKEND,
   names: readonly (keyof typeof CHECKS)[] = ASK_CHECKS
 ): Promise<Answers> {
   const questions = keepQuestions(hi, names);
@@ -341,7 +342,7 @@ async function askChunked(
     }
 
     try {
-      return await jevAsk(compactState(blocks, clo, chi, context), q, ASK_TIMEOUT_MS);
+      return await decisionBackend.ask(compactState(blocks, clo, chi, context), q, ASK_TIMEOUT_MS);
     } catch {
       return {};
     }
@@ -490,9 +491,15 @@ export function blockRows(blocks: Block[], kept: Kept[], answers: Answers): Row[
 
 export async function judge(
   transcriptPath: string,
-  cwd: string | null
+  cwd: string | null,
+  decisionBackend: DecisionBackend = DEFAULT_BACKEND
 ): Promise<[string[], Stats]> {
-  const [kept, stats] = await selectBlocks(transcriptBlocks(transcriptPath).slice(-(MAX_BLOCKS + RESCUE_BLOCKS)), cwd);
+  const [kept, stats] = await selectBlocks(
+    transcriptBlocks(transcriptPath).slice(-(MAX_BLOCKS + RESCUE_BLOCKS)),
+    cwd,
+    null,
+    decisionBackend
+  );
 
   return [kept.map((k) => k.text), stats];
 }
@@ -517,7 +524,8 @@ function emptyStats(judged: number): Stats {
 export async function selectBlocks(
   blocks: Block[],
   cwd: string | null,
-  directive: string | null = null
+  directive: string | null = null,
+  decisionBackend: DecisionBackend = DEFAULT_BACKEND
 ): Promise<[Kept[], Stats]> {
   if (blocks.length === 0) return [[], emptyStats(0)];
   const window = Math.max(0, blocks.length - MAX_BLOCKS);
@@ -527,14 +535,14 @@ export async function selectBlocks(
 
   let answers: Answers =
     nJudged > window
-      ? await askChunked(blocks, cwd, window, nJudged, directive)
+      ? await askChunked(blocks, cwd, window, nJudged, directive, decisionBackend)
       : {};
 
   let rescueAnswers: Answers = {};
 
   if (window > rescueLo) {
     try {
-      rescueAnswers = await askChunked(blocks, cwd, rescueLo, window, directive, ["constraint"]);
+      rescueAnswers = await askChunked(blocks, cwd, rescueLo, window, directive, decisionBackend, ["constraint"]);
     } catch {
     }
   }

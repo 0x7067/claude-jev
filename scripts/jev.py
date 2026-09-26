@@ -162,6 +162,32 @@ def provider_for(key: str) -> Provider:
     )
 
 
+DECISIONS_PROVIDER = Provider(
+    "openrouter", "https://openrouter.ai/api/alpha/decisions", "sk-or-", "OPENROUTER_API_KEY"
+)
+
+BACKENDS = ("systemone", "decisions")
+
+
+def split_spec(spec: str) -> tuple[str, str]:
+    """A `backend:model` spec, or a bare model id meaning System One."""
+    backend, sep, model = spec.partition(":")
+    if not sep or not model:
+        return "systemone", spec
+    if backend not in BACKENDS:
+        raise JevError(f"unknown Jev backend: {backend}")
+    return backend, model
+
+
+def resolve_for(provider: Provider) -> tuple[str, str]:
+    """Where `provider`'s key in effect comes from (`env`, `saved`, `missing`) and the key."""
+    env = os.environ.get(provider.key_var, "").strip()
+    if env:
+        return "env", env
+    saved = plugin_option("typesafeApiKey")
+    return ("saved", saved) if saved else ("missing", "")
+
+
 def ask(
     state,
     questions: dict,
@@ -175,12 +201,20 @@ def ask(
     attempt gets the smaller of `timeout` and the time left. A network
     failure that returns in under FAST_FAIL seconds is retried once — a
     refused connection costs milliseconds, a timeout costs the budget."""
+    backend, model_id = split_spec(model or DEFAULT_MODEL)
+    if backend == "decisions":
+        source, key = resolve_for(DECISIONS_PROVIDER)
+        provider = DECISIONS_PROVIDER
+    else:
+        source, key, provider = resolve()
+        if source == "missing":
+            raise JevError(missing_key_message(provider))
+        provider = provider or PROVIDERS[0]
     body = {
         "state": state,
-        "model": model or DEFAULT_MODEL,
+        "model": model_id,
         "questions": questions,
     }
-    source, key, provider = resolve()
     if source == "missing":
         raise JevError(missing_key_message(provider))
     req = urllib.request.Request(
