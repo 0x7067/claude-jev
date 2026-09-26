@@ -42,6 +42,8 @@ const KEEP_CHARS = 1500;
 
 const HEAD_CHARS = 400;
 
+const TAIL_CHARS = 150;
+
 const HEAD_SLACK = 200;
 
 const TARGET_CHARS = 16000;
@@ -371,8 +373,12 @@ async function askChunked(
 export const ELISION = (n: number) =>
   `[\u2026 ${n} chars elided by jev-compact \u2014 re-read the file or re-run the command if needed]`;
 
-export function cutMarked(text: string, chars: number): string {
-  if (text.length <= chars) return text;
+interface HeadCut {
+  kept: string;
+  at: number;
+}
+
+function headOf(text: string, chars: number): HeadCut {
   let cut = -1;
   let idx = text.indexOf("\n\n", Math.floor(chars / 2));
 
@@ -381,15 +387,25 @@ export function cutMarked(text: string, chars: number): string {
     idx = text.indexOf("\n\n", idx + 1);
   }
 
-  const head = cut > 0 ? text.slice(0, cut) : text.slice(0, chars);
+  if (cut > 0) return { kept: text.slice(0, cut), at: cut };
 
-  return `${head}\n${ELISION(text.length - head.length)}`;
+  return { kept: text.slice(0, chars), at: chars };
+}
+
+export function cutMarked(text: string, chars: number): string {
+  if (text.length <= chars) return text;
+  const head = headOf(text, chars);
+
+  return `${head.kept}\n${ELISION(text.length - head.kept.length)}`;
 }
 
 export function truncateBlock(text: string): string {
-  if (text.length <= HEAD_CHARS + HEAD_SLACK) return text;
+  if (text.length <= HEAD_CHARS + TAIL_CHARS + HEAD_SLACK) return text;
 
-  return cutMarked(text, HEAD_CHARS);
+  const head = headOf(text, HEAD_CHARS);
+  const tail = text.slice(text.length - TAIL_CHARS).replace(/^\s+/, "");
+
+  return `${head.kept}\n${ELISION(text.length - head.kept.length - tail.length)}\n${tail}`;
 }
 
 export interface Kept {

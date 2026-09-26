@@ -573,6 +573,8 @@ function plant(blocks: Block[], rng: () => number): [Block[], { key: string; use
 interface PlantResult {
   user: string | null;
   buried: string | null;
+  userCut: string | null;
+  buriedCut: string | null;
   kept: number;
   blocks: number;
 }
@@ -619,9 +621,18 @@ async function runEvent(
     return k.text.includes(meta.key) ? "kept" : "cut";
   };
 
+  const cutOffset = (pos: number | null): string | null => {
+    if (pos === null || fate(pos) !== "cut") return null;
+    const original = plantedBlocks[pos]!.text;
+
+    return `${original.indexOf(meta.key)}/${original.length}->${final.get(pos)!.text.length}`;
+  };
+
   return {
     user: fate(meta.user),
     buried: fate(meta.buried),
+    userCut: cutOffset(meta.user),
+    buriedCut: cutOffset(meta.buried),
     kept: stats.kept,
     blocks: plantedBlocks.length,
   };
@@ -662,12 +673,12 @@ function gate(rows: EventRow[], plants: Array<PlantResult | null>): number {
     console.log(`  ${ok ? "ok  " : "FAIL"} ${name.padEnd(38)} ${(100 * val).toFixed(1).padStart(5)}%  floor ${Math.round(100 * floor)}%  n=${n}`);
   }
 
-  const fatesByKind: Array<[string, string[]]> = [
-    ["user", user],
-    ["buried", buried],
+  const byKind: Array<[string, string[], Array<string | null>]> = [
+    ["user", user, plants.flatMap((p) => (p !== null ? [p.userCut] : []))],
+    ["buried", buried, plants.flatMap((p) => (p !== null ? [p.buriedCut] : []))],
   ];
 
-  for (const [name, fates] of fatesByKind) {
+  for (const [name, fates, cuts] of byKind) {
     const tally = fates.reduce<Record<string, number>>((acc, f) => {
       acc[f] = (acc[f] ?? 0) + 1;
 
@@ -679,6 +690,12 @@ function gate(rows: EventRow[], plants: Array<PlantResult | null>): number {
         .map(([k, v]) => `${k} ${v}`)
         .join("  ")}`
     );
+
+    const reported = cuts.filter((v) => v !== null);
+
+    if (reported.length > 0) {
+      console.log(`    ${name} cut, key offset/original->kept: ${reported.join(" ")}`);
+    }
   }
 
   return failed ? 2 : 0;
