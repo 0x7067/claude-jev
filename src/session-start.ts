@@ -21,7 +21,7 @@ async function main(): Promise<void> {
   const event = await readStdinJson<SessionStartEvent>();
   const cwd = event.cwd || process.cwd();
 
-  const allRules = await loadRules(cwd, cachePath());
+  const allRules = await loadRules(cwd, { cachePath: cachePath() });
   if (allRules.length === 0) return;
 
   const digest = formatDigest(allRules);

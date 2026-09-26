@@ -5,22 +5,17 @@ import os from "node:os";
 import { jevAsk } from "./jev-client.js";
 import {
   ruleQuestions,
-  INSTRUCTION_Q,
-  TURN_Q,
-  POLARITY_Q,
-  SUBJECT_Q,
   INSTRUCTION_MIN,
   TURN_MIN,
   CHOICE_MIN,
   DEFAULT_SUBJECT,
   DEFAULT_POLARITY,
   ITEMS_PER_REQUEST,
-  TURN_CRITERIA,
   POLARITY_CRITERIA,
   SUBJECT_CRITERIA,
 } from "./questions.js";
 import { slugify } from "./utils.js";
-import type { Answers } from "./jev-client.js";
+import { configDir } from "./config.js";
 
 export interface Rule {
   id: string;
@@ -32,11 +27,13 @@ export interface Rule {
   fileHash: string;
   polarity: string;
   subject: string;
+  context: string;
 }
 
 const MIN_ITEM_CHARS = 20;
 const MAX_ITEM_CHARS = 600;
 const MAX_NESTED_DEPTH = 4;
+const RULE_CONTEXT_CHARS = 400;
 
 const RULE_FILES = ["CLAUDE.md", "AGENTS.md"];
 const AFK_RULE_FILES = ["AFK.md"];
@@ -62,8 +59,14 @@ const HEADING = /^\s*#{1,6}\s+/;
 const FRONT_MATTER = /^---\s*$/;
 const SENTENCE = /(?<=\.)\s+(?=[A-Z])/;
 const SCOPE_TAIL = /\(scope:\s*([^)]+)\)\s*$/;
+const NAMED = /^\*\*([\w-]+)\*\*:?\s*(.*)/;
 
 const CACHE_PATH = path.join(os.homedir(), ".afk", "jev-rule-cache.json");
+
+export interface LoadRulesOptions {
+  cachePath?: string;
+  timeoutMs?: number;
+}
 
 function loadCache(
   cachePath: string
@@ -85,7 +88,9 @@ function saveCache(
 ): void {
   try {
     fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-    fs.writeFileSync(cachePath, JSON.stringify(cache));
+    const tmp = cachePath + "." + process.pid + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(cache));
+    fs.renameSync(tmp, cachePath);
   } catch {
   }
 }
@@ -207,52 +212,68 @@ function choiceOf(
   return defaultVal;
 }
 
-function digestKey(questionStr: string, content: string): string {
-  return crypto
-    .createHash("sha256")
-    .update(questionStr + content)
-    .digest("hex");
-}
-
 function sortedStringify(val: unknown): string {
   if (Array.isArray(val)) {
-    return `[${val.map(sortedStringify).join(", ")}]`;
+    return "[" + val.map(sortedStringify).join(", ") + "]";
   }
   if (typeof val === "object" && val !== null) {
     const obj = val as Record<string, unknown>;
     const pairs = Object.keys(obj)
       .sort()
-      .map((k) => `${JSON.stringify(k)}: ${sortedStringify(obj[k])}`);
-    return `{${pairs.join(", ")}}`;
+      .map((k) => JSON.stringify(k) + ": " + sortedStringify(obj[k]));
+    return "{" + pairs.join(", ") + "}";
   }
   return JSON.stringify(val);
 }
 
-function questionKey(): string {
-  return (
-    INSTRUCTION_Q +
-    TURN_Q +
-    POLARITY_Q +
-    SUBJECT_Q +
-    sortedStringify([TURN_CRITERIA, POLARITY_CRITERIA, SUBJECT_CRITERIA])
-  );
+function chunkKey(state: string, questions: Record<string, unknown>): string {
+  return crypto
+    .createHash("sha256")
+    .update(sortedStringify([state, questions]))
+    .digest("hex");
 }
 
-async function classifyItems(
-  lines: string[],
-  items: Item[],
-  cachePath: string
-): Promise<Map<number, ClassifiedItem>> {
-  const content = lines.join("");
-  const key = digestKey(questionKey(), content);
+function sectionHeadings(lines: string[], items: Item[]): Map<number, string> {
+  const out = new Map<number, string>();
+  let current = "no heading";
+  const ordered = [...items].sort((a, b) => a.lineNo - b.lineNo);
+  let pos = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    const lineNum = i + 1;
+    if (HEADING.test(line)) current = line.replace(/^\s*#{1,6}\s+/, "").trim();
+    while (pos < ordered.length && ordered[pos]!.lineNo === lineNum) {
+      out.set(lineNum, current);
+      pos++;
+    }
+  }
+  return out;
+}
 
-  const cache = loadCache(cachePath);
+async function classifyChunk(
+  start: number,
+  chunk: Item[],
+  headings: Map<number, string>,
+  cache: Record<string, Record<string, unknown>>,
+  cachePath: string,
+  timeoutMs: number | undefined
+): Promise<Map<number, ClassifiedItem>> {
+  const state = chunk
+    .map(
+      (item, i) =>
+        "[" + i + "] (" + (headings.get(item.lineNo) ?? "no heading") + ") " + item.text
+    )
+    .join("\n\n");
+  const questions = ruleQuestions(chunk.length);
+  const key = chunkKey(state, questions);
+
   const hit = cache[key];
   if (typeof hit === "object" && hit !== null) {
     const result = new Map<number, ClassifiedItem>();
     for (const [k, v] of Object.entries(hit)) {
+      if (!/^\d+$/.test(k)) continue;
       const idx = parseInt(k, 10);
-      if (!isNaN(idx) && typeof v === "object" && v !== null) {
+      if (typeof v === "object" && v !== null) {
         const vr = v as Record<string, unknown>;
         if (vr["when"] === "edit" || vr["when"] === "turn") {
           result.set(idx, {
@@ -263,59 +284,82 @@ async function classifyItems(
         }
       }
     }
-    return result;
+    return new Map([...result].map(([k2, v2]) => [start + k2, v2]));
   }
+
+  const answers = await jevAsk(state, questions, timeoutMs);
+  const out: Record<number, ClassifiedItem> = {};
+  for (let i = 0; i < chunk.length; i++) {
+    const q = answers["q" + i];
+    const p = q && "noul" in q ? q.noul : undefined;
+    if (typeof p !== "number" || p < INSTRUCTION_MIN) continue;
+    const t = answers["t" + i];
+    const tn = t && "noul" in t ? t.noul : undefined;
+    const turn = typeof tn === "number" && tn >= TURN_MIN;
+    out[i] = {
+      when: turn ? "turn" : "edit",
+      polarity: choiceOf(answers["p" + i], POLARITY_CRITERIA, DEFAULT_POLARITY),
+      subject: choiceOf(answers["s" + i], SUBJECT_CRITERIA, DEFAULT_SUBJECT),
+    };
+  }
+  cache[key] = Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v]));
+  saveCache(cache, cachePath);
+  return new Map(Object.entries(out).map(([k, v]) => [start + parseInt(k, 10), v]));
+}
+
+async function classifyItems(
+  lines: string[],
+  items: Item[],
+  cachePath: string,
+  timeoutMs?: number
+): Promise<Map<number, ClassifiedItem>> {
+  const cache = loadCache(cachePath);
+  const headings = sectionHeadings(lines, items);
+  const starts: number[] = [];
+  for (let s = 0; s < items.length; s += ITEMS_PER_REQUEST) starts.push(s);
 
   const meta = new Map<number, ClassifiedItem>();
-
-  for (let start = 0; start < items.length; start += ITEMS_PER_REQUEST) {
-    const chunk = items.slice(start, start + ITEMS_PER_REQUEST);
-    const state = chunk
-      .map((item, ci) => `[${ci}] ${item.text}`)
-      .join("\n\n");
-    const questions = ruleQuestions(chunk.length);
-
-    let answers: Answers = {};
-    try {
-      answers = await jevAsk(state, questions);
-    } catch {
-      continue;
+  if (starts.length <= 1) {
+    for (const start of starts) {
+      const chunk = items.slice(start, start + ITEMS_PER_REQUEST);
+      for (const [k, v] of await classifyChunk(
+        start,
+        chunk,
+        headings,
+        cache,
+        cachePath,
+        timeoutMs
+      )) {
+        meta.set(k, v);
+      }
     }
-
-    for (let ci = 0; ci < chunk.length; ci++) {
-      const qA = answers[`q${ci}`] as Record<string, unknown> | undefined;
-      const p = qA?.["noul"];
-      if (typeof p !== "number" || p < INSTRUCTION_MIN) continue;
-
-      const tA = answers[`t${ci}`] as Record<string, unknown> | undefined;
-      const t = tA?.["noul"];
-      const isTurn = typeof t === "number" && t >= TURN_MIN;
-
-      meta.set(start + ci, {
-        when: isTurn ? "turn" : "edit",
-        polarity: choiceOf(
-          answers[`p${ci}`] as Record<string, unknown> | undefined,
-          POLARITY_CRITERIA,
-          DEFAULT_POLARITY
-        ),
-        subject: choiceOf(
-          answers[`s${ci}`] as Record<string, unknown> | undefined,
-          SUBJECT_CRITERIA,
-          DEFAULT_SUBJECT
-        ),
-      });
-    }
+    return meta;
   }
 
-  if (meta.size > 0) {
-    const cached: Record<string, unknown> = {};
-    for (const [idx, v] of meta.entries()) {
-      cached[String(idx)] = v;
+  const errors: unknown[] = [];
+  for (let i = 0; i < starts.length; i += 8) {
+    const batch = starts.slice(i, i + 8);
+    const settled = await Promise.allSettled(
+      batch.map((start) =>
+        classifyChunk(
+          start,
+          items.slice(start, start + ITEMS_PER_REQUEST),
+          headings,
+          cache,
+          cachePath,
+          timeoutMs
+        )
+      )
+    );
+    for (const r of settled) {
+      if (r.status === "fulfilled") {
+        for (const [k, v] of r.value) meta.set(k, v);
+      } else {
+        errors.push(r.reason);
+      }
     }
-    cache[key] = cached;
-    saveCache(cache, cachePath);
   }
-
+  if (errors.length > 0 && meta.size === 0) throw errors[0];
   return meta;
 }
 
@@ -323,7 +367,7 @@ async function parseRules(
   filePath: string,
   baseLabel?: string,
   fileScope?: string[],
-  cachePath: string = CACHE_PATH
+  opts: LoadRulesOptions = {}
 ): Promise<Rule[]> {
   let lines: string[];
   try {
@@ -334,28 +378,26 @@ async function parseRules(
   }
 
   const base = baseLabel ?? path.basename(filePath);
-  const fileHash = crypto
-    .createHash("sha256")
-    .update(lines.join("\n"))
-    .digest("hex")
-    .slice(0, 12);
+  const fileHash = crypto.createHash("sha256").update(lines.join("\n")).digest("hex").slice(0, 12);
   const scope0 = [...(fileScope ?? []), ...frontmatterPaths(lines)];
 
   const rawItems = markdownItems(lines);
   const items = rawItems.filter((item) => item.text.trim().length >= MIN_ITEM_CHARS);
 
-  let meta: Map<number, ClassifiedItem>;
-  try {
-    meta = await classifyItems(lines, items, cachePath);
-  } catch {
-    return [];
-  }
+  const meta = await classifyItems(lines, items, opts.cachePath ?? CACHE_PATH, opts.timeoutMs);
 
   const rules: Rule[] = [];
   for (let idx = 0; idx < items.length; idx++) {
     if (!meta.has(idx)) continue;
     const { when, polarity, subject } = meta.get(idx)!;
     let text = items[idx]!.text.trim();
+
+    const around = items
+      .slice(Math.max(0, idx - 1), idx + 2)
+      .filter((it) => it.text !== text)
+      .map((it) => it.text)
+      .join(" ")
+      .slice(0, RULE_CONTEXT_CHARS);
 
     if (text.length > MAX_ITEM_CHARS) {
       const cut = text.lastIndexOf(". ", MAX_ITEM_CHARS);
@@ -369,8 +411,15 @@ async function parseRules(
       text = text.slice(0, sm.index).trim();
     }
 
+    let name: string | null = null;
+    const nm = NAMED.exec(text);
+    if (nm) {
+      name = nm[1]!;
+      text = nm[2]!.trim() || text;
+    }
+
     rules.push({
-      id: slugify(text),
+      id: name ?? slugify(text),
       text,
       file: base,
       line: items[idx]!.lineNo,
@@ -379,6 +428,7 @@ async function parseRules(
       fileHash,
       polarity,
       subject,
+      context: around,
     });
   }
 
@@ -400,8 +450,8 @@ function nestedFiles(cwd: string): Array<{ filePath: string; scope: string }> {
       const rel = path.relative(cwd, dir);
       for (const name of RULE_FILES) {
         const p = path.join(dir, name);
-        if (fs.existsSync(p)) {
-          out.push({ filePath: p, scope: `${rel}/**` });
+        if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+          out.push({ filePath: p, scope: rel + "/**" });
         }
       }
     }
@@ -429,7 +479,7 @@ function dedupe(rules: Rule[]): Rule[] {
   const seen = new Set<string>();
   const out: Rule[] = [];
   for (const r of rules) {
-    const key = r.text.toLowerCase().replace(/\s+/g, " ");
+    const key = r.text.toLowerCase().trim().split(/\s+/).join(" ");
     if (!seen.has(key)) {
       seen.add(key);
       out.push(r);
@@ -440,14 +490,17 @@ function dedupe(rules: Rule[]): Rule[] {
 
 export async function loadRules(
   cwd: string,
-  cachePath: string = CACHE_PATH
+  opts: LoadRulesOptions = {}
 ): Promise<Rule[]> {
   const rules: Rule[] = [];
+  const cachePath = opts.cachePath ?? CACHE_PATH;
 
   for (const name of [...RULE_FILES, ...AFK_RULE_FILES]) {
     const p = path.join(cwd, name);
     if (fs.existsSync(p)) {
-      rules.push(...(await parseRules(p, undefined, undefined, cachePath)));
+      rules.push(
+        ...(await parseRules(p, undefined, undefined, { cachePath, timeoutMs: opts.timeoutMs }))
+      );
     }
   }
 
@@ -463,8 +516,11 @@ export async function loadRules(
       for (const fn of entries) {
         if (fn.endsWith(".md") || fn.endsWith(".mdc")) {
           rules.push(
-          ...(await parseRules(path.join(dirPath, fn), `${dir}/${fn}`, undefined, cachePath))
-        );
+            ...(await parseRules(path.join(dirPath, fn), dir + "/" + fn, undefined, {
+              cachePath,
+              timeoutMs: opts.timeoutMs,
+            }))
+          );
         }
       }
     }
@@ -472,14 +528,22 @@ export async function loadRules(
 
   for (const { filePath, scope } of nestedFiles(cwd)) {
     rules.push(
-      ...(await parseRules(filePath, path.relative(cwd, filePath), [scope], cachePath))
+      ...(await parseRules(filePath, path.relative(cwd, filePath), [scope], {
+        cachePath,
+        timeoutMs: opts.timeoutMs,
+      }))
     );
   }
 
-  const globalPath = path.join(os.homedir(), ".claude", "CLAUDE.md");
+  const globalPath = path.join(configDir(), "CLAUDE.md");
   if (fs.existsSync(globalPath)) {
     const rel = path.relative(os.homedir(), globalPath);
-    rules.push(...(await parseRules(globalPath, `~/${rel}`, undefined, cachePath)));
+    rules.push(
+      ...(await parseRules(globalPath, "~/" + rel, undefined, {
+        cachePath,
+        timeoutMs: opts.timeoutMs,
+      }))
+    );
   }
 
   return dedupe(rules);
@@ -497,7 +561,7 @@ export function globMatch(filePath: string, globs: string[]): boolean {
       .replace(/\?/g, "[^/]")
       .replace(/DSTAR_SLASH/g, "(?:.*/)?")
       .replace(/DSTAR/g, ".*");
-    if (new RegExp(`^${rx}$`).test(filePath)) return true;
+    if (new RegExp("^" + rx + "$").test(filePath)) return true;
   }
   return false;
 }
