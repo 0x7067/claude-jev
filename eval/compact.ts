@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import {
   judge,
   blockText,
@@ -12,6 +12,7 @@ import {
   transcriptBlocks,
   PIN_TAIL,
   MAX_BLOCKS,
+  KEEP_THRESHOLD,
   type Block,
   type Kept,
   type Stats,
@@ -33,6 +34,8 @@ const ROOT = path.resolve(HERE, "..", "..");
 const DATA = path.join(ROOT, "eval", "observed");
 
 const COMPACT_CACHE = path.join(DATA, "compact_cache.jsonl");
+
+const SUMMARY_CACHE = path.join(DATA, "summary_cache.jsonl");
 
 const COMPACTOR_SRC = path.join(ROOT, "dist", "src", "compactor.js");
 
@@ -289,6 +292,16 @@ function loadCompactCache(): [Map<string, CacheRow>, Map<string, string | null>]
     }
   }
 
+  if (fs.existsSync(SUMMARY_CACHE)) {
+    for (const line of fs.readFileSync(SUMMARY_CACHE, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+
+      const d = parseJsonObject(line);
+
+      if (d !== null && isString(d["key"]) && isString(d["summary"])) summaries.set(d["key"], d["summary"]);
+    }
+  }
+
   return [judged, summaries];
 }
 
@@ -308,6 +321,17 @@ async function replay(
   const key = crypto.createHash("sha256").update(preLines.join("")).digest("hex");
   const sig = selectionSig();
   let summary = summaries.get(key) ?? null;
+
+  if (summary === null && gen) {
+    summary = await gen();
+
+    summaries.set(key, summary);
+
+    if (summary !== null) {
+      fs.appendFileSync(SUMMARY_CACHE, JSON.stringify({ key, summary }) + "\n");
+    }
+  }
+
   const cacheKey = `${key}|${sig}`;
   const hit = cache.get(cacheKey);
 
@@ -321,11 +345,6 @@ async function replay(
     [kept, stats] = await judge(tmp, null);
   } finally {
     fs.rmSync(tmp, { force: true });
-  }
-
-  if (summary === null && gen) {
-    summary = await gen();
-    summaries.set(key, summary);
   }
 
   if (stats.judged > 0) {
@@ -411,15 +430,42 @@ function synthCut(lines: string[]): number | null {
   return n >= MIN_POST_RETRIEVALS ? cut : null;
 }
 
-async function genSummary(conversation: string, model: string): Promise<string | null> {
-  const r = spawnSync("claude", ["-p", "--model", model, SUMMARY_PROMPT], {
-    input: conversation,
-    encoding: "utf8",
-    timeout: 600_000,
-    maxBuffer: 64 * 1024 * 1024,
-  });
+async function genSummary(conversation: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const child = spawn("pi", ["-p", "--no-session", "--no-tools", SUMMARY_PROMPT], {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
 
-  return r.status === 0 && r.stdout.trim() ? r.stdout.trim() : null;
+    const timer = setTimeout(() => child.kill("SIGKILL"), 600_000);
+    let out = "";
+    let err = "";
+
+    child.stdout.on("data", (d: Buffer) => {
+      out += d.toString();
+    });
+    child.stderr.on("data", (d: Buffer) => {
+      err += d.toString();
+    });
+    child.on("error", () => {
+      clearTimeout(timer);
+
+      resolve(null);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+
+      if (code !== 0 || !out.trim()) {
+        console.error(`genSummary failed: status=${code} err=${err.slice(0, 300)}`);
+
+        resolve(null);
+
+        return;
+      }
+
+      resolve(out.trim());
+    });
+    child.stdin.end(conversation);
+  });
 }
 
 interface EventRow {
@@ -611,19 +657,19 @@ interface Args {
   synth: number;
   seed: number;
   workers: number;
-  model: string;
+  explain: boolean;
   out?: string;
   projects?: string;
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { synth: 0, seed: 0, workers: 4, model: "sonnet" };
+  const args: Args = { synth: 0, seed: 0, workers: 4, explain: false };
 
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--synth") args.synth = Number(argv[++i]);
     else if (argv[i] === "--seed") args.seed = Number(argv[++i]);
     else if (argv[i] === "--workers") args.workers = Number(argv[++i]);
-    else if (argv[i] === "--model") args.model = argv[++i]!;
+    else if (argv[i] === "--explain") args.explain = true;
     else if (argv[i] === "--out") args.out = argv[++i];
     else if (argv[i] === "--projects") args.projects = argv[++i];
   }
@@ -718,6 +764,8 @@ export async function cmdCompact(args: Args): Promise<number> {
   console.error(`  events: ${realTodo.length} real, ${synthTodo.length} synth`);
   let done = 0;
 
+  const explainRows: { session: string; event_i: number; key: string; cause: string }[] = [];
+
   const analyze = async (t: [string, string[], number, number, number, Boundary | null, string]): Promise<EventRow> => {
     const [fp, lines, i, end, prevI, ev, kind] = t;
     const pre = toolCalls(lines, prevI + 1, i);
@@ -740,7 +788,8 @@ export async function cmdCompact(args: Args): Promise<number> {
       durationS = Math.round((isNumber(durationMs) ? durationMs : 0) / 100) / 10;
       trigger = meta["trigger"] ?? null;
     } else {
-      const r = await replay(lines.slice(0, i), cache, summaries, cacheF, () => genSummary(flatten(lines, i), args.model));
+      const r = await replay(lines.slice(0, i), cache, summaries, cacheF, () => genSummary(flatten(lines, i)));
+
       ({ kept, stats } = r);
       defaultCtx = (r.summary ?? "") + "\n" + tailText(lines, i);
       postTokens = Math.floor(defaultCtx.length / 4);
@@ -753,10 +802,35 @@ export async function cmdCompact(args: Args): Promise<number> {
     const digestRows: string[] = gated ? [] : kept;
     const digest = digestRows.join("\n");
     const digestFull = digestRows.filter((t) => !t.includes("elided by jev-compact")).join("\n");
+    const sessionKey = fp.split("/").slice(-2, -1)[0]!.slice(0, 48);
+
+    if (args.explain && kind === "real" && !gated) {
+      for (const k of reads) {
+        if (covered(k, digest)) continue;
+
+        const terms = keyTerms(k);
+        const hits = stats.rows.filter((r) => terms.some((t) => r.ref.includes(t)));
+
+        let cause = "no-match";
+
+        if (hits.length > 0) {
+          const best = hits.find((r) => r.verdict !== "dropped") ?? hits[0]!;
+
+          cause =
+            best.verdict === "dropped"
+              ? best.keep !== null && best.keep >= KEEP_THRESHOLD
+                ? "dropped-budget"
+                : `dropped-judge:${best.kind}:k${best.keep === null ? "null" : best.keep.toFixed(2)}`
+              : `kept-${best.verdict}`;
+        }
+
+        explainRows.push({ session: sessionKey, event_i: i, key: k, cause });
+      }
+    }
 
     return {
       kind,
-      session: fp.split("/").slice(-2, -1)[0]!.slice(0, 48),
+      session: sessionKey,
       subagent: fp.includes("/subagents/"),
       event_i: i,
       n_blocks: stats.judged + stats.pinned,
@@ -793,6 +867,7 @@ export async function cmdCompact(args: Args): Promise<number> {
   fs.closeSync(cacheF);
 
   const plantFuts = await pooled(todo, args.workers, (t) => runEvent(t[0], t[1], t[2], t[6], args.seed));
+
   const plantResults = plantFuts.filter((f): f is PromiseFulfilledResult<PlantResult> => f.status === "fulfilled" && f.value !== null).map((f) => f.value);
 
   const tot: Record<string, number> = {};
@@ -821,7 +896,7 @@ export async function cmdCompact(args: Args): Promise<number> {
 
     if (tot["gated"]) console.log(`    * ${tot["gated"]} kept no rows — jev applied nothing`);
 
-    if (tot["no_summary"]) console.log(`    ! ${tot["no_summary"]} synthetic events have no summary (claude -p failed)`);
+    if (tot["no_summary"]) console.log(`    ! ${tot["no_summary"]} synthetic events have no summary (pi -p failed)`);
   }
 
   if (skipped.length > 0) console.log(`\nskipped ${skipped.length} transcripts whose compaction happened in an earlier session file`);
@@ -829,6 +904,34 @@ export async function cmdCompact(args: Args): Promise<number> {
   const outPath = args.out ?? path.join(DATA, "compare_compact.jsonl");
   fs.writeFileSync(outPath, [...real, ...synth].map((r) => JSON.stringify(r)).join("\n") + "\n");
   console.log(`\nrows -> ${outPath}`);
+
+  if (args.explain) {
+    const byCause = new Map<string, number>();
+
+    for (const e of explainRows) byCause.set(e.cause, (byCause.get(e.cause) ?? 0) + 1);
+
+    console.log("\nuncovered re-read attribution (real events):");
+
+    for (const [c, n] of [...byCause].sort((a, b) => b[1] - a[1])) console.log(`  ${c}: ${n}`);
+
+    const byEvent = new Map<string, number>();
+
+    for (const e of explainRows) {
+      const k = `${e.session}:${e.event_i}`;
+
+      byEvent.set(k, (byEvent.get(k) ?? 0) + 1);
+    }
+
+    const worst = new Set([...byEvent].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => k));
+
+    console.log("worst events (detail):");
+
+    for (const e of explainRows) {
+      const k = `${e.session}:${e.event_i}`;
+
+      if (worst.has(k)) console.log(`  ${k}  ${e.cause.padEnd(16)} ${e.key.slice(0, 80)}`);
+    }
+  }
 
   return gate([...real, ...synth], plantResults);
 }
@@ -839,7 +942,7 @@ if (isMain) {
   const [cmd, ...rest] = process.argv.slice(2);
 
   if (cmd !== "compact") {
-    console.error("usage: node compact.js compact [--synth N] [--seed N] [--workers N] [--model M] [--out P]");
+    console.error("usage: node compact.js compact [--synth N] [--seed N] [--workers N] [--out P]");
     process.exit(2);
   }
 
