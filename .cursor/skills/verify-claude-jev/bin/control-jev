@@ -22,7 +22,7 @@ Usage: control-jev <command> [args]
   cleanup             Tear down the disposable home; keep evidence
   status              Print the active RUN_ID, VERIFY_HOME, and evidence dir
   hook <name> [json]  Drive one hook with a JSON event on stdin or as arg
-  rows [json-file]    Drive the compaction rows bridge (node dist/src/compactor.js rows)
+  rows [json-file]    Drive the compaction rows bridge (node --experimental-strip-types src/compactor.ts rows)
   jev -- <args...>    Run scripts/jev.py with the isolated env
   stats [-- args...]  Run scripts/stats.py with the isolated env
   evidence <relpath>  Print the absolute evidence path for this run
@@ -259,14 +259,14 @@ cmd_doctor() {
 
   local exitc out
   set +e
-  out="$(printf '' | with_verify_home node "$ROOT/dist/src/prompt-router.js" 2>&1)"
+  out="$(printf '' | with_verify_home node --experimental-strip-types "$ROOT/src/prompt-router.ts" 2>&1)"
   exitc=$?
   set -e
   echo "prompt_router_empty_exit=$exitc" | tee -a "$report"
   [[ "$exitc" -eq 0 && -z "$out" ]] || ok=0
 
   set +e
-  out="$(printf '' | with_verify_home node "$ROOT/dist/src/compactor.js" rows 2>&1)"
+  out="$(printf '' | with_verify_home node --experimental-strip-types "$ROOT/src/compactor.ts" rows 2>&1)"
   exitc=$?
   set -e
   echo "compactor_rows_empty_exit=$exitc" | tee -a "$report"
@@ -360,9 +360,9 @@ cmd_hook() {
   esac
   local script
   case "$name" in
-    prompt_router) script="$ROOT/dist/src/prompt-router.js" ;;
-    subagent_router) script="$ROOT/dist/src/subagent-router.js" ;;
-    rules) script="$ROOT/dist/src/rules.js" ;;
+    prompt_router) script="$ROOT/src/prompt-router.ts" ;;
+    subagent_router) script="$ROOT/src/subagent-router.ts" ;;
+    rules) script="$ROOT/src/rules.ts" ;;
   esac
   [[ -f "$script" ]] || die "hook script missing (run npm run build): $script"
   if [[ $# -gt 0 ]]; then
@@ -375,9 +375,9 @@ cmd_hook() {
 cmd_rows() {
   require_active
   if [[ $# -gt 0 ]]; then
-    with_verify_home node "$ROOT/dist/src/compactor.js" rows <"$1"
+    with_verify_home node --experimental-strip-types "$ROOT/src/compactor.ts" rows <"$1"
   else
-    with_verify_home node "$ROOT/dist/src/compactor.js" rows
+    with_verify_home node --experimental-strip-types "$ROOT/src/compactor.ts" rows
   fi
 }
 

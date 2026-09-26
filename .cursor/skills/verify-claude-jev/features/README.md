@@ -65,7 +65,7 @@ toggle A/B in `settings-pane.md` and the two debug lines in `session-compaction.
 run needs no `--plugin-dir` — and after updating, the session must be restarted
 before the new code is the one under test.
 
-The eval gates (`eval/replay.py`, `eval/rules_eval.py`, `eval/compare.py`) are
+The eval gates (`eval/replay.py`, `eval/rules_eval.py` for routing and rules, and the node compaction gate `eval/compact.ts`) are
 out-of-band and are the only evidence allowed to change a number in `README.md`.
 They bill differently: `run` judges prompts through Jev and costs calls, while
 `report` reads the cached prediction and answer files and is free — with

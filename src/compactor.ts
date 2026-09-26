@@ -815,7 +815,7 @@ if (isMain) {
         process.exit(0);
       });
   } else {
-    process.stderr.write("usage: compactor.js rows  (reads a session.compact event on stdin)\n");
+    process.stderr.write("usage: compactor.ts rows  (reads a session.compact event on stdin)\n");
     process.exit(2);
   }
 }
