@@ -8,6 +8,6 @@
     "declaration": true,
     "sourceMap": true
   },
-  "include": ["src/**/*.ts", "adapters/afk/src/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*.ts", "adapters/afk/src/**/*.ts", "eval/**/*.ts"],
+  "exclude": ["node_modules", "dist", "eval/observed"]
 }

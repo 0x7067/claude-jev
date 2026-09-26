@@ -8,11 +8,11 @@ import { configDir } from "../adapters/afk/src/shared/config.js";
 import { fileURLToPath } from "node:url";
 
 const KEEP_THRESHOLD = 0.5;
-const MAX_BLOCKS = 150;
+export const MAX_BLOCKS = 150;
 const RESCUE_BLOCKS = 150;
 const ASK_TIMEOUT_MS = 4000;
 
-const PIN_TAIL = 4;
+export const PIN_TAIL = 4;
 const CHUNK = 20;
 
 const BLOCKS_PER_CHUNK = CHUNK / 2;
