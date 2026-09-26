@@ -6,10 +6,10 @@ import { readStdinJson } from "../adapters/afk/src/shared/stdin.js";
 import { writeOutput, type UserPromptSubmitOutput } from "../adapters/afk/src/shared/stdout.js";
 import {
   jevAsk,
+  asChoice,
+  asNoul,
+  asScore,
   type Answers,
-  type ChoiceAnswer,
-  type NoulAnswer,
-  type ScoreAnswer,
 } from "../adapters/afk/src/shared/jev-client.js";
 import { intentBundle } from "../adapters/afk/src/shared/questions.js";
 import { isSynthetic } from "../adapters/afk/src/shared/synthetic.js";
@@ -45,18 +45,6 @@ interface TailResult {
   prevUser: string;
   prevAssistant: string;
   model: string | null;
-}
-
-function asChoice(answer: Answers[string] | undefined): ChoiceAnswer | undefined {
-  return answer && "choice" in answer ? answer : undefined;
-}
-
-function asNoul(answer: Answers[string] | undefined): NoulAnswer | undefined {
-  return answer && "noul" in answer ? answer : undefined;
-}
-
-function asScore(answer: Answers[string] | undefined): ScoreAnswer | undefined {
-  return answer && "score" in answer ? answer : undefined;
 }
 
 function textOf(content: unknown): string {

@@ -26,6 +26,18 @@ export type Answer = NoulAnswer | ChoiceAnswer | ScoreAnswer;
 export type Questions = Record<string, Question>;
 export type Answers = Record<string, Answer>;
 
+export function asChoice(answer: Answers[string] | undefined): ChoiceAnswer | undefined {
+  return answer && "choice" in answer ? answer : undefined;
+}
+
+export function asNoul(answer: Answers[string] | undefined): NoulAnswer | undefined {
+  return answer && "noul" in answer ? answer : undefined;
+}
+
+export function asScore(answer: Answers[string] | undefined): ScoreAnswer | undefined {
+  return answer && "score" in answer ? answer : undefined;
+}
+
 const DEFAULT_MODEL = "jev-latest";
 const DEFAULT_TIMEOUT_MS = 8000;
 

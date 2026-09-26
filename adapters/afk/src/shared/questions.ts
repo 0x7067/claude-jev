@@ -89,7 +89,10 @@ const BRIEF_CHECKS: Record<string, string> = {
     "Does the brief say whether the subagent may commit, or that it must not?",
 };
 
-export function subagentBundle(askTier: boolean): Questions {
+export function subagentBundle(
+  askTier: boolean,
+  tiers?: Record<string, string>
+): Questions {
   const q: Questions = {};
   for (const [k, v] of Object.entries(BRIEF_CHECKS)) {
     q[k] = { type: "noul", instructions: v } satisfies NoulQuestion;
@@ -100,7 +103,7 @@ export function subagentBundle(askTier: boolean): Questions {
       instructions:
         "A coding assistant is delegating this task to a subagent. " +
         "What is the cheapest Claude model tier the subagent needs to do it well?",
-      criteria: TIER_CRITERIA,
+      criteria: { ...TIER_CRITERIA, ...(tiers ?? {}) },
     } satisfies ChoiceQuestion;
   }
   return q;

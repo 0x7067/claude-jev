@@ -12,6 +12,7 @@ export interface PreToolUseOutput {
     permissionDecision?: "allow" | "deny";
     permissionDecisionReason?: string;
     additionalContext?: string;
+    updatedInput?: Record<string, unknown>;
   };
   systemMessage?: string;
 }
