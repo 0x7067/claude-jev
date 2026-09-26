@@ -219,6 +219,16 @@ python3 eval/rules_eval.py run --sample 250 --seed 0 \
   --judge-model decisions:respan/span-01-lite
 ```
 
+  Provider selection does not fall through. `PROVIDERS` is read in order and
+  `TYPESAFE_API_KEY` wins whenever it is set, so a run against an exhausted
+  TypeSafe account returns `HTTP 402` instead of trying `OPENROUTER_API_KEY`,
+  which serves the same `jev-latest` under the same System One protocol. Pin
+  `CLAUDE_PLUGIN_OPTION_PROVIDER=openrouter` for `scripts/`, or unset
+  `TYPESAFE_API_KEY` for the TypeScript harness, whose `resolveKey()` behaves
+  the same way. Answer caches key on model, state, and questions rather than
+  provider, so the billing path is free apart from records that already
+  failed.
+
   The `decisions` backend is OpenRouter's `/api/alpha/decisions`, which serves
   `respan/span-01-lite`: a System One model behind a different URL, same
   `{state, model, questions}` contract, so the swap is a URL and a model id
