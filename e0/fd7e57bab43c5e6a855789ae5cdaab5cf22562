@@ -1,0 +1,21 @@
+adapters/afk/src/shared/rule-parser.ts
+  s_192292c6e473ef::t_32315c10c3d64d 18,30,36,62,66-70,91-93,217,223-224,229-233,236-259,261-268,274,276,287,290-308,310-319,321-334,336,339-359,362,370,381,387,395-401,414-420,422,431,453-454,482,493,496,501-503,519-523,531-534,538,541-546,564
+src/session-start.ts
+  s_192292c6e473ef::t_0dbcd66fdb5938 24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e0fd7e57bab43c5e6a855789ae5cdaab5cf22562",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
