@@ -1,0 +1,33 @@
+eval/compact.ts
+  s_192292c6e473ef::t_3c288504b93064 7-10,236-242,329,333,356,585-586,604,673,686,706-710,802,810-817,895-897
+  s_192292c6e473ef::t_2974a5144975b6 6
+src/compactor.ts
+  s_192292c6e473ef::t_3c288504b93064 6,327,345,494-495,497-502,527-528,538,545
+eval/rules_eval.py
+  s_192292c6e473ef::t_c7595439123287 150,154,332,693-697
+adapters/afk/src/shared/jev-client.ts
+  s_192292c6e473ef::t_4ed685f9624b5d 99,101-104,119,128,136-167,172-176,178-181,184
+  s_192292c6e473ef::t_907e4945228a67 95-98,100,107,182-183,185-192
+  s_192292c6e473ef::t_b4394db85f9fd3 94
+  s_192292c6e473ef::t_9e7213e364b69b 168-171,177
+  s_192292c6e473ef::t_156236fc7ec80d 93
+scripts/jev.py
+  s_192292c6e473ef::t_e4a0d4469bb2e4 175-179
+  s_192292c6e473ef::t_e4f08a6bdbbfa3 165-174,180-190,204-212,215
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3a8d2b23df40e0e263077d80d01d41b8b100c3f8",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "space-bunny-alpha"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
