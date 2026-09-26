@@ -34,6 +34,7 @@ export interface StopOutput {
 
 export interface SessionStartOutput {
   hookSpecificOutput?: {
+    hookEventName?: "SessionStart";
     additionalContext?: string;
   };
 }

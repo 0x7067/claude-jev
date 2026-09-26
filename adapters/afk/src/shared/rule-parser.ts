@@ -65,9 +65,11 @@ const SCOPE_TAIL = /\(scope:\s*([^)]+)\)\s*$/;
 
 const CACHE_PATH = path.join(os.homedir(), ".afk", "jev-rule-cache.json");
 
-function loadCache(): Record<string, Record<string, unknown>> {
+function loadCache(
+  cachePath: string
+): Record<string, Record<string, unknown>> {
   try {
-    const raw = fs.readFileSync(CACHE_PATH, "utf8");
+    const raw = fs.readFileSync(cachePath, "utf8");
     const data = JSON.parse(raw);
     return typeof data === "object" && data !== null
       ? (data as Record<string, Record<string, unknown>>)
@@ -77,10 +79,13 @@ function loadCache(): Record<string, Record<string, unknown>> {
   }
 }
 
-function saveCache(cache: Record<string, Record<string, unknown>>): void {
+function saveCache(
+  cache: Record<string, Record<string, unknown>>,
+  cachePath: string
+): void {
   try {
-    fs.mkdirSync(path.dirname(CACHE_PATH), { recursive: true });
-    fs.writeFileSync(CACHE_PATH, JSON.stringify(cache));
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    fs.writeFileSync(cachePath, JSON.stringify(cache));
   } catch {
   }
 }
@@ -235,12 +240,13 @@ function questionKey(): string {
 
 async function classifyItems(
   lines: string[],
-  items: Item[]
+  items: Item[],
+  cachePath: string
 ): Promise<Map<number, ClassifiedItem>> {
   const content = lines.join("");
   const key = digestKey(questionKey(), content);
 
-  const cache = loadCache();
+  const cache = loadCache(cachePath);
   const hit = cache[key];
   if (typeof hit === "object" && hit !== null) {
     const result = new Map<number, ClassifiedItem>();
@@ -307,7 +313,7 @@ async function classifyItems(
       cached[String(idx)] = v;
     }
     cache[key] = cached;
-    saveCache(cache);
+    saveCache(cache, cachePath);
   }
 
   return meta;
@@ -316,7 +322,8 @@ async function classifyItems(
 async function parseRules(
   filePath: string,
   baseLabel?: string,
-  fileScope?: string[]
+  fileScope?: string[],
+  cachePath: string = CACHE_PATH
 ): Promise<Rule[]> {
   let lines: string[];
   try {
@@ -339,7 +346,7 @@ async function parseRules(
 
   let meta: Map<number, ClassifiedItem>;
   try {
-    meta = await classifyItems(lines, items);
+    meta = await classifyItems(lines, items, cachePath);
   } catch {
     return [];
   }
@@ -431,13 +438,16 @@ function dedupe(rules: Rule[]): Rule[] {
   return out;
 }
 
-export async function loadRules(cwd: string): Promise<Rule[]> {
+export async function loadRules(
+  cwd: string,
+  cachePath: string = CACHE_PATH
+): Promise<Rule[]> {
   const rules: Rule[] = [];
 
   for (const name of [...RULE_FILES, ...AFK_RULE_FILES]) {
     const p = path.join(cwd, name);
     if (fs.existsSync(p)) {
-      rules.push(...(await parseRules(p)));
+      rules.push(...(await parseRules(p, undefined, undefined, cachePath)));
     }
   }
 
@@ -452,7 +462,9 @@ export async function loadRules(cwd: string): Promise<Rule[]> {
       }
       for (const fn of entries) {
         if (fn.endsWith(".md") || fn.endsWith(".mdc")) {
-          rules.push(...(await parseRules(path.join(dirPath, fn), `${dir}/${fn}`)));
+          rules.push(
+          ...(await parseRules(path.join(dirPath, fn), `${dir}/${fn}`, undefined, cachePath))
+        );
         }
       }
     }
@@ -460,14 +472,14 @@ export async function loadRules(cwd: string): Promise<Rule[]> {
 
   for (const { filePath, scope } of nestedFiles(cwd)) {
     rules.push(
-      ...(await parseRules(filePath, path.relative(cwd, filePath), [scope]))
+      ...(await parseRules(filePath, path.relative(cwd, filePath), [scope], cachePath))
     );
   }
 
   const globalPath = path.join(os.homedir(), ".claude", "CLAUDE.md");
   if (fs.existsSync(globalPath)) {
     const rel = path.relative(os.homedir(), globalPath);
-    rules.push(...(await parseRules(globalPath, `~/${rel}`)));
+    rules.push(...(await parseRules(globalPath, `~/${rel}`, undefined, cachePath)));
   }
 
   return dedupe(rules);

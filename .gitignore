@@ -8,3 +8,5 @@ rules_cases.jsonl
 
 # Claude Code agent worktrees
 .claude/worktrees/
+/node_modules/
+/dist/
