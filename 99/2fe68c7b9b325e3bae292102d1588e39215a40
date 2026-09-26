@@ -1,0 +1,21 @@
+CHANGELOG.md
+  s_192292c6e473ef::t_bd8ca2ff4fbd6e 7-10
+.claude-plugin/plugin.json
+  s_192292c6e473ef::t_85a5d41eb8c150 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "992fe68c7b9b325e3bae292102d1588e39215a40",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "space-bunny-alpha"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
