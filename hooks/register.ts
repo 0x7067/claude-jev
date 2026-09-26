@@ -45,10 +45,14 @@ let statsReport;
 
 const rowKey = (field) => `${PLUGIN}.${field}`;
 
+function isString(v: unknown): v is string {
+  return typeof v === "string";
+}
+
 function savedKey() {
   const value = loaded[KEY_FIELD];
 
-  return typeof value === "string" ? value.trim() : "";
+  return isString(value) ? value.trim() : "";
 }
 
 function pinnedProvider(rows) {
@@ -59,20 +63,24 @@ function pinnedProvider(rows) {
 }
 
 function pythonEnv() {
+  const env: Record<string, string> = {};
+
+  env.CLAUDE_PLUGIN_OPTION_PROVIDER = pinnedProvider();
+
   const key = savedKey();
 
-  return {
-    CLAUDE_PLUGIN_OPTION_PROVIDER: pinnedProvider(),
-    ...(key ? { CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY: key } : {}),
-  };
+  if (key) env.CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY = key;
+
+  return env;
 }
 
 function runPython($, args, stdin) {
-  return $.process.run(["python3", `${$.plugin.root}/scripts/${args[0]}`, ...args.slice(1)], {
-    env: pythonEnv(),
-    timeoutMs: PYTHON_TIMEOUT_MS,
-    ...(stdin === undefined ? {} : { stdin }),
-  });
+  const argv = ["python3", `${$.plugin.root}/scripts/${args[0]}`, ...args.slice(1)];
+  const base = { env: pythonEnv(), timeoutMs: PYTHON_TIMEOUT_MS };
+
+  return stdin === undefined
+    ? $.process.run(argv, base)
+    : $.process.run(argv, { ...base, stdin });
 }
 
 async function refreshInfo($) {
@@ -197,9 +205,9 @@ async function resumeAfterSave($) {
   if (pending === undefined) return;
   await $.store.delete(PENDING_KEY);
 
-  if (typeof pending.message === "string") $.ui.toast(pending.message, { timeoutMs: 6000 });
+  if (isString(pending.message)) $.ui.toast(pending.message, { timeoutMs: 6000 });
 
-  if (typeof pending.row === "string" && (await paneOpen($))) {
+  if (isString(pending.row) && (await paneOpen($))) {
     showMenu(pending.row);
     await openPane($).catch(() => undefined);
     await placeRing($, pending.row);
@@ -238,16 +246,20 @@ function drawPane($, e, rows) {
     const width = Math.max(...entries.map((entry) => entry.label.length));
 
     return column(
-      entries.map((entry) =>
-        Button({
+      entries.map((entry) => {
+        const props = {
           key: entry.key,
           label: entry.label.padEnd(width),
           plain: true,
-          ...(entry.dim ? { dimColor: true } : {}),
-          ...(entry.key === focus ? { autoFocus: true } : {}),
           onPress: entry.onPress,
-        }),
-      ),
+        };
+
+        if (entry.dim) props.dimColor = true;
+
+        if (entry.key === focus) props.autoFocus = true;
+
+        return Button(props);
+      }),
     );
   };
 
@@ -434,7 +446,7 @@ export function register(on, options) {
     return next(e);
   });
 
-  on("command.run", { command: PLUGIN }, async ($, e, next) => {
+  on("command.run", { command: PLUGIN }, async ($, _e, _next) => {
     showMenu("menu:key");
     statusLine = undefined;
     await refreshInfo($);

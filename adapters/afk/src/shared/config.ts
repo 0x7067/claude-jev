@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isString, parseJsonObject } from "./json.js";
 
 export function configDir(): string {
   return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
@@ -39,11 +40,9 @@ export function pluginVersion(): string {
 
 function readVersion(manifestPath: string): string {
   try {
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
-      version?: unknown;
-    };
+    const manifest = parseJsonObject(fs.readFileSync(manifestPath, "utf8"));
 
-    return typeof manifest.version === "string" ? manifest.version : "unknown";
+    return manifest !== null && isString(manifest["version"]) ? manifest["version"] : "unknown";
   } catch {
     return "unknown";
   }

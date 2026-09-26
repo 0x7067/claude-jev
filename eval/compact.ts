@@ -7,13 +7,24 @@ import {
   judge,
   blockText,
   visibleText,
+  transcriptEntry,
   selectBlocks,
   transcriptBlocks,
   PIN_TAIL,
   MAX_BLOCKS,
   type Block,
   type Kept,
+  type Stats,
 } from "../src/compactor.js";
+import {
+  isJsonObject,
+  isJsonArray,
+  isString,
+  isNumber,
+  parseJsonObject,
+  type Json,
+  type JsonValue,
+} from "../adapters/afk/src/shared/json.js";
 
 const HERE = path.dirname(fileURLToPath2(import.meta.url));
 
@@ -62,37 +73,37 @@ interface ToolCall {
   key: string;
 }
 
-function toolKey(name: string, inp: Record<string, unknown>): string | null {
+function toolKey(name: string, inp: Json | undefined): string | null {
   if (SKIP_TOOLS.has(name)) return null;
 
   if (FILE_TOOLS.has(name)) {
-    const p = (inp["file_path"] ?? inp["notebook_path"]) as string | undefined;
+    const p = inp?.["file_path"] ?? inp?.["notebook_path"];
 
-    return p ? `file:${path.normalize(p)}` : null;
+    return isString(p) && p ? `file:${path.normalize(p)}` : null;
   }
 
   if (name === "Grep") {
-    const p = (inp["path"] ?? inp["pattern"]) as string | undefined;
+    const p = inp?.["path"] ?? inp?.["pattern"];
 
-    return p ? `grep:${p}` : null;
+    return isString(p) && p ? `grep:${p}` : null;
   }
 
   if (name === "Glob") {
-    const p = inp["pattern"] as string | undefined;
+    const p = inp?.["pattern"];
 
-    return p ? `glob:${p}` : null;
+    return isString(p) && p ? `glob:${p}` : null;
   }
 
   if (name === "Bash") {
-    const lines = String(inp["command"] ?? "").trim().split("\n");
+    const lines = String(inp?.["command"] ?? "").trim().split("\n");
 
     return lines[0] ? `bash:${lines[0].trim().slice(0, 120)}` : null;
   }
 
   if (name === "WebFetch") {
-    const u = inp["url"] as string | undefined;
+    const u = inp?.["url"];
 
-    return u ? `url:${u}` : null;
+    return isString(u) && u ? `url:${u}` : null;
   }
 
   return null;
@@ -107,22 +118,20 @@ function toolCalls(lines: string[], lo: number, hi: number): ToolCall[] {
     const line = lines[i]!;
 
     if (line.length > 2_000_000) continue;
-    let d: Record<string, unknown>;
 
-    try {
-      d = JSON.parse(line) as Record<string, unknown>;
-    } catch {
-      continue;
-    }
+    const d = parseJsonObject(line);
+
+    if (d === null) continue;
 
     if (d["isSidechain"] || d["type"] !== "assistant") continue;
-    const content = (d["message"] as Record<string, unknown> | undefined)?.["content"];
 
-    for (const b of Array.isArray(content) ? content : []) {
-      if (typeof b === "object" && b !== null && (b as Record<string, unknown>)["type"] === "tool_use") {
-        const block = b as Record<string, unknown>;
-        const name = String(block["name"] ?? "");
-        const key = toolKey(name, (block["input"] ?? {}) as Record<string, unknown>);
+    const msg = isJsonObject(d["message"]) ? d["message"] : undefined;
+    const content = msg?.["content"];
+
+    for (const b of isJsonArray(content) ? content : []) {
+      if (isJsonObject(b) && b["type"] === "tool_use") {
+        const name = String(b["name"] ?? "");
+        const key = toolKey(name, isJsonObject(b["input"]) ? b["input"] : undefined);
 
         if (key) out.push({ i, name, key });
       }
@@ -135,9 +144,7 @@ function toolCalls(lines: string[], lo: number, hi: number): ToolCall[] {
 function refetches(pre: ToolCall[], post: ToolCall[]): string[] {
   const fetched = new Set(pre.map((c) => c.key));
 
-  return post
-    .filter((c) => REFETCH_KINDS.includes(c.key.split(":")[0]!) && fetched.has(c.key))
-    .map((c) => c.key);
+  return post.flatMap((c) => (REFETCH_KINDS.includes(c.key.split(":")[0]!) && fetched.has(c.key) ? [c.key] : []));
 }
 
 function keyTerms(key: string): string[] {
@@ -159,61 +166,57 @@ function covered(key: string, context: string): boolean {
   return keyTerms(key).some((t) => context.includes(t));
 }
 
+function messageContent(d: Json | undefined): JsonValue | undefined {
+  if (d === undefined) return undefined;
+
+  const msg = d["message"];
+
+  return isJsonObject(msg) ? msg["content"] : undefined;
+}
+
 interface Boundary {
   i: number;
-  meta: Record<string, unknown>;
+  meta: Json;
   summary: string;
   preserved: string;
 }
 
 function boundaries(lines: string[]): Boundary[] {
-  const byUuid = new Map<string, Record<string, unknown>>();
+  const byUuid = new Map<string, Json>();
 
   for (let i = 0; i < lines.length; i++) {
-    try {
-      const d = JSON.parse(lines[i]!) as Record<string, unknown>;
+    const d = parseJsonObject(lines[i]!);
 
-      if (d["uuid"]) byUuid.set(String(d["uuid"]), d);
-    } catch {
-      continue;
-    }
+    if (d !== null && d["uuid"]) byUuid.set(String(d["uuid"]), d);
   }
 
   const out: Boundary[] = [];
 
   for (let i = 0; i < lines.length; i++) {
-    let d: Record<string, unknown>;
+    const d = parseJsonObject(lines[i]!);
 
-    try {
-      d = JSON.parse(lines[i]!) as Record<string, unknown>;
-    } catch {
-      continue;
-    }
+    if (d === null || d["subtype"] !== "compact_boundary") continue;
 
-    if (d["subtype"] !== "compact_boundary") continue;
-    const meta = (d["compactMetadata"] ?? {}) as Record<string, unknown>;
+    const metaRaw = d["compactMetadata"];
+    const meta: Json = isJsonObject(metaRaw) ? metaRaw : {};
     let summary = "";
 
     for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
-      try {
-        const n = JSON.parse(lines[j]!) as Record<string, unknown>;
-        const c = (n["message"] as Record<string, unknown> | undefined)?.["content"];
+      const n = parseJsonObject(lines[j]!);
+      const c = messageContent(n ?? undefined);
 
-        if (typeof c === "string" && c.includes(CONTINUED)) {
-          summary = c;
-          break;
-        }
-      } catch {
-        continue;
+      if (isString(c) && c.includes(CONTINUED)) {
+        summary = c;
+        break;
       }
     }
 
-    const uuids =
-      ((meta["preservedMessages"] ?? {}) as Record<string, unknown>)["uuids"] as string[] | undefined;
+    const pm = meta["preservedMessages"];
+    const uuids = isJsonObject(pm) && isJsonArray(pm["uuids"]) ? pm["uuids"].filter(isString) : [];
 
-    const preserved = (uuids ?? [])
+    const preserved = uuids
       .filter((u) => byUuid.has(u))
-      .map((u) => blockText(((byUuid.get(u)!)["message"] as Record<string, unknown> | undefined)?.["content"]))
+      .map((u) => blockText(messageContent(byUuid.get(u))))
       .join("\n");
 
     out.push({ i, meta, summary, preserved });
@@ -226,23 +229,63 @@ function selectionSig(): string {
   return crypto.createHash("sha256").update(fs.readFileSync(COMPACTOR_SRC)).digest("hex").slice(0, 16);
 }
 
-function loadCompactCache(): [Map<string, Record<string, unknown>>, Map<string, string | null>] {
-  const judged = new Map<string, Record<string, unknown>>();
+interface CacheRow {
+  key: string;
+  sig: string;
+  kept: string[];
+  stats: Stats;
+  summary: string | null;
+}
+
+function isStats(v: unknown): v is Stats {
+  if (!isJsonObject(v)) return false;
+
+  const numeric = [
+    "judged",
+    "rescued",
+    "pinned",
+    "kept",
+    "truncated",
+    "escalated",
+    "chars_before",
+    "chars_after",
+    "est_tokens_after",
+    "reduction",
+    "ms",
+  ];
+
+  return numeric.every((k) => isNumber(v[k])) && isJsonArray(v["rows"]);
+}
+
+function cacheRow(d: Json): CacheRow | null {
+  if (!isString(d["key"]) || !isString(d["sig"]) || !isStats(d["stats"])) return null;
+
+  return {
+    key: d["key"],
+    sig: d["sig"],
+    kept: isJsonArray(d["kept"]) ? d["kept"].filter(isString) : [],
+    stats: d["stats"],
+    summary: isString(d["summary"]) ? d["summary"] : null,
+  };
+}
+
+function loadCompactCache(): [Map<string, CacheRow>, Map<string, string | null>] {
+  const judged = new Map<string, CacheRow>();
   const summaries = new Map<string, string | null>();
 
   if (fs.existsSync(COMPACT_CACHE)) {
     for (const line of fs.readFileSync(COMPACT_CACHE, "utf8").split("\n")) {
       if (!line.trim()) continue;
 
-      try {
-        const d = JSON.parse(line) as Record<string, unknown>;
+      const d = parseJsonObject(line);
 
-        if (d["sig"]) judged.set(`${d["key"]}|${d["sig"]}`, d);
+      if (d === null) continue;
 
-        if (d["summary"] !== undefined && d["summary"] !== null) summaries.set(String(d["key"]), d["summary"] as string);
-      } catch {
-        continue;
-      }
+      const row = cacheRow(d);
+
+      if (row !== null) judged.set(`${row.key}|${row.sig}`, row);
+
+      if (isString(d["summary"])) summaries.set(String(d["key"]), d["summary"]);
     }
   }
 
@@ -251,13 +294,13 @@ function loadCompactCache(): [Map<string, Record<string, unknown>>, Map<string, 
 
 interface ReplayResult {
   kept: string[];
-  stats: Record<string, unknown>;
+  stats: Stats;
   summary: string | null;
 }
 
 async function replay(
   preLines: string[],
-  cache: Map<string, Record<string, unknown>>,
+  cache: Map<string, CacheRow>,
   summaries: Map<string, string | null>,
   cacheF: number | null,
   gen?: () => Promise<string | null>
@@ -268,11 +311,11 @@ async function replay(
   const cacheKey = `${key}|${sig}`;
   const hit = cache.get(cacheKey);
 
-  if (hit) return { kept: hit["kept"] as string[], stats: hit["stats"] as Record<string, unknown>, summary };
+  if (hit) return { kept: hit.kept, stats: hit.stats, summary };
   const tmp = path.join(os.tmpdir(), `jev-compact-${process.pid}-${Math.random().toString(36).slice(2)}.jsonl`);
   fs.writeFileSync(tmp, preLines.join("\n"));
   let kept: string[];
-  let stats: Record<string, unknown>;
+  let stats: Stats;
 
   try {
     [kept, stats] = await judge(tmp, null);
@@ -285,8 +328,8 @@ async function replay(
     summaries.set(key, summary);
   }
 
-  if (stats["judged"]) {
-    const d = { key, sig, kept, stats, summary };
+  if (stats.judged > 0) {
+    const d: CacheRow = { key, sig, kept, stats, summary };
     cache.set(cacheKey, d);
 
     if (cacheF !== null) fs.appendFileSync(cacheF, JSON.stringify(d) + "\n");
@@ -299,16 +342,13 @@ function flatten(lines: string[], hi: number): string {
   const parts: string[] = [];
 
   for (const line of lines.slice(0, hi)) {
-    let d: Record<string, unknown>;
+    const d = parseJsonObject(line);
 
-    try {
-      d = JSON.parse(line) as Record<string, unknown>;
-    } catch {
-      continue;
-    }
+    if (d === null) continue;
 
     if (d["isSidechain"] || (d["type"] !== "user" && d["type"] !== "assistant")) continue;
-    const t = blockText((d["message"] as Record<string, unknown> | undefined)?.["content"]).trim();
+
+    const t = blockText(messageContent(d)).trim();
 
     if (t) parts.push(t);
   }
@@ -320,16 +360,13 @@ function tailText(lines: string[], hi: number, n = 6): string {
   const texts: string[] = [];
 
   for (let i = hi - 1; i >= 0; i--) {
-    let d: Record<string, unknown>;
+    const d = parseJsonObject(lines[i]!);
 
-    try {
-      d = JSON.parse(lines[i]!) as Record<string, unknown>;
-    } catch {
-      continue;
-    }
+    if (d === null) continue;
 
     if (d["type"] !== "user" && d["type"] !== "assistant") continue;
-    const t = blockText((d["message"] as Record<string, unknown> | undefined)?.["content"]).trim();
+
+    const t = blockText(messageContent(d)).trim();
 
     if (t) {
       texts.unshift(t);
@@ -350,15 +387,12 @@ function synthCut(lines: string[]): number | null {
     const line = lines[i]!;
 
     if (line.length > 2_000_000) continue;
-    let d: Record<string, unknown>;
 
-    try {
-      d = JSON.parse(line) as Record<string, unknown>;
-    } catch {
-      continue;
-    }
+    const d = parseJsonObject(line);
 
-    const text = visibleText(d as never);
+    if (d === null) continue;
+
+    const text = visibleText(transcriptEntry(d));
 
     if (text === null) continue;
     total += text.length;
@@ -479,13 +513,20 @@ function plant(blocks: Block[], rng: () => number): [Block[], { key: string; use
   return [out, { key, user: posUser, buried: posBuried }];
 }
 
+interface PlantResult {
+  user: string | null;
+  buried: string | null;
+  kept: number;
+  blocks: number;
+}
+
 async function runEvent(
   fp: string,
   lines: string[],
   i: number,
   kind: string,
   seed: number
-): Promise<Record<string, unknown> | null> {
+): Promise<PlantResult | null> {
   const tmp = path.join(os.tmpdir(), `jev-planted-${process.pid}-${Math.random().toString(36).slice(2)}.jsonl`);
   fs.writeFileSync(tmp, lines.slice(0, i).join("\n"));
   let blocks: Block[];
@@ -499,7 +540,7 @@ async function runEvent(
   if (blocks.length < 30) return null;
   const [plantedBlocks, meta] = plant(blocks, mulberry32(`${seed}:${path.basename(fp)}`));
   let kept: Kept[];
-  let stats: Record<string, unknown>;
+  let stats: Stats;
 
   try {
     [kept, stats] = await selectBlocks(plantedBlocks, null);
@@ -520,17 +561,10 @@ async function runEvent(
     return k.text.includes(meta.key) ? "kept" : "cut";
   };
 
-  const rows = stats["rows"] as Array<Record<string, unknown>>;
-
   return {
-    file: path.basename(fp),
-    kind,
-    key: meta.key,
     user: fate(meta.user),
-    user_keep: (rows[meta.user]?.["keep"] as number) ?? null,
     buried: fate(meta.buried),
-    buried_keep: meta.buried !== null ? ((rows[meta.buried]?.["keep"] as number) ?? null) : null,
-    kept: stats["kept"],
+    kept: stats.kept,
     blocks: plantedBlocks.length,
   };
 }
@@ -546,11 +580,11 @@ function shuffle<T>(arr: T[], rng: () => number): T[] {
   return a;
 }
 
-function gate(rows: EventRow[], plants: Array<Record<string, unknown> | null>): number {
+function gate(rows: EventRow[], plants: Array<PlantResult | null>): number {
   const reads = rows.reduce((sum, r) => sum + r.refetch_reads, 0);
   const full = reads > 0 ? rows.reduce((sum, r) => sum + r.refetch_jev_full, 0) / reads : NaN;
-  const user = plants.filter((p): p is Record<string, unknown> => p !== null && p["user"] !== null).map((p) => p["user"] as string);
-  const buried = plants.filter((p): p is Record<string, unknown> => p !== null && p["buried"] !== null).map((p) => p["buried"] as string);
+  const user = plants.flatMap((p) => (p !== null && p.user !== null ? [p.user] : []));
+  const buried = plants.flatMap((p) => (p !== null && p.buried !== null ? [p.buried] : []));
   const su = user.length > 0 ? user.filter((v) => v === "kept").length / user.length : NaN;
   const sb = buried.length > 0 ? buried.filter((v) => v === "kept").length / buried.length : NaN;
 
@@ -644,14 +678,13 @@ export async function cmdCompact(args: Args): Promise<number> {
 
     const norm = fp.includes("/subagents/")
       ? lines.map((line) => {
-          try {
-            const d = JSON.parse(line) as Record<string, unknown>;
-            delete d["isSidechain"];
+          const d = parseJsonObject(line);
 
-            return JSON.stringify(d);
-          } catch {
-            return line;
-          }
+          if (d === null) return line;
+
+          delete d["isSidechain"];
+
+          return JSON.stringify(d);
         })
       : lines;
 
@@ -694,17 +727,18 @@ export async function cmdCompact(args: Args): Promise<number> {
     let defaultCtx: string;
     let postTokens: number;
     let durationS: number | null;
-    let trigger: unknown;
+    let trigger: JsonValue | null;
     let kept: string[];
-    let stats: Record<string, unknown>;
+    let stats: Stats;
 
     if (kind === "real") {
       ({ kept, stats } = await replay(lines.slice(0, i), cache, summaries, cacheF));
       defaultCtx = ev!.summary + "\n" + ev!.preserved;
       const meta = ev!.meta;
+      const durationMs = meta["durationMs"];
       postTokens = Math.floor(defaultCtx.length / 4);
-      durationS = Math.round(((meta["durationMs"] as number) ?? 0) / 100) / 10;
-      trigger = meta["trigger"];
+      durationS = Math.round((isNumber(durationMs) ? durationMs : 0) / 100) / 10;
+      trigger = meta["trigger"] ?? null;
     } else {
       const r = await replay(lines.slice(0, i), cache, summaries, cacheF, () => genSummary(flatten(lines, i), args.model));
       ({ kept, stats } = r);
@@ -725,14 +759,14 @@ export async function cmdCompact(args: Args): Promise<number> {
       session: fp.split("/").slice(-2, -1)[0]!.slice(0, 48),
       subagent: fp.includes("/subagents/"),
       event_i: i,
-      n_blocks: (stats["judged"] as number) + (stats["pinned"] as number),
+      n_blocks: stats.judged + stats.pinned,
       trigger,
       post_tokens: postTokens,
       duration_s: durationS,
-      jev_tokens: gated ? 0 : ((stats["est_tokens_after"] as number) ?? 0),
-      jev_ms: (stats["ms"] as number) ?? 0,
+      jev_tokens: gated ? 0 : stats.est_tokens_after,
+      jev_ms: stats.ms,
       jev_gated: gated,
-      jev_kept: gated ? 0 : ((stats["kept"] as number) ?? 0),
+      jev_kept: gated ? 0 : stats.kept,
       no_summary: kind === "synth" && !summary,
       refetch_reads: reads.length,
       refetch_default_covered: reads.filter((k) => covered(k, defaultCtx)).length,
@@ -759,7 +793,7 @@ export async function cmdCompact(args: Args): Promise<number> {
   fs.closeSync(cacheF);
 
   const plantFuts = await pooled(todo, args.workers, (t) => runEvent(t[0], t[1], t[2], t[6], args.seed));
-  const plantResults = plantFuts.filter((f): f is PromiseFulfilledResult<Record<string, unknown>> => f.status === "fulfilled" && f.value !== null).map((f) => f.value);
+  const plantResults = plantFuts.filter((f): f is PromiseFulfilledResult<PlantResult> => f.status === "fulfilled" && f.value !== null).map((f) => f.value);
 
   const tot: Record<string, number> = {};
 

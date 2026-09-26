@@ -2,11 +2,10 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import { readStdinJson } from "../adapters/afk/src/shared/stdin.js";
-import { writeOutput, type PostToolUseOutput, type StopOutput } from "../adapters/afk/src/shared/stdout.js";
+import { writeOutput, type HookOutput, type PostToolUseOutput, type StopOutput } from "../adapters/afk/src/shared/stdout.js";
 import {
   jevAsk,
   asNoul,
@@ -20,8 +19,16 @@ import {
   isSubjectRelevant,
   type Rule,
 } from "../adapters/afk/src/shared/rule-parser.js";
-import { slugify } from "../adapters/afk/src/shared/utils.js";
-import { addedBody, addedHead, EXCLUDED_RE, isOutside } from "../adapters/afk/src/shared/hunks.js";
+import { addedHead, EXCLUDED_RE, isOutside } from "../adapters/afk/src/shared/hunks.js";
+import {
+  isJsonObject,
+  isJsonArray,
+  isString,
+  isNumber,
+  parseJsonObject,
+  type Json,
+  type JsonValue,
+} from "../adapters/afk/src/shared/json.js";
 import { comparator, which as astWhich } from "../adapters/afk/src/shared/comparators.js";
 import { configDir, enabled } from "../adapters/afk/src/shared/config.js";
 
@@ -93,7 +100,7 @@ function budgetSeconds(): number | null {
 interface HookEvent {
   hook_event_name?: string;
   tool_name?: string;
-  tool_input?: Record<string, unknown>;
+  tool_input?: Json;
   tool_use_id?: string;
   session_id?: string;
   cwd?: string;
@@ -122,13 +129,19 @@ function sessionPath(sessionId: string): string {
 }
 
 function readState(sessionId: string): SessionState {
-  try {
-    const data = JSON.parse(fs.readFileSync(sessionPath(sessionId), "utf8")) as Partial<SessionState>;
+  let raw: string;
 
-    return { ...emptyState(), ...data };
+  try {
+    raw = fs.readFileSync(sessionPath(sessionId), "utf8");
   } catch {
     return emptyState();
   }
+
+  const data = parseJsonObject(raw);
+
+  if (data === null) return emptyState();
+
+  return { ...emptyState(), ...data };
 }
 
 function writeState(sessionId: string, state: SessionState): void {
@@ -201,27 +214,30 @@ interface TranscriptEntry {
   type?: string;
   uuid?: string;
   isSidechain?: boolean;
-  message?: { content?: unknown };
+  message?: Json;
   toolUseResult?: unknown;
 }
 
-function textOf(content: unknown): string {
-  if (typeof content === "string") return content;
+function textOf(message: Json | undefined): string {
+  const content = message?.["content"];
 
-  if (!Array.isArray(content)) return "";
+  if (isString(content)) return content;
+
+  if (!isJsonArray(content)) return "";
 
   return content
-    .map((block) =>
-      block && typeof block === "object" && (block as { type?: unknown }).type === "text"
-        ? String((block as { text?: unknown }).text ?? "")
-        : ""
-    )
+    .map((block) => {
+      if (!isJsonObject(block) || block["type"] !== "text") return "";
+
+      return isString(block["text"]) ? block["text"] : "";
+    })
     .join("\n");
 }
 
 function userPrompt(entry: TranscriptEntry): string {
   if (entry.type !== "user" || entry.isSidechain) return "";
-  const text = textOf(entry.message?.content).trim();
+
+  const text = textOf(entry.message).trim();
 
   return text.startsWith("<") || text.startsWith("/") || text.startsWith("#") ? "" : text;
 }
@@ -230,31 +246,37 @@ function questionAnswers(entry: TranscriptEntry): string[] {
   if (entry.type !== "user" || entry.isSidechain) return [];
   const result = entry.toolUseResult;
 
-  if (typeof result !== "object" || result === null) return [];
-  const r = result as Record<string, unknown>;
-  const answers = r["answers"];
+  if (!isJsonObject(result)) return [];
 
-  if (typeof answers !== "object" || answers === null) return [];
-  const options: Record<string, Array<Record<string, unknown>>> = {};
+  const answers = result["answers"];
 
-  for (const q of (r["questions"] as Array<unknown>) ?? []) {
-    if (typeof q !== "object" || q === null) continue;
-    const qo = q as Record<string, unknown>;
-    const opts = (qo["options"] as Array<unknown>) ?? [];
-    options[String(qo["question"])] = opts.filter(
-      (o) => typeof o === "object" && o !== null
-    ) as Array<Record<string, unknown>>;
+  if (!isJsonObject(answers)) return [];
+
+  const questions = isJsonArray(result["questions"]) ? result["questions"] : [];
+  const options = new Map<string, Json[]>();
+
+  for (const q of questions) {
+    if (!isJsonObject(q)) continue;
+
+    const opts = isJsonArray(q["options"]) ? q["options"].filter(isJsonObject) : [];
+    const question = q["question"];
+
+    options.set(isString(question) ? question : String(question), opts);
   }
 
   const out: string[] = [];
 
-  for (const [question, answer] of Object.entries(answers as Record<string, unknown>)) {
-    if (typeof answer !== "string") continue;
+  for (const [question, answer] of Object.entries(answers)) {
+    if (!isString(answer)) continue;
     const picked = new Set(answer.split(", "));
 
-    const notes = (options[question] ?? [])
-      .filter((o) => picked.has(String(o["label"])) || String(o["label"]) === answer)
-      .map((o) => String(o["description"] ?? ""))
+    const notes = (options.get(question) ?? [])
+      .filter((o) => {
+        const label = isString(o["label"]) ? o["label"] : String(o["label"]);
+
+        return picked.has(label) || label === answer;
+      })
+      .map((o) => (isString(o["description"]) ? o["description"] : ""))
       .filter((n) => n);
 
     const described = notes.length > 0 ? ` (${notes.join("; ")})` : "";
@@ -290,13 +312,18 @@ function lastUserPrompt(transcriptPath: string | undefined): [string, string, nu
     const line = lines[i]!;
 
     if (line.length > 500_000) continue;
-    let entry: TranscriptEntry;
 
-    try {
-      entry = JSON.parse(line) as TranscriptEntry;
-    } catch {
-      continue;
-    }
+    const data = parseJsonObject(line);
+
+    if (data === null) continue;
+
+    const entry: TranscriptEntry = {
+      type: isString(data["type"]) ? data["type"] : undefined,
+      uuid: isString(data["uuid"]) ? data["uuid"] : undefined,
+      isSidechain: data["isSidechain"] === true,
+      message: isJsonObject(data["message"]) ? data["message"] : undefined,
+      toolUseResult: data["toolUseResult"],
+    };
 
     const text = userPrompt(entry);
 
@@ -340,27 +367,18 @@ function writeHunk(cwd: string, rel: string, content: string): string {
   return `NEW FILE (whole content):\n${content}`;
 }
 
-interface EditInput {
-  edits?: unknown;
-  old_string?: unknown;
-  new_string?: unknown;
-  content?: unknown;
-  new_source?: unknown;
-  file_path?: unknown;
-}
-
-function editHunks(inp: EditInput, cwd?: string): string {
-  if (Array.isArray(inp.edits)) {
+function editHunks(inp: Json, cwd?: string): string {
+  if (isJsonArray(inp["edits"])) {
     const parts: string[] = [];
 
-    for (const e of inp.edits) {
-      if (typeof e !== "object" || e === null) continue;
-      const edit = e as Record<string, unknown>;
+    for (const e of inp["edits"]) {
+      if (!isJsonObject(e)) continue;
+
       let hunk = "";
 
-      if (edit["old_string"]) hunk += `REMOVED:\n${edit["old_string"]}\n`;
+      if (e["old_string"]) hunk += `REMOVED:\n${e["old_string"]}\n`;
 
-      if (edit["new_string"]) hunk += `ADDED:\n${edit["new_string"]}`;
+      if (e["new_string"]) hunk += `ADDED:\n${e["new_string"]}`;
 
       if (hunk) parts.push(hunk);
     }
@@ -368,38 +386,38 @@ function editHunks(inp: EditInput, cwd?: string): string {
     return parts.filter(Boolean).join("\n\n");
   }
 
-  if (inp.old_string != null || inp.new_string != null) {
+  if (inp["old_string"] != null || inp["new_string"] != null) {
     let hunk = "";
 
-    if (inp.old_string) hunk += `REMOVED:\n${inp.old_string}\n`;
+    if (inp["old_string"]) hunk += `REMOVED:\n${inp["old_string"]}\n`;
 
-    if (inp.new_string) hunk += `ADDED:\n${inp.new_string}`;
+    if (inp["new_string"]) hunk += `ADDED:\n${inp["new_string"]}`;
 
     return hunk;
   }
 
-  const content = String(inp.content ?? inp.new_source ?? "");
+  const content = String(inp["content"] ?? inp["new_source"] ?? "");
 
-  if (content && cwd && typeof inp.file_path === "string" && inp.file_path) {
-    return writeHunk(cwd, relativeTo(inp.file_path, cwd), content);
+  if (content && cwd && isString(inp["file_path"]) && inp["file_path"]) {
+    return writeHunk(cwd, relativeTo(inp["file_path"], cwd), content);
   }
 
   return content;
 }
 
-function needleOf(inp: EditInput): string {
-  let fresh = inp.new_string;
+function needleOf(inp: Json): string {
+  let fresh: unknown = inp["new_string"];
 
-  if (fresh == null && Array.isArray(inp.edits)) {
-    for (const e of inp.edits) {
-      if (typeof e === "object" && e !== null && (e as Record<string, unknown>)["new_string"]) {
-        fresh = (e as Record<string, unknown>)["new_string"] as string;
+  if (fresh == null && isJsonArray(inp["edits"])) {
+    for (const e of inp["edits"]) {
+      if (isJsonObject(e) && e["new_string"]) {
+        fresh = e["new_string"];
         break;
       }
     }
   }
 
-  if (fresh == null) fresh = inp.content ?? inp.new_source ?? "";
+  if (fresh == null) fresh = inp["content"] ?? inp["new_source"] ?? "";
 
   for (const line of String(fresh ?? "").split("\n")) {
     if (line.trim()) return line.trim();
@@ -547,21 +565,24 @@ function ruleQuestion(rule: Rule, strict = false): NoulQuestion {
 function verdictOf(answer: Answers[string] | undefined): number {
   const p = asNoul(answer)?.noul;
 
-  return typeof p === "number" ? Math.min(1, Math.max(0, p)) : 0;
+  return isNumber(p) ? Math.min(1, Math.max(0, p)) : 0;
 }
 
 type Keyed = Rule & { _qkey?: string };
 
+type Questions = Record<string, Question>;
+
 async function askRules(
   stateText: string,
-  rules: Rule[],
+  rules: Keyed[],
   strict = false
 ): Promise<Answers> {
   if (rules.length === 0) return {};
-  const questions: Record<string, Question> = {};
+
+  const questions: Questions = {};
   const seen = new Set<string>();
 
-  for (const r of rules as Keyed[]) {
+  for (const r of rules) {
     let key = r.id;
     let n = 2;
 
@@ -580,11 +601,11 @@ async function askRules(
   return jevAsk(stateText, questions, budget === null ? undefined : Math.round(budget * 1000));
 }
 
-function loadCalib(): Record<string, Record<string, unknown>> {
-  try {
-    const data = JSON.parse(fs.readFileSync(CALIB_FILE, "utf8"));
+type Calib = Record<string, JsonValue>;
 
-    return typeof data === "object" && data !== null ? (data as Record<string, Record<string, unknown>>) : {};
+function loadCalib(): Calib {
+  try {
+    return parseJsonObject(fs.readFileSync(CALIB_FILE, "utf8")) ?? {};
   } catch {
     return {};
   }
@@ -592,14 +613,15 @@ function loadCalib(): Record<string, Record<string, unknown>> {
 
 const CALIB = loadCalib();
 
-function actFor(rule: Rule, act = ACT, calib: Record<string, Record<string, unknown>> = CALIB): number {
+function actFor(rule: Rule, act = ACT, calib: Calib = CALIB): number {
   const c = calib[rule.id];
 
-  if (typeof c !== "object" || c === null || act !== ACT) return act;
-  const median = c["median"];
-  const n = typeof c["n"] === "number" ? c["n"] : 0;
+  if (!isJsonObject(c) || act !== ACT) return act;
 
-  if (typeof median !== "number") return act;
+  const median = c["median"];
+  const n = isNumber(c["n"]) ? c["n"] : 0;
+
+  if (!isNumber(median)) return act;
 
   if (n >= CALIB_MIN_CHECKS && median <= CALIB_DECISIVE) return ACT_DECISIVE;
 
@@ -643,21 +665,21 @@ function hitsFrom(rules: Rule[], probs: Record<string, number>, act: number, fla
 }
 
 function collectVerdicts(
-  rules: Rule[],
+  rules: Keyed[],
   answers: Answers,
   act: number,
   flag: number
 ): [Hit[], Record<string, number>] {
   const probs: Record<string, number> = {};
 
-  for (const r of rules as Keyed[]) {
+  for (const r of rules) {
     probs[r.id] = Math.round(verdictOf(answers[r._qkey ?? r.id]) * 1000) / 1000;
   }
 
   return [hitsFrom(rules, probs, act, flag), probs];
 }
 
-function scopedRules(rules: Rule[], phase: string, files: string[]): Rule[] {
+function scopedRules(rules: Keyed[], phase: string, files: string[]): Keyed[] {
   const hit = rules.filter(
     (r) => r.when === phase && (r.scope.length === 0 || files.some((f) => globMatch(f, r.scope)))
   );
@@ -680,10 +702,15 @@ function scopedRules(rules: Rule[], phase: string, files: string[]): Rule[] {
     const queues = [...tiers.get(tier)!.values()];
 
     while (queues.length > 0 && out.length < MAX_RULES) {
-      for (const q of [...queues]) {
+      for (let i = 0; i < queues.length; i++) {
+        const q = queues[i]!;
+
         if (q.length > 0) out.push(q.shift()!);
 
-        if (q.length === 0) queues.splice(queues.indexOf(q), 1);
+        if (q.length === 0) {
+          queues.splice(i, 1);
+          i--;
+        }
       }
     }
   }
@@ -703,7 +730,7 @@ function inputDigest(event: HookEvent): string | null {
   }
 }
 
-function ruleHashes(inScope: Rule[]): Record<string, string> {
+function ruleHashes(inScope: Rule[]) {
   const out: Record<string, string> = {};
 
   for (const r of inScope) {
@@ -772,7 +799,7 @@ function logDecision(
   }
 }
 
-function logError(e: unknown, event: HookEvent): void {
+function logError(error: Error, event: HookEvent): void {
   try {
     const row = {
       ts: new Date().toISOString(),
@@ -780,7 +807,7 @@ function logError(e: unknown, event: HookEvent): void {
       session_id: event.session_id,
       event: event.hook_event_name,
       path: (event.tool_input ?? {})["file_path"],
-      error: String(e).slice(0, 300),
+      error: String(error).slice(0, 300),
     };
 
     fs.appendFileSync(path.join(configDir(), ROUTER_LOG), JSON.stringify(row) + "\n");
@@ -792,7 +819,7 @@ async function judgeEdit(
   rel: string,
   hunk: string,
   task: string,
-  inScope: Rule[],
+  inScope: Keyed[],
   context = "",
   siblings = "",
   blockText = "",
@@ -817,7 +844,7 @@ async function judgeEdit(
   const cmpChars: Record<string, number> = {};
 
   if (cwd) {
-    for (const subject of [...new Set(asked.map((r) => r.subject))]) {
+    for (const subject of new Set(asked.map((r) => r.subject))) {
       const found = await comparator(subject || "other", hunk, rel, cwd);
 
       if (found) {
@@ -832,7 +859,7 @@ async function judgeEdit(
 
   const escalated: string[] = [];
 
-  const undecided = (asked as Keyed[]).filter(
+  const undecided = asked.filter(
     (r) => flag <= (probs[r.id] ?? 0) && (probs[r.id] ?? 0) < actFor(r, act)
   );
 
@@ -844,8 +871,7 @@ async function judgeEdit(
     if (blockText) extra.push(`The function or block this edit landed in, after the edit:\n${blockText}`);
 
     const around = undecided
-      .filter((r) => r.context)
-      .map((r) => `[${r.id}] ${r.context}`)
+      .flatMap((r) => (r.context ? [`[${r.id}] ${r.context}`] : []))
       .join("\n");
 
     if (around) extra.push(`The instruction file says, around this rule:\n${around}`);
@@ -871,9 +897,12 @@ async function judgeEdit(
 }
 
 async function handleEdit(event: HookEvent): Promise<PostToolUseOutput | StopOutput | Record<string, never>> {
-  const inp = (event.tool_input ?? {}) as EditInput;
+  const inp = event.tool_input;
+
+  if (!inp) return {};
+
   const cwd = event.cwd ?? process.cwd();
-  const filePath = typeof inp.file_path === "string" ? inp.file_path : "";
+  const filePath = isString(inp["file_path"]) ? inp["file_path"] : "";
   const rel = relativeTo(filePath, cwd);
 
   if (!filePath || EXCLUDED_RE.test(rel) || isOutside(rel)) return {};
@@ -943,22 +972,24 @@ async function handleEdit(event: HookEvent): Promise<PostToolUseOutput | StopOut
     userAnswers: nAnswers,
   });
 
-  const out: PostToolUseOutput = {};
+  if (flagged.length === 0 && acting.length === 0) return {};
+
+  const listed = flagged.map((v) => `${v.rule} ${v.prob.toFixed(2)}`).join(", ");
+  const lines = ["This edit appears to break a rule from this repository's instructions.", ...acting.map(cite), `Repair ${rel} now, then continue with the task.`];
+
+  if (flagged.length > 0 && acting.length > 0) {
+    return {
+      systemMessage: `[jev rules] uncertain about ${listed} on ${rel} — not sent to the agent`,
+      decision: "block",
+      reason: lines.join("\n"),
+    };
+  }
 
   if (flagged.length > 0) {
-    const listed = flagged.map((v) => `${v.rule} ${v.prob.toFixed(2)}`).join(", ");
-    out.systemMessage = `[jev rules] uncertain about ${listed} on ${rel} — not sent to the agent`;
+    return { systemMessage: `[jev rules] uncertain about ${listed} on ${rel} — not sent to the agent` };
   }
 
-  if (acting.length > 0) {
-    const lines = ["This edit appears to break a rule from this repository's instructions."];
-    lines.push(...acting.map(cite));
-    lines.push(`Repair ${rel} now, then continue with the task.`);
-    out.decision = "block";
-    out.reason = lines.join("\n");
-  }
-
-  return out;
+  return { decision: "block", reason: lines.join("\n") };
 }
 
 function worktreeTree(cwd: string): [string, string, string] {
@@ -1152,7 +1183,7 @@ async function main(): Promise<void> {
     event = await readStdinJson<HookEvent>();
     const name = event.hook_event_name ?? "PostToolUse";
     const bash = event.tool_name === "Bash";
-    let out: object = {};
+    let out: HookOutput = {};
 
     if (name === "Stop") {
       out = await handleStop(event);
@@ -1162,9 +1193,9 @@ async function main(): Promise<void> {
       out = bash ? await handleBashAfter(event) : await handleEdit(event);
     }
 
-    if (Object.keys(out).length > 0) writeOutput(out as never);
+    if (Object.keys(out).length > 0) writeOutput(out);
   } catch (e) {
-    logError(e, event);
+    logError(e instanceof Error ? e : new Error(String(e)), event);
   }
 }
 

@@ -4,9 +4,9 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { readStdinJson } from "./shared/stdin.js";
-import { writeOutput } from "./shared/stdout.js";
+import { writeOutput, type PostToolUseOutput } from "./shared/stdout.js";
 import { jevAsk } from "./shared/jev-client.js";
-import type { Answers } from "./shared/jev-client.js";
+import { asNoul, type Answers } from "./shared/jev-client.js";
 import {
   loadRules,
   globMatch,
@@ -114,13 +114,10 @@ function ruleQuestion(rule: Rule): import("./shared/jev-client.js").NoulQuestion
   };
 }
 
-function verdict(answer: unknown): number {
-  if (typeof answer !== "object" || answer === null) return 0;
-  const p = (answer as Record<string, unknown>)["noul"];
+function verdict(answer: Answers[string] | undefined): number {
+  const p = asNoul(answer)?.noul;
 
-  if (typeof p !== "number") return 0;
-
-  return Math.min(1, Math.max(0, p));
+  return p === undefined ? 0 : Math.min(1, Math.max(0, p));
 }
 
 async function main(): Promise<void> {
@@ -268,12 +265,15 @@ async function main(): Promise<void> {
     }
 
     lines.push("Check these before marking the task Done.");
-    writeOutput({
+
+    const out: PostToolUseOutput = {
       hookSpecificOutput: {
-        hookEventName: "PostToolUse" as any,
+        hookEventName: "PostToolUse",
         additionalContext: lines.join("\n"),
       },
-    });
+    };
+
+    writeOutput(out);
   }
 }
 

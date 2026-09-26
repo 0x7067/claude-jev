@@ -5,6 +5,15 @@ import path from "node:path";
 import { readStdinJson } from "../adapters/afk/src/shared/stdin.js";
 import { jevAsk, type Answers } from "../adapters/afk/src/shared/jev-client.js";
 import { configDir } from "../adapters/afk/src/shared/config.js";
+import {
+  isJsonObject,
+  isJsonArray,
+  isString,
+  isNumber,
+  parseJsonObject,
+  type Json,
+  type JsonValue,
+} from "../adapters/afk/src/shared/json.js";
 import { fileURLToPath } from "node:url";
 
 const KEEP_THRESHOLD = 0.5;
@@ -63,7 +72,7 @@ const ACK = /^(ok|yes|no|thanks|continue)\.?$/i;
 export interface Block {
   role: string;
   text: string;
-  row?: Record<string, unknown>;
+  row?: CompactRow;
 }
 
 interface TranscriptEntry {
@@ -71,30 +80,31 @@ interface TranscriptEntry {
   isSidechain?: boolean;
   isMeta?: boolean;
   promptSource?: string;
-  message?: { role?: string; content?: unknown };
+  message?: Json;
 }
 
-export function blockText(content: unknown): string {
-  if (typeof content === "string") return content;
+export function blockText(content: JsonValue | undefined): string {
+  if (isString(content)) return content;
+
   const parts: string[] = [];
 
-  for (const b of Array.isArray(content) ? content : []) {
-    if (typeof b !== "object" || b === null) continue;
-    const block = b as Record<string, unknown>;
-    const t = block["type"];
+  for (const b of isJsonArray(content) ? content : []) {
+    if (!isJsonObject(b)) continue;
+
+    const t = b["type"];
 
     if (t === "text") {
-      parts.push(String(block["text"] ?? ""));
+      parts.push(isString(b["text"]) ? b["text"] : "");
     } else if (t === "tool_use") {
       parts.push(
-        `[tool_use ${block["name"] ?? "?"}] ${JSON.stringify(block["input"] ?? {}).slice(0, 400)}`
+        `[tool_use ${isString(b["name"]) ? b["name"] : "?"}] ${JSON.stringify(b["input"] ?? {}).slice(0, 400)}`
       );
     } else if (t === "tool_result") {
-      let c = block["content"];
+      let c: JsonValue | undefined = b["content"];
 
-      if (Array.isArray(c)) {
+      if (isJsonArray(c)) {
         c = c
-          .map((x) => (typeof x === "object" && x !== null ? String((x as Record<string, unknown>)["text"] ?? "") : ""))
+          .map((x) => (isJsonObject(x) && isString(x["text"]) ? x["text"] : ""))
           .join("\n");
       }
 
@@ -137,6 +147,22 @@ export function compactionMarker(d: TranscriptEntry, text: string): boolean {
   return text.startsWith("<command-") && text.slice(0, 200).includes("claude-jev:compact");
 }
 
+function roleOf(d: TranscriptEntry, fallback: string): string {
+  const role = d.message?.["role"];
+
+  return isString(role) ? role : (d.type ?? fallback);
+}
+
+export function transcriptEntry(data: Json): TranscriptEntry {
+  return {
+    type: isString(data["type"]) ? data["type"] : undefined,
+    isSidechain: data["isSidechain"] === true,
+    isMeta: data["isMeta"] === true,
+    promptSource: isString(data["promptSource"]) ? data["promptSource"] : undefined,
+    message: isJsonObject(data["message"]) ? data["message"] : undefined,
+  };
+}
+
 export function visibleText(
   d: TranscriptEntry,
   text?: string | null,
@@ -145,8 +171,8 @@ export function visibleText(
   if (d.isSidechain || (d.type !== "user" && d.type !== "assistant")) return null;
 
   if (injected(d, strictSource)) return null;
-  const role = d.message?.role ?? d.type ?? "";
-  const body = text === undefined || text === null ? blockText(d.message?.content).trim() : text;
+  const role = roleOf(d, "");
+  const body = text === undefined || text === null ? blockText(d.message?.["content"]).trim() : text;
 
   return judgeable(role, body);
 }
@@ -165,19 +191,18 @@ export function transcriptBlocks(transcriptPath: string): Block[] {
   for (const line of lines) {
     if (!line || line.length > 2_000_000) continue;
 
-    try {
-      parsed.push(JSON.parse(line) as TranscriptEntry);
-    } catch {
-      continue;
-    }
+    const data = parseJsonObject(line);
+
+    if (data !== null) parsed.push(transcriptEntry(data));
   }
 
   const strictSource = parsed.some((d) => d.promptSource === "typed");
+
   const blocks: Block[] = [];
   let cutAt: number | null = null;
 
   for (const d of parsed) {
-    const raw = blockText(d.message?.content).trim();
+    const raw = blockText(d.message?.["content"]).trim();
 
     if (raw && compactionMarker(d, raw)) {
       cutAt = blocks.length;
@@ -187,7 +212,7 @@ export function transcriptBlocks(transcriptPath: string): Block[] {
     const text = visibleText(d, raw, strictSource);
 
     if (text === null) continue;
-    blocks.push({ role: d.message?.role ?? d.type ?? "assistant", text });
+    blocks.push({ role: roleOf(d, "assistant"), text });
   }
 
   return cutAt === null ? blocks : blocks.slice(0, cutAt);
@@ -204,8 +229,7 @@ export function sessionContext(blocks: Block[], cwd: string | null, directive: s
   }
 
   const goal = blocks
-    .filter((b) => b.role === "user")
-    .map((b) => b.text.slice(0, 300))
+    .flatMap((b) => (b.role === "user" ? [b.text.slice(0, 300)] : []))
     .join("\n")
     .slice(-HEADER_CHARS);
 
@@ -230,7 +254,7 @@ export function compactState(blocks: Block[], lo: number, hi: number, context: s
   return header.join("\n") + "\n\n" + body;
 }
 
-export const CHECKS: Record<string, string> = {
+export const CHECKS = {
   constraint:
     "Does block [{i}] state a requirement, restriction, or preference from the user about how the work must be done: something not to touch, a tool or approach to use, a deadline, a scope limit?",
   decision:
@@ -245,17 +269,24 @@ export const CHECKS: Record<string, string> = {
 
 export const KEEP_CHECKS = ["constraint", "decision", "error", "open"] as const;
 
-export const ASK_CHECKS = Object.keys(CHECKS) as string[];
+export const ASK_CHECKS = [
+  "constraint",
+  "decision",
+  "error",
+  "open",
+  "rerunnable",
+] as const satisfies readonly (keyof typeof CHECKS)[];
 
-export function keepQuestions(
-  n: number,
-  names: readonly string[] = ASK_CHECKS
-): Record<string, { type: "noul"; instructions: string }> {
-  const questions: Record<string, { type: "noul"; instructions: string }> = {};
+type NoulQ = { type: "noul"; instructions: string };
+
+type Questions = Record<string, NoulQ>;
+
+export function keepQuestions(n: number, names: readonly (keyof typeof CHECKS)[] = ASK_CHECKS) {
+  const questions: Questions = {};
 
   for (let i = 0; i < n; i++) {
     for (const name of names) {
-      questions[`${name}_${i}`] = { type: "noul", instructions: CHECKS[name]!.replaceAll("{i}", String(i)) };
+      questions[`${name}_${i}`] = { type: "noul", instructions: CHECKS[name].replaceAll("{i}", String(i)) };
     }
   }
 
@@ -275,7 +306,7 @@ export function verdicts(answers: Answers, i: number): Verdict {
     const a = answers[`${name}_${i}`];
     const p = a && "noul" in a ? a.noul : undefined;
 
-    if (typeof p === "number") checks[name] = p;
+    if (isNumber(p)) checks[name] = p;
   }
 
   if (Object.keys(checks).length === 0) return { keep: null, full: null, checks };
@@ -293,7 +324,7 @@ async function askChunked(
   lo: number,
   hi: number,
   directive: string | null = null,
-  names: readonly string[] = ASK_CHECKS
+  names: readonly (keyof typeof CHECKS)[] = ASK_CHECKS
 ): Promise<Answers> {
   const questions = keepQuestions(hi, names);
   const context = sessionContext(blocks, cwd, directive);
@@ -303,7 +334,7 @@ async function askChunked(
 
   const one = async (r: [number, number]): Promise<Answers> => {
     const [clo, chi] = r;
-    const q: Record<string, { type: "noul"; instructions: string }> = {};
+    const q: Questions = {};
 
     for (let i = clo; i < chi; i++) {
       for (const name of names) q[`${name}_${i}`] = questions[`${name}_${i}`]!;
@@ -452,18 +483,35 @@ export function blockRows(blocks: Block[], kept: Kept[], answers: Answers): Row[
 export async function judge(
   transcriptPath: string,
   cwd: string | null
-): Promise<[string[], Record<string, unknown>]> {
+): Promise<[string[], Stats]> {
   const [kept, stats] = await selectBlocks(transcriptBlocks(transcriptPath).slice(-(MAX_BLOCKS + RESCUE_BLOCKS)), cwd);
 
   return [kept.map((k) => k.text), stats];
+}
+
+function emptyStats(judged: number): Stats {
+  return {
+    judged,
+    rescued: 0,
+    pinned: 0,
+    kept: 0,
+    truncated: 0,
+    escalated: 0,
+    chars_before: 0,
+    chars_after: 0,
+    est_tokens_after: 0,
+    reduction: 0,
+    ms: 0,
+    rows: [],
+  };
 }
 
 export async function selectBlocks(
   blocks: Block[],
   cwd: string | null,
   directive: string | null = null
-): Promise<[Kept[], Record<string, unknown>]> {
-  if (blocks.length === 0) return [[], { judged: 0 }];
+): Promise<[Kept[], Stats]> {
+  if (blocks.length === 0) return [[], emptyStats(0)];
   const window = Math.max(0, blocks.length - MAX_BLOCKS);
   const rescueLo = Math.max(0, window - RESCUE_BLOCKS);
   const nJudged = Math.max(0, blocks.length - PIN_TAIL);
@@ -492,7 +540,7 @@ export async function selectBlocks(
     const a = rescueAnswers[`constraint_${i}`];
     const p = a && "noul" in a ? a.noul : undefined;
 
-    if (typeof p === "number" && p >= KEEP_THRESHOLD) {
+    if (isNumber(p) && p >= KEEP_THRESHOLD) {
       rescued.push({
         i,
         text: cutMarked(blocks[i]!.text, KEEP_CHARS),
@@ -557,65 +605,86 @@ export async function selectBlocks(
 
   const final = fitKept([...rescued, ...paired], blocks);
 
-  const stats: Record<string, unknown> = {
+  const charsBefore = blocks.reduce((sum, b) => sum + b.text.length, 0);
+  const charsAfter = final.reduce((sum, k) => sum + k.text.length, 0);
+
+  const stats: Stats = {
     judged: nJudged - window,
     rescued: rescued.length,
     pinned: blocks.length - nJudged,
     kept: final.length,
     truncated: final.filter((k) => k.kind === "truncated").length,
     escalated: final.filter((k) => k.escalated).length,
-    chars_before: blocks.reduce((sum, b) => sum + b.text.length, 0),
-    chars_after: final.reduce((sum, k) => sum + k.text.length, 0),
+    chars_before: charsBefore,
+    chars_after: charsAfter,
+    est_tokens_after: Math.floor(charsAfter / 4),
+    reduction: Math.round((1 - charsAfter / Math.max(charsBefore, 1)) * 1000) / 1000,
     ms,
     rows: blockRows(blocks, final, answers),
   };
 
-  stats["est_tokens_after"] = Math.floor((stats["chars_after"] as number) / 4);
-  stats["reduction"] = Math.round((1 - (stats["chars_after"] as number) / Math.max(stats["chars_before"] as number, 1)) * 1000) / 1000;
-
   return [final, stats];
 }
 
-interface CompactRow extends Record<string, unknown> {
-  role?: string;
-  text?: string;
-  toolUses?: unknown;
-  toolResults?: unknown;
-  handle?: unknown;
+export interface Stats {
+  judged: number;
+  rescued: number;
+  pinned: number;
+  kept: number;
+  truncated: number;
+  escalated: number;
+  chars_before: number;
+  chars_after: number;
+  est_tokens_after: number;
+  reduction: number;
+  ms: number;
+  rows: Row[];
+  trigger?: string;
+  rows_in?: number;
+  rows_out?: number;
+  passed_through?: number;
+}
+
+export interface CompactRow {
+  role?: JsonValue;
+  text?: JsonValue;
+  toolUses?: JsonValue;
+  toolResults?: JsonValue;
+  handle?: JsonValue;
 }
 
 export function rowText(row: CompactRow): string | null {
-  const content: unknown[] = [{ type: "text", text: row.text ?? "" }];
+  const content: JsonValue[] = [{ type: "text", text: row.text ?? "" }];
 
-  for (const u of (row.toolUses as Array<unknown>) ?? []) {
-    if (typeof u !== "object" || u === null) continue;
-    const use = u as Record<string, unknown>;
-    content.push({ type: "tool_use", name: use["tool"] ?? "?", input: use["input"] ?? {} });
+  for (const u of isJsonArray(row.toolUses) ? row.toolUses : []) {
+    if (!isJsonObject(u)) continue;
+
+    content.push({ type: "tool_use", name: u["tool"] ?? "?", input: u["input"] ?? {} });
   }
 
-  for (const r of (row.toolResults as Array<unknown>) ?? []) {
-    if (typeof r !== "object" || r === null) continue;
-    const res = r as Record<string, unknown>;
-    content.push({ type: "tool_result", content: res["text"] });
+  for (const r of isJsonArray(row.toolResults) ? row.toolResults : []) {
+    if (!isJsonObject(r)) continue;
+
+    content.push({ type: "tool_result", content: r["text"] });
   }
 
-  return judgeable(row.role ?? "", blockText(content).trim());
+  return judgeable(isString(row.role) ? row.role : "", blockText(content).trim());
 }
 
 function plainRow(row: CompactRow): boolean {
   return !row.toolUses && !row.toolResults;
 }
 
-function textRow(role: string, text: string): Record<string, unknown> {
+function textRow(role: string, text: string): CompactRow {
   return { role, text, toolUses: [], toolResults: [] };
 }
 
-function rowsOut(blocks: Block[], kept: Kept[]): Array<Record<string, unknown>> {
-  const out: Array<Record<string, unknown>> = [textRow("user", ROWS_HEADER)];
+function rowsOut(blocks: Block[], kept: Kept[]): CompactRow[] {
+  const out: CompactRow[] = [textRow("user", ROWS_HEADER)];
 
   for (const k of kept) {
     const block = blocks[k.i]!;
-    const row = block.row as CompactRow | undefined;
+    const row = block.row;
 
     if (row && plainRow(row) && k.text === block.text) out.push(row);
     else out.push(textRow(block.role, k.text));
@@ -630,7 +699,7 @@ function fallback(reason: string): number {
   return 0;
 }
 
-function logStats(sessionId: string | undefined, stats: Record<string, unknown>): void {
+function logStats(sessionId: string | undefined, stats: Stats): void {
   try {
     const row = {
       ts: new Date().toISOString(),
@@ -662,12 +731,10 @@ export async function rows(): Promise<number> {
     return fallback(`unreadable event: ${String(e)}`);
   }
 
-  if (typeof event !== "object" || event === null) return fallback("event is not an object");
-
   const directive = (event.instructions ?? "").trim().slice(0, DIRECTIVE_CHARS) || null;
 
-  const incoming = (Array.isArray(event.messages) ? event.messages : []).filter(
-    (r): r is CompactRow => typeof r === "object" && r !== null
+  const incoming = (isJsonArray(event.messages) ? event.messages : []).filter((r): r is CompactRow =>
+    isJsonObject(r)
   );
 
   const blocks: Block[] = [];
@@ -677,7 +744,7 @@ export async function rows(): Promise<number> {
     const r = incoming[i]!;
     const text = rowText(r);
 
-    if (text !== null) blocks.push({ role: r.role ?? "assistant", text, row: r });
+    if (text !== null) blocks.push({ role: isString(r.role) ? r.role : "assistant", text, row: r });
   }
 
   blocks.reverse();
@@ -685,7 +752,7 @@ export async function rows(): Promise<number> {
   if (blocks.length === 0) return fallback("no judgeable rows");
 
   let kept: Kept[];
-  let stats: Record<string, unknown>;
+  let stats: Stats;
 
   try {
     [kept, stats] = await selectBlocks(blocks, event.cwd ?? null, directive);
@@ -693,17 +760,17 @@ export async function rows(): Promise<number> {
     return fallback(`jev: ${String(e)}`);
   }
 
-  stats["trigger"] = event.trigger;
-  stats["rows_in"] = incoming.length;
+  stats.trigger = event.trigger;
+  stats.rows_in = incoming.length;
   const out = rowsOut(blocks, kept);
-  stats["rows_out"] = out.length;
-  stats["passed_through"] = out.filter((r) => r["handle"] !== undefined).length;
+  stats.rows_out = out.length;
+  stats.passed_through = out.filter((r) => r["handle"] !== undefined).length;
   logStats(event.session_id, stats);
   const what = event.trigger ? `${event.trigger} compaction` : "compaction";
   process.stdout.write(
     JSON.stringify({
       messages: out,
-      summary: `${what} replaced by ${out.length} rows (kept ${stats["kept"]}, ${stats["truncated"]} truncated, ${Math.round((stats["reduction"] as number) * 100)}% smaller, ${stats["ms"]} ms)`,
+      summary: `${what} replaced by ${out.length} rows (kept ${stats.kept}, ${stats.truncated} truncated, ${Math.round(stats.reduction * 100)}% smaller, ${stats.ms} ms)`,
     }) + "\n"
   );
 

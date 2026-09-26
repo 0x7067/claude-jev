@@ -2,18 +2,18 @@
 
 import { readStdinJson } from "./shared/stdin.js";
 import { writeOutput } from "./shared/stdout.js";
-import { jevAsk } from "./shared/jev-client.js";
+import { jevAsk, asChoice, asNoul, asScore } from "./shared/jev-client.js";
 import { intentBundle } from "./shared/questions.js";
 
 const MIN_CONFIDENCE = 0.75;
 
 const MAX_QUIET = 0.10;
 
-const GUIDANCE: Record<string, string> = {
-  chat: "Answer directly from the conversation. No file reads, no commands.",
-  lookup: "Fact-finding — one targeted search, concise answer, then stop.",
-  fix: "Small change — locate the code, make a focused edit, run the narrowest verification.",
-};
+const GUIDANCE = new Map<string, string>([
+  ["chat", "Answer directly from the conversation. No file reads, no commands."],
+  ["lookup", "Fact-finding — one targeted search, concise answer, then stop."],
+  ["fix", "Small change — locate the code, make a focused edit, run the narrowest verification."],
+]);
 
 interface UserPromptEvent {
   prompt?: string;
@@ -29,21 +29,19 @@ async function main(): Promise<void> {
 
   const answers = await jevAsk(prompt, intentBundle());
 
-  const needsToolsA = answers["needs_tools"] as { noul?: number } | undefined;
-  const intentA = answers["intent"] as { choice?: string; confidence?: number } | undefined;
-  const scopeA = answers["scope"] as { score?: number } | undefined;
+  const intentA = asChoice(answers["intent"]);
 
   let choice = intentA?.choice ?? "";
   let conf = intentA?.confidence ?? 0;
-  const needsTools = needsToolsA?.noul ?? 1;
-  const scope = scopeA?.score;
+  const needsTools = asNoul(answers["needs_tools"])?.noul ?? 1;
+  const scope = asScore(answers["scope"])?.score;
 
   if (needsTools <= MAX_QUIET) {
     choice = "chat";
     conf = 1.0 - needsTools;
   }
 
-  if (!choice || !(choice in GUIDANCE) || conf < MIN_CONFIDENCE) return;
+  if (!choice || !GUIDANCE.has(choice) || conf < MIN_CONFIDENCE) return;
 
   const parts = [`[jev router] intent=${choice} conf=${conf.toFixed(2)}`];
 
@@ -56,7 +54,7 @@ async function main(): Promise<void> {
 
   const line = parts.join(" ");
 
-  let tip = GUIDANCE[choice]!;
+  let tip = GUIDANCE.get(choice)!;
 
   if (choice !== "chat" && scope != null) {
     if (scope < 0.5) tip += " Keep it minimal.";

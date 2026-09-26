@@ -5,8 +5,9 @@ import path from "node:path";
 import os from "node:os";
 import { readStdinJson } from "./shared/stdin.js";
 import { writeOutput } from "./shared/stdout.js";
-import { jevAsk } from "./shared/jev-client.js";
+import { jevAsk, asNoul } from "./shared/jev-client.js";
 import type { Answers, NoulQuestion } from "./shared/jev-client.js";
+import { isString, parseJsonObject } from "./shared/json.js";
 import { loadRules, globMatch, isSubjectRelevant, type Rule } from "./shared/rule-parser.js";
 import { slugify } from "./shared/utils.js";
 import { loadState, saveState } from "./shared/state.js";
@@ -43,11 +44,10 @@ function loadEdits(sessionId: string): EditRecord[] {
     for (const line of raw.split("\n")) {
       if (!line.trim()) continue;
 
-      try {
-        const r = JSON.parse(line) as EditRecord;
+      const d = parseJsonObject(line);
 
-        if (r.rel && r.hunk) records.push(r);
-      } catch {
+      if (d !== null && isString(d["rel"]) && isString(d["hunk"])) {
+        records.push({ rel: d["rel"], hunk: d["hunk"] });
       }
     }
 
@@ -85,13 +85,10 @@ function turnRuleQuestion(rule: Rule): NoulQuestion {
   };
 }
 
-function verdict(answer: unknown): number {
-  if (typeof answer !== "object" || answer === null) return 0;
-  const p = (answer as Record<string, unknown>)["noul"];
+function verdict(answer: Answers[string] | undefined): number {
+  const p = asNoul(answer)?.noul;
 
-  if (typeof p !== "number") return 0;
-
-  return Math.min(1, Math.max(0, p));
+  return p === undefined ? 0 : Math.min(1, Math.max(0, p));
 }
 
 async function main(): Promise<void> {

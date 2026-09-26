@@ -80,7 +80,7 @@ function providerFor(key: string): Provider {
   return best;
 }
 
-function resolveKey(): { key: string; provider: Provider } {
+function resolveKey() {
   for (const p of PROVIDERS) {
     const k = (process.env[p.keyVar] ?? "").trim();
 
@@ -123,6 +123,7 @@ export async function jevAsk(
       throw new Error(`HTTP ${res.status}: ${detail.slice(0, 300)}`);
     }
 
+    // SAFETY: the SystemOne answers endpoint returns { answers } per the API contract.
     const payload = (await res.json()) as { answers?: Answers };
 
     return payload.answers ?? {};

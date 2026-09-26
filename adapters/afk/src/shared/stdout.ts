@@ -1,3 +1,5 @@
+import type { Json } from "./json.js";
+
 export interface UserPromptSubmitOutput {
   hookSpecificOutput?: {
     hookEventName: "UserPromptSubmit";
@@ -12,12 +14,16 @@ export interface PreToolUseOutput {
     permissionDecision?: "allow" | "deny";
     permissionDecisionReason?: string;
     additionalContext?: string;
-    updatedInput?: Record<string, unknown>;
+    updatedInput?: Json;
   };
   systemMessage?: string;
 }
 
 export interface PostToolUseOutput {
+  hookSpecificOutput?: {
+    hookEventName?: "PostToolUse";
+    additionalContext?: string;
+  };
   decision?: "block";
   reason?: string;
   systemMessage?: string;

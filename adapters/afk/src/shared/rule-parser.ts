@@ -2,7 +2,16 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import os from "node:os";
-import { jevAsk } from "./jev-client.js";
+import { jevAsk, type Questions } from "./jev-client.js";
+import {
+  isJsonObject,
+  isJsonArray,
+  isString,
+  isNumber,
+  parseJsonObject,
+  type Json,
+  type JsonValue,
+} from "./json.js";
 import {
   ruleQuestions,
   INSTRUCTION_MIN,
@@ -78,25 +87,17 @@ export interface LoadRulesOptions {
   timeoutMs?: number;
 }
 
-function loadCache(
-  cachePath: string
-): Record<string, Record<string, unknown>> {
-  try {
-    const raw = fs.readFileSync(cachePath, "utf8");
-    const data = JSON.parse(raw);
+type CacheData = Record<string, JsonValue>;
 
-    return typeof data === "object" && data !== null
-      ? (data as Record<string, Record<string, unknown>>)
-      : {};
+function loadCache(cachePath: string): CacheData {
+  try {
+    return parseJsonObject(fs.readFileSync(cachePath, "utf8")) ?? {};
   } catch {
     return {};
   }
 }
 
-function saveCache(
-  cache: Record<string, Record<string, unknown>>,
-  cachePath: string
-): void {
+function saveCache(cache: CacheData, cachePath: string): void {
   try {
     fs.mkdirSync(path.dirname(cachePath), { recursive: true });
     const tmp = cachePath + "." + process.pid + ".tmp";
@@ -231,30 +232,29 @@ interface ClassifiedItem {
 }
 
 function choiceOf(
-  answer: Record<string, unknown> | undefined,
+  answer: Json | undefined,
   criteria: Record<string, string>,
   defaultVal: string
 ): string {
   if (!answer) return defaultVal;
-  const pick = answer["choice"] as string | undefined;
-  const conf = answer["confidence"] as number | undefined;
 
-  if (pick && pick in criteria && typeof conf === "number" && conf >= CHOICE_MIN) return pick;
+  const pick = answer["choice"];
+  const conf = answer["confidence"];
+
+  if (isString(pick) && pick in criteria && isNumber(conf) && conf >= CHOICE_MIN) return pick;
 
   return defaultVal;
 }
 
-function sortedStringify(val: unknown): string {
-  if (Array.isArray(val)) {
+function sortedStringify(val: JsonValue): string {
+  if (isJsonArray(val)) {
     return "[" + val.map(sortedStringify).join(", ") + "]";
   }
 
-  if (typeof val === "object" && val !== null) {
-    const obj = val as Record<string, unknown>;
-
-    const pairs = Object.keys(obj)
+  if (isJsonObject(val)) {
+    const pairs = Object.keys(val)
       .sort()
-      .map((k) => JSON.stringify(k) + ": " + sortedStringify(obj[k]));
+      .map((k) => JSON.stringify(k) + ": " + sortedStringify(val[k]));
 
     return "{" + pairs.join(", ") + "}";
   }
@@ -262,7 +262,7 @@ function sortedStringify(val: unknown): string {
   return JSON.stringify(val);
 }
 
-function chunkKey(state: string, questions: Record<string, unknown>): string {
+function chunkKey(state: string, questions: Questions): string {
   return crypto
     .createHash("sha256")
     .update(sortedStringify([state, questions]))
@@ -294,7 +294,7 @@ async function classifyChunk(
   start: number,
   chunk: Item[],
   headings: Map<number, string>,
-  cache: Record<string, Record<string, unknown>>,
+  cache: CacheData,
   cachePath: string,
   timeoutMs: number | undefined
 ): Promise<Map<number, ClassifiedItem>> {
@@ -310,21 +310,21 @@ async function classifyChunk(
 
   const hit = cache[key];
 
-  if (typeof hit === "object" && hit !== null) {
+  if (isJsonObject(hit)) {
     const result = new Map<number, ClassifiedItem>();
 
     for (const [k, v] of Object.entries(hit)) {
       if (!/^\d+$/.test(k)) continue;
       const idx = parseInt(k, 10);
 
-      if (typeof v === "object" && v !== null) {
-        const vr = v as Record<string, unknown>;
+      if (isJsonObject(v)) {
+        const when = v["when"];
 
-        if (vr["when"] === "edit" || vr["when"] === "turn") {
+        if (when === "edit" || when === "turn") {
           result.set(idx, {
-            when: vr["when"] as "edit" | "turn",
-            polarity: (vr["polarity"] as string) ?? DEFAULT_POLARITY,
-            subject: (vr["subject"] as string) ?? DEFAULT_SUBJECT,
+            when,
+            polarity: isString(v["polarity"]) ? v["polarity"] : DEFAULT_POLARITY,
+            subject: isString(v["subject"]) ? v["subject"] : DEFAULT_SUBJECT,
           });
         }
       }
@@ -340,10 +340,10 @@ async function classifyChunk(
     const q = answers["q" + i];
     const p = q && "noul" in q ? q.noul : undefined;
 
-    if (typeof p !== "number" || p < INSTRUCTION_MIN) continue;
+    if (!isNumber(p) || p < INSTRUCTION_MIN) continue;
     const t = answers["t" + i];
     const tn = t && "noul" in t ? t.noul : undefined;
-    const turn = typeof tn === "number" && tn >= TURN_MIN;
+    const turn = isNumber(tn) && tn >= TURN_MIN;
     out[i] = {
       when: turn ? "turn" : "edit",
       polarity: choiceOf(answers["p" + i], POLARITY_CRITERIA, DEFAULT_POLARITY),
@@ -351,7 +351,9 @@ async function classifyChunk(
     };
   }
 
-  cache[key] = Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v]));
+  cache[key] = Object.fromEntries(
+    Object.entries(out).map(([k, v]): [string, Json] => [k, { when: v.when, polarity: v.polarity, subject: v.subject }])
+  );
   saveCache(cache, cachePath);
 
   return new Map(Object.entries(out).map(([k, v]) => [start + parseInt(k, 10), v]));
@@ -673,23 +675,26 @@ const ERRORISH_RE =
 
 type SubjectTest = (hunk: string, rel: string) => boolean;
 
-const SUBJECT_TESTS: Record<string, SubjectTest> = {
-  imports_deps: (h, rel) => IMPORTISH_RE.test(h) || MANIFEST_RE.test(rel),
-  comments: (h) => COMMENT_RE.test(h),
-  tests: (h, rel) => TESTISH_RE.test(h) || TESTISH_RE.test(rel),
-  literals_constants: (h) => {
-    if (STRINGY_RE.test(h)) return true;
-    const nums = Array.from(h.matchAll(NUMBER_RE));
+const SUBJECT_TESTS = new Map<string, SubjectTest>([
+  ["imports_deps", (h, rel) => IMPORTISH_RE.test(h) || MANIFEST_RE.test(rel)],
+  ["comments", (h) => COMMENT_RE.test(h)],
+  ["tests", (h, rel) => TESTISH_RE.test(h) || TESTISH_RE.test(rel)],
+  [
+    "literals_constants",
+    (h) => {
+      if (STRINGY_RE.test(h)) return true;
+      const nums = Array.from(h.matchAll(NUMBER_RE));
 
-    return nums.some((m) => !["0", "1", "-1"].includes(m[0]!));
-  },
-  naming: (h) => DEFINES_RE.test(h),
-  types: (h) => TYPEISH_RE.test(h),
-  errors: (h) => ERRORISH_RE.test(h),
-};
+      return nums.some((m) => !["0", "1", "-1"].includes(m[0]!));
+    },
+  ],
+  ["naming", (h) => DEFINES_RE.test(h)],
+  ["types", (h) => TYPEISH_RE.test(h)],
+  ["errors", (h) => ERRORISH_RE.test(h)],
+]);
 
 export function isSubjectRelevant(hunk: string, subject: string, rel: string): boolean {
-  const test = SUBJECT_TESTS[subject];
+  const test = SUBJECT_TESTS.get(subject);
 
   return test ? test(hunk, rel) : true;
 }

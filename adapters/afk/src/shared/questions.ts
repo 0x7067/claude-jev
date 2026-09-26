@@ -46,7 +46,7 @@ export function intentBundle(): Questions {
   };
 }
 
-const TIER_CRITERIA: Record<string, string> = {
+const TIER_CRITERIA = {
   haiku:
     "Bounded, mechanical work with a clear stop condition and no " +
     "design choices: search, fetch, count, summarize, list callers, " +
@@ -72,9 +72,9 @@ const TIER_CRITERIA: Record<string, string> = {
     "cause is unknown and the evidence conflicts, or a task whose " +
     "acceptance criteria cannot be written down in advance. Rare " +
     "and the most expensive; not for implementation",
-};
+} satisfies Record<string, string>;
 
-const BRIEF_CHECKS: Record<string, string> = {
+const BRIEF_CHECKS = {
   brief_writes:
     "Does this task ask the subagent to create, edit, or " +
     "delete files, as opposed to only reading, searching, " +
@@ -87,7 +87,7 @@ const BRIEF_CHECKS: Record<string, string> = {
     "Does the brief name a command or check the subagent must run to verify its work?",
   brief_commit:
     "Does the brief say whether the subagent may commit, or that it must not?",
-};
+} satisfies Record<string, string>;
 
 export function subagentBundle(
   askTier: boolean,
@@ -112,12 +112,12 @@ export function subagentBundle(
   return q;
 }
 
-export const BRIEF_PARTS: Record<string, string> = {
-  brief_paths: "the exact files or paths to work in",
-  brief_acceptance: "acceptance criteria",
-  brief_verify: "the verification command to run",
-  brief_commit: "the commit policy (default: do not commit)",
-};
+export const BRIEF_PARTS = new Map<string, string>([
+  ["brief_paths", "the exact files or paths to work in"],
+  ["brief_acceptance", "acceptance criteria"],
+  ["brief_verify", "the verification command to run"],
+  ["brief_commit", "the commit policy (default: do not commit)"],
+]);
 
 export const INSTRUCTION_Q =
   "Is item [{i}] a rule about the code or files a coding agent writes, " +

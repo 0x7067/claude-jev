@@ -13,6 +13,13 @@ import {
 } from "../adapters/afk/src/shared/jev-client.js";
 import { intentBundle } from "../adapters/afk/src/shared/questions.js";
 import { isSynthetic } from "../adapters/afk/src/shared/synthetic.js";
+import {
+  isJsonObject,
+  isJsonArray,
+  isString,
+  parseJsonObject,
+  type Json,
+} from "../adapters/afk/src/shared/json.js";
 import { configDir, enabled, pluginVersion } from "../adapters/afk/src/shared/config.js";
 
 const MIN_CONFIDENCE = 0.75;
@@ -23,11 +30,11 @@ const CONTEXT_LINES = 400;
 
 const ROUTER_LOG = "jev-router-log.jsonl";
 
-const GUIDANCE: Record<string, string> = {
-  chat: "Answer directly from the conversation. No file reads, no commands.",
-  lookup: "Fact-finding — one targeted search, concise answer, then stop.",
-  fix: "Small change — locate the code, make a focused edit, run the narrowest verification.",
-};
+const GUIDANCE = new Map<string, string>([
+  ["chat", "Answer directly from the conversation. No file reads, no commands."],
+  ["lookup", "Fact-finding — one targeted search, concise answer, then stop."],
+  ["fix", "Small change — locate the code, make a focused edit, run the narrowest verification."],
+]);
 
 const TIER_ORDER = ["haiku", "sonnet", "opus", "fable"];
 
@@ -41,7 +48,7 @@ interface PromptEvent {
 interface TranscriptEntry {
   isSidechain?: boolean;
   type?: string;
-  message?: { content?: unknown; model?: unknown };
+  message?: Json;
 }
 
 interface TailResult {
@@ -50,17 +57,19 @@ interface TailResult {
   model: string | null;
 }
 
-function textOf(content: unknown): string {
-  if (typeof content === "string") return content;
+function textOf(message: Json | undefined): string {
+  const content = message?.["content"];
 
-  if (!Array.isArray(content)) return "";
+  if (isString(content)) return content;
+
+  if (!isJsonArray(content)) return "";
 
   return content
-    .map((block) =>
-      block && typeof block === "object" && (block as { type?: unknown }).type === "text"
-        ? String((block as { text?: unknown }).text ?? "")
-        : ""
-    )
+    .map((block) => {
+      if (!isJsonObject(block) || block["type"] !== "text") return "";
+
+      return isString(block["text"]) ? block["text"] : "";
+    })
     .join("\n");
 }
 
@@ -82,26 +91,29 @@ function conversationTail(transcriptPath: string, prompt: string): TailResult {
     const line = lines[i]!;
 
     if (line.length > 500_000) continue;
-    let entry: TranscriptEntry;
 
-    try {
-      entry = JSON.parse(line) as TranscriptEntry;
-    } catch {
-      continue;
-    }
+    const data = parseJsonObject(line);
+
+    if (data === null) continue;
+
+    const entry: TranscriptEntry = {
+      isSidechain: data["isSidechain"] === true,
+      type: isString(data["type"]) ? data["type"] : undefined,
+      message: isJsonObject(data["message"]) ? data["message"] : undefined,
+    };
 
     if (entry.isSidechain) continue;
-    const content = entry.message?.content;
+    const content = entry.message;
 
     if (entry.type === "user" && !prevUser) {
       const text = textOf(content).trim();
 
       if (text && text !== prompt && !text.startsWith("<")) prevUser = text;
-    } else if (entry.type === "assistant" && Array.isArray(content)) {
+    } else if (entry.type === "assistant" && isJsonArray(content)) {
       if (model === null) {
-        const m = entry.message?.model;
+        const m = entry.message?.["model"];
 
-        if (typeof m === "string") model = m;
+        if (isString(m)) model = m;
       }
 
       if (!prevAssistant) prevAssistant = textOf(content).trim();
@@ -162,7 +174,7 @@ function decide(answers: Answers): string | null {
   if (tools !== undefined && tools <= MAX_QUIET) {
     picked = "chat";
     conf = 1 - tools;
-  } else if (!picked || picked === "chat" || !(picked in GUIDANCE) || conf < MIN_CONFIDENCE) {
+  } else if (!picked || picked === "chat" || !GUIDANCE.has(picked) || conf < MIN_CONFIDENCE) {
     return null;
   }
 
@@ -173,7 +185,7 @@ function decide(answers: Answers): string | null {
     parts.push(`scope=${scope < 0.5 ? "trivial" : scope < 1.5 ? "small" : "substantial"}`);
   }
 
-  let tip = GUIDANCE[picked]!;
+  let tip = GUIDANCE.get(picked)!;
 
   if (picked !== "chat" && scope !== undefined) {
     if (scope < 0.5) tip += " Keep it minimal.";

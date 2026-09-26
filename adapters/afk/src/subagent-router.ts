@@ -4,6 +4,7 @@ import { readStdinJson } from "./shared/stdin.js";
 import { writeOutput } from "./shared/stdout.js";
 import { jevAsk } from "./shared/jev-client.js";
 import { subagentBundle, BRIEF_PARTS } from "./shared/questions.js";
+import { asNoul, asChoice } from "./shared/jev-client.js";
 import type { PreToolUseOutput } from "./shared/stdout.js";
 
 const MIN_CONFIDENCE = 0.75;
@@ -38,15 +39,12 @@ async function main(): Promise<void> {
 
   const answers = await jevAsk(state, subagentBundle(true));
 
-  const tierA = answers["model_tier"] as
-    | { choice?: string; confidence?: number }
-    | undefined;
+  const tierA = asChoice(answers["model_tier"]);
 
   const tierChoice = tierA?.choice;
   const tierConf = tierA?.confidence ?? 0;
 
-  const briefWritesA = answers["brief_writes"] as { noul?: number } | undefined;
-  const briefWrites = briefWritesA?.noul ?? 0;
+  const briefWrites = asNoul(answers["brief_writes"])?.noul ?? 0;
 
   const out: PreToolUseOutput = {
     hookSpecificOutput: { hookEventName: "PreToolUse" },
@@ -60,15 +58,14 @@ async function main(): Promise<void> {
   if (briefWrites >= MIN_CONFIDENCE) {
     const missing: string[] = [];
 
-    for (const key of Object.keys(BRIEF_PARTS)) {
-      const a = answers[key] as { noul?: number } | undefined;
-      const noul = a?.noul ?? 1;
+    for (const key of BRIEF_PARTS.keys()) {
+      const noul = asNoul(answers[key])?.noul ?? 1;
 
       if (noul <= BRIEF_MISSING) missing.push(key);
     }
 
     if (missing.length > 0) {
-      const listed = missing.map((k) => BRIEF_PARTS[k]!).join("; ");
+      const listed = missing.map((k) => BRIEF_PARTS.get(k)!).join("; ");
 
       const qualityNote =
         `[jev] brief quality: missing ${listed}. ` +

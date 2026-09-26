@@ -7,22 +7,31 @@ import { fileURLToPath } from "node:url";
 import { addedBody, EXCLUDED_RE } from "./hunks.js";
 import { TESTISH_RE } from "./rule-parser.js";
 import { configDir } from "./config.js";
+import { isJsonObject, isJsonArray, isString, isNumber } from "./json.js";
 
 const VERSION = "0.45.3";
 
 const RELEASE = (plat: string) =>
   `https://github.com/ast-grep/ast-grep/releases/download/${VERSION}/app-${plat}.zip`;
 
-const SHA256: Record<string, string> = {
-  "aarch64-apple-darwin":
+const SHA256 = new Map<string, string>([
+  [
+    "aarch64-apple-darwin",
     "6d2279dea5bea2ad79c66ea93f5fe54ba926e398a8a26de76c56db68fe59eac6",
-  "x86_64-apple-darwin":
+  ],
+  [
+    "x86_64-apple-darwin",
     "b2ffd26f42810340326a9e8a084bdc3647a8795c1a3f21fc06bd7bef3c7c5b2c",
-  "aarch64-unknown-linux-gnu":
+  ],
+  [
+    "aarch64-unknown-linux-gnu",
     "b39cfbc58da4b869a88b8a4bc57bd5deb0d24541e704cf7c257da7b53ec81c8f",
-  "x86_64-unknown-linux-gnu":
+  ],
+  [
+    "x86_64-unknown-linux-gnu",
     "f8ac830881339d1edee6b2652f54798c0f4da5a827f2db38a08ee31117783ce8",
-};
+  ],
+]);
 
 const BIN_DIR = path.join(configDir(), `jev-bin/ast-grep-${VERSION}`);
 
@@ -40,14 +49,14 @@ const MAX_CHARS = 1200;
 
 const MAX_LITERALS = 4;
 
-const LANGS: Record<string, string> = {
-  ".py": "python",
-  ".ts": "ts",
-  ".tsx": "tsx",
-  ".js": "js",
-  ".jsx": "jsx",
-  ".mjs": "js",
-};
+const LANGS = new Map<string, string>([
+  [".py", "python"],
+  [".ts", "ts"],
+  [".tsx", "tsx"],
+  [".js", "js"],
+  [".jsx", "jsx"],
+  [".mjs", "js"],
+]);
 
 let noDownload = false;
 
@@ -174,7 +183,7 @@ export async function fetchBinary(): Promise<boolean> {
     const payload = Buffer.from(await res.arrayBuffer());
     const { createHash } = await import("node:crypto");
 
-    if (createHash("sha256").update(payload).digest("hex") !== SHA256[plat]) {
+    if (createHash("sha256").update(payload).digest("hex") !== SHA256.get(plat)) {
       noDownload = true;
 
       try {
@@ -200,7 +209,7 @@ export async function fetchBinary(): Promise<boolean> {
 }
 
 function langFor(rel: string): string | null {
-  return LANGS[path.extname(rel).toLowerCase()] ?? null;
+  return LANGS.get(path.extname(rel).toLowerCase()) ?? null;
 }
 
 function run(
@@ -243,9 +252,9 @@ function run(
         }
 
         try {
-          const raw = JSON.parse(stdout) as Array<Record<string, unknown>>;
+          const raw = JSON.parse(stdout);
 
-          if (!Array.isArray(raw)) {
+          if (!isJsonArray(raw)) {
             done([]);
 
             return;
@@ -254,25 +263,26 @@ function run(
           const hits: Hit[] = [];
 
           for (const m of raw) {
-            if (typeof m !== "object" || m === null) continue;
-            const p = (m["file"] as string) ?? "";
+            if (!isJsonObject(m)) continue;
+
+            const p = isString(m["file"]) ? m["file"] : "";
 
             if (!p || EXCLUDED_RE.test(p)) continue;
 
-            const start = (m["range"] as Record<string, unknown> | undefined)?.["start"] as
-              | Record<string, unknown>
-              | undefined;
-
+            const range = isJsonObject(m["range"]) ? m["range"] : undefined;
+            const start = range !== undefined && isJsonObject(range["start"]) ? range["start"] : undefined;
             const line = start?.["line"];
+            const column = start?.["column"];
+            const rawText = m["lines"] ?? m["text"] ?? "";
 
-            const text = String((m["lines"] ?? m["text"] ?? "") as string)
+            const text = (isString(rawText) ? rawText : String(rawText))
               .split(/\s+/)
               .join(" ");
 
             hits.push({
               path: p,
-              line: typeof line === "number" ? line + 1 : 0,
-              col: typeof start?.["column"] === "number" ? (start["column"] as number) : 0,
+              line: isNumber(line) ? line + 1 : 0,
+              col: isNumber(column) ? column : 0,
               text: text.slice(0, 200),
             });
           }

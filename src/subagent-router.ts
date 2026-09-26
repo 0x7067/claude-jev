@@ -12,6 +12,7 @@ import {
 } from "../adapters/afk/src/shared/jev-client.js";
 import { subagentBundle, BRIEF_PARTS } from "../adapters/afk/src/shared/questions.js";
 import { configDir, enabled } from "../adapters/afk/src/shared/config.js";
+import { isString, parseJsonObject, type Json } from "../adapters/afk/src/shared/json.js";
 
 const MIN_CONFIDENCE = 0.75;
 
@@ -24,12 +25,12 @@ const USER_RULES = "CLAUDE.md";
 const TIERS = ["haiku", "sonnet", "opus", "fable"];
 
 interface PreToolUseEvent {
-  tool_input?: Record<string, unknown>;
+  tool_input?: Json;
   session_id?: string;
   cwd?: string;
 }
 
-function userTierCriteria(): Record<string, string> {
+function userTierCriteria() {
   let lines: string[];
 
   try {
@@ -60,10 +61,10 @@ function userTierCriteria(): Record<string, string> {
   return out;
 }
 
-function buildState(inp: Record<string, unknown>): string {
-  const subagentType = typeof inp["subagent_type"] === "string" ? inp["subagent_type"] : "";
-  const description = typeof inp["description"] === "string" ? inp["description"] : "";
-  const prompt = typeof inp["prompt"] === "string" ? inp["prompt"] : "";
+function buildState(inp: Json): string {
+  const subagentType = isString(inp["subagent_type"]) ? inp["subagent_type"] : "";
+  const description = isString(inp["description"]) ? inp["description"] : "";
+  const prompt = isString(inp["prompt"]) ? inp["prompt"] : "";
   const parts = [`Agent type: ${subagentType || "general"}`];
 
   if (description) parts.push(`Task summary: ${description}`);
@@ -79,7 +80,7 @@ function missingParts(answers: Answers): string[] {
   if (writes < MIN_CONFIDENCE) return [];
   const missing: string[] = [];
 
-  for (const key of Object.keys(BRIEF_PARTS)) {
+  for (const key of BRIEF_PARTS.keys()) {
     if ((asNoul(answers[key])?.noul ?? 1) <= BRIEF_MISSING) missing.push(key);
   }
 
@@ -92,15 +93,12 @@ function alreadyDenied(sessionId: string | undefined, promptHead: string): boole
 
     for (const line of lines) {
       if (!line.includes('"subagent"')) continue;
-      let row: { session_id?: unknown; brief_denied?: unknown; prompt?: unknown };
 
-      try {
-        row = JSON.parse(line) as typeof row;
-      } catch {
-        continue;
-      }
+      const row = parseJsonObject(line);
 
-      if (row.session_id === sessionId && row.brief_denied === true && row.prompt === promptHead) {
+      if (row === null) continue;
+
+      if (row["session_id"] === sessionId && row["brief_denied"] === true && row["prompt"] === promptHead) {
         return true;
       }
     }
@@ -112,7 +110,7 @@ function alreadyDenied(sessionId: string | undefined, promptHead: string): boole
 
 function logDecision(
   event: PreToolUseEvent,
-  inp: Record<string, unknown>,
+  inp: Json,
   answers: Answers,
   routed: string | null,
   explicit: string | undefined,
@@ -126,8 +124,7 @@ function logDecision(
       session_id: event.session_id,
       cwd: event.cwd,
       subagent_type: inp["subagent_type"],
-      prompt:
-        typeof inp["prompt"] === "string" ? (inp["prompt"] as string).slice(0, 200) : "",
+      prompt: isString(inp["prompt"]) ? inp["prompt"].slice(0, 200) : "",
       answers,
       model_routed: routed,
       model_explicit: explicit ?? null,
@@ -143,10 +140,11 @@ function logDecision(
 async function main(): Promise<void> {
   if (!enabled("subagentRouter")) return;
   const event = await readStdinJson<PreToolUseEvent>();
-  const inp = event.tool_input ?? {};
+  const inp: Json = event.tool_input ?? {};
 
-  const explicit = typeof inp["model"] === "string" && inp["model"] ? inp["model"] : undefined;
-  const promptText = typeof inp["prompt"] === "string" ? inp["prompt"] : "";
+  const modelRaw = inp["model"];
+  const explicit = isString(modelRaw) && modelRaw ? modelRaw : undefined;
+  const promptText = isString(inp["prompt"]) ? inp["prompt"] : "";
 
   if (!promptText.trim()) return;
 
@@ -173,7 +171,7 @@ async function main(): Promise<void> {
   const out: PreToolUseOutput = { hookSpecificOutput: { hookEventName: "PreToolUse" } };
 
   if (denied) {
-    const listed = missing.map((k) => BRIEF_PARTS[k]!).join("; ");
+    const listed = missing.map((k) => BRIEF_PARTS.get(k)!).join("; ");
     out.hookSpecificOutput!.permissionDecision = "deny";
     out.hookSpecificOutput!.permissionDecisionReason =
       "This brief changes files but does not state: " +
@@ -182,7 +180,7 @@ async function main(): Promise<void> {
   } else if (missing.length > 0) {
     out.systemMessage =
       "[jev router] brief still missing " +
-      missing.map((k) => BRIEF_PARTS[k]!).join(", ") +
+      missing.map((k) => BRIEF_PARTS.get(k)!).join(", ") +
       " — spawned anyway (denied once already)";
   }
 
