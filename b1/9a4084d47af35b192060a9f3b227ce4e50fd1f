@@ -1,0 +1,22 @@
+CHANGELOG.md
+  s_192292c6e473ef::t_22efc5df101dab 9
+  s_192292c6e473ef::t_bd8ca2ff4fbd6e 7-8,10
+.claude-plugin/plugin.json
+  s_192292c6e473ef::t_85a5d41eb8c150 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b19a4084d47af35b192060a9f3b227ce4e50fd1f",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "space-bunny-alpha"
+      },
+      "human_author": null
+    }
+  }
+}
