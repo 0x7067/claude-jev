@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 import path from "node:path";
-import os from "node:os";
 import { readStdinJson } from "../adapters/afk/src/shared/stdin.js";
 import { writeOutput } from "../adapters/afk/src/shared/stdout.js";
 import { loadRules } from "../adapters/afk/src/shared/rule-parser.js";
 import { formatDigest } from "../adapters/afk/src/shared/digest.js";
+import { configDir } from "../adapters/afk/src/shared/config.js";
 
 interface SessionStartEvent {
   session_id?: string;
@@ -14,9 +14,7 @@ interface SessionStartEvent {
 }
 
 function cachePath(): string {
-  const configDir =
-    process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
-  return path.join(configDir, "jev-ts-rules-cache.json");
+  return path.join(configDir(), "jev-ts-rules-cache.json");
 }
 
 async function main(): Promise<void> {
