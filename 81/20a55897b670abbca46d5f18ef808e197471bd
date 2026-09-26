@@ -1,0 +1,19 @@
+eval/rules_eval.py
+  s_192292c6e473ef::t_3c1bceddcb932b 212,215-218,221,233,258-259,261-262
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8120a55897b670abbca46d5f18ef808e197471bd",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "space-bunny-alpha"
+      },
+      "human_author": null
+    }
+  }
+}
