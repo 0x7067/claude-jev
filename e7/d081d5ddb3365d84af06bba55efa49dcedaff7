@@ -1,0 +1,172 @@
+adapters/afk/src/shared/jev-client.ts
+  s_192292c6e473ef::t_ea349a4e6cc9d3 83-96,99,102-105,175-176
+AGENTS.md
+  s_192292c6e473ef::t_efbb5b375cca13 18,20-21,47,65,171,195,198,201-204
+hooks/hooks.json
+  s_192292c6e473ef::t_3cdbd2d65d7378 8,20,30,42,52,63,75
+.github/workflows/check.yml
+  s_192292c6e473ef::t_ae21a0974fce32 35
+  s_192292c6e473ef::t_06c8479e815319 15-17,26-28,33-34,36
+hooks/register.ts
+  s_192292c6e473ef::t_de66b4df5f18be 1,65,77-79,497,499,513
+dist/adapters/afk/src/prompt-router.d.ts
+  s_192292c6e473ef::t_7e7b33443fe375 1-2
+dist/adapters/afk/src/prompt-router.js
+  s_192292c6e473ef::t_a0c6ce67f57344 1-56
+dist/adapters/afk/src/prompt-router.js.map
+  s_192292c6e473ef::t_6eb69574c8b81d 1
+dist/adapters/afk/src/rules.d.ts
+  s_192292c6e473ef::t_8836bb2a9d24ab 1-2
+dist/adapters/afk/src/rules.js
+  s_192292c6e473ef::t_d73580c63f2800 1-199
+dist/adapters/afk/src/rules.js.map
+  s_192292c6e473ef::t_916f1262580831 1
+dist/adapters/afk/src/session-start.d.ts
+  s_192292c6e473ef::t_f92f8a84a3bd34 1-14
+dist/adapters/afk/src/session-start.js
+  s_192292c6e473ef::t_0a6996f29310e5 1-40
+dist/adapters/afk/src/session-start.js.map
+  s_192292c6e473ef::t_2183c3a0102641 1
+dist/adapters/afk/src/shared/comparators.d.ts
+  s_192292c6e473ef::t_8d1eeda87a7e63 1-4
+dist/adapters/afk/src/shared/comparators.js
+  s_192292c6e473ef::t_83a40aa1ef8eae 1-434
+dist/adapters/afk/src/shared/comparators.js.map
+  s_192292c6e473ef::t_6384e101acfbdf 1
+dist/adapters/afk/src/shared/config.d.ts
+  s_192292c6e473ef::t_b0bbe2b7b04060 1-4
+dist/adapters/afk/src/shared/config.js
+  s_192292c6e473ef::t_8b7145095a416f 1-42
+dist/adapters/afk/src/shared/config.js.map
+  s_192292c6e473ef::t_9514adc6d9f585 1
+dist/adapters/afk/src/shared/digest.d.ts
+  s_192292c6e473ef::t_607b64570547da 1-2
+dist/adapters/afk/src/shared/digest.js
+  s_192292c6e473ef::t_ac9f78910398bc 1-33
+dist/adapters/afk/src/shared/digest.js.map
+  s_192292c6e473ef::t_48ae19d4e23be3 1
+dist/adapters/afk/src/shared/hunks.d.ts
+  s_192292c6e473ef::t_4567dc27fff986 1-4
+dist/adapters/afk/src/shared/hunks.js
+  s_192292c6e473ef::t_3a3d61b9999e16 1-25
+dist/adapters/afk/src/shared/hunks.js.map
+  s_192292c6e473ef::t_ecbe15ca4fc170 1
+dist/adapters/afk/src/shared/jev-client.d.ts
+  s_192292c6e473ef::t_c1ae553ce37153 1-42
+dist/adapters/afk/src/shared/jev-client.js
+  s_192292c6e473ef::t_457a7e8b8c64a1 1-119
+dist/adapters/afk/src/shared/jev-client.js.map
+  s_192292c6e473ef::t_a8435d3c636f23 1
+dist/adapters/afk/src/shared/json.d.ts
+  s_192292c6e473ef::t_92fc6aee0d8f2e 1-12
+dist/adapters/afk/src/shared/json.js
+  s_192292c6e473ef::t_d82e1940557816 1-33
+dist/adapters/afk/src/shared/json.js.map
+  s_192292c6e473ef::t_810a3fe4b974d8 1
+dist/adapters/afk/src/shared/questions.d.ts
+  s_192292c6e473ef::t_b75ce14e441826 1-35
+dist/adapters/afk/src/shared/questions.js
+  s_192292c6e473ef::t_19175d223ae5d5 1-164
+dist/adapters/afk/src/shared/questions.js.map
+  s_192292c6e473ef::t_b4ef5729babd81 1
+dist/adapters/afk/src/shared/rule-parser.d.ts
+  s_192292c6e473ef::t_4a45c3f77e225d 1-20
+dist/adapters/afk/src/shared/rule-parser.js
+  s_192292c6e473ef::t_0646f2f2320f44 1-265,267-477
+dist/adapters/afk/src/shared/rule-parser.js.map
+  s_192292c6e473ef::t_118b2d3feb8539 1
+dist/adapters/afk/src/shared/state.d.ts
+  s_192292c6e473ef::t_80e53d3c0dc58f 1-7
+dist/adapters/afk/src/shared/state.js
+  s_192292c6e473ef::t_ba536629c8d396 1-36
+dist/adapters/afk/src/shared/state.js.map
+  s_192292c6e473ef::t_2708700cd5ec97 1
+dist/adapters/afk/src/shared/stdin.d.ts
+  s_192292c6e473ef::t_8748eede77ce19 1
+dist/adapters/afk/src/shared/stdin.js
+  s_192292c6e473ef::t_a5d7aa2a26748f 1-13
+dist/adapters/afk/src/shared/stdin.js.map
+  s_192292c6e473ef::t_efcf64a9139588 1
+dist/adapters/afk/src/shared/stdout.d.ts
+  s_192292c6e473ef::t_c86cdff54ba4b3 1-44
+dist/adapters/afk/src/shared/stdout.js
+  s_192292c6e473ef::t_c30a3ba3f359f6 1-4
+dist/adapters/afk/src/shared/stdout.js.map
+  s_192292c6e473ef::t_32d8f9509d7e46 1
+dist/adapters/afk/src/shared/synthetic.d.ts
+  s_192292c6e473ef::t_57220069f4cc02 1
+dist/adapters/afk/src/shared/synthetic.js
+  s_192292c6e473ef::t_7ae5a9708530cf 1-8
+dist/adapters/afk/src/shared/synthetic.js.map
+  s_192292c6e473ef::t_f3baee27bc626d 1
+dist/adapters/afk/src/shared/utils.d.ts
+  s_192292c6e473ef::t_5093cff0e3b7e6 1
+dist/adapters/afk/src/shared/utils.js
+  s_192292c6e473ef::t_a26e43b2dd73ce 1-8
+dist/adapters/afk/src/shared/utils.js.map
+  s_192292c6e473ef::t_3e86672038df6b 1
+dist/adapters/afk/src/stop-sweep.d.ts
+  s_192292c6e473ef::t_cc3ce7f0397a60 1-2
+dist/adapters/afk/src/stop-sweep.js
+  s_192292c6e473ef::t_b06b49f57560f0 1-180
+dist/adapters/afk/src/stop-sweep.js.map
+  s_192292c6e473ef::t_19a11e7b4a9ba3 1
+dist/adapters/afk/src/subagent-router.d.ts
+  s_192292c6e473ef::t_4da5e19c27fd9d 1-2
+dist/adapters/afk/src/subagent-router.js
+  s_192292c6e473ef::t_32c41380bda483 1-60
+dist/adapters/afk/src/subagent-router.js.map
+  s_192292c6e473ef::t_cfb15cb4f48547 1
+dist/eval/compact.d.ts
+  s_192292c6e473ef::t_506239c71b869b 1-12
+dist/eval/compact.js
+  s_192292c6e473ef::t_0c318692669388 1-66,68,70-371,382-384,395-466,468-480,482-786
+dist/eval/compact.js.map
+  s_192292c6e473ef::t_454481819babb5 1
+dist/src/compactor.d.ts
+  s_192292c6e473ef::t_d1bddc79674816 1-106
+dist/src/compactor.js
+  s_192292c6e473ef::t_ae029115e12475 1-31,38-65,67-85,87-247,249-561
+dist/src/compactor.js.map
+  s_192292c6e473ef::t_a09cab6ed849f0 1
+dist/src/prompt-router.d.ts
+  s_192292c6e473ef::t_8d7e50c012cd38 1-2
+dist/src/prompt-router.js
+  s_192292c6e473ef::t_c6a330034e0d80 1-199
+dist/src/prompt-router.js.map
+  s_192292c6e473ef::t_0839fcf09bb3b3 1
+dist/src/rules.d.ts
+  s_192292c6e473ef::t_d9577d57d649cf 1-2
+dist/src/rules.js
+  s_192292c6e473ef::t_01ace71752e9d2 1-894
+dist/src/rules.js.map
+  s_192292c6e473ef::t_1d1d1e1081dacf 1
+dist/src/session-start.d.ts
+  s_192292c6e473ef::t_7aae35fec9a3f2 1-2
+dist/src/session-start.js
+  s_192292c6e473ef::t_bc1d9d92e6d07c 1-32
+dist/src/session-start.js.map
+  s_192292c6e473ef::t_4385aad6de3efa 1
+dist/src/subagent-router.d.ts
+  s_192292c6e473ef::t_a71a31db5ed22d 1-2
+dist/src/subagent-router.js
+  s_192292c6e473ef::t_0b6933caf876eb 1-150
+dist/src/subagent-router.js.map
+  s_192292c6e473ef::t_f0c4af7c350d20 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e7d081d5ddb3365d84af06bba55efa49dcedaff7",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
