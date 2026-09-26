@@ -1,0 +1,25 @@
+adapters/afk/src/shared/config.ts
+  s_192292c6e473ef::t_eef1d9a04c0c81 1-44
+src/prompt-router.ts
+  s_192292c6e473ef::t_4fa2c6eb118b6d 1-230
+adapters/afk/src/shared/synthetic.ts
+  s_192292c6e473ef::t_4f1cd92c024293 1-11
+src/session-start.ts
+  s_192292c6e473ef::t_4f512cc90e79e3 8,17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f3bc981d4b786d993d5bf64498adf2ce9812369f",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
