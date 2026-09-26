@@ -209,6 +209,29 @@ the answer cache and re-costs the run.
 - `run --out` moves the answer file, not the cache, so a re-score times the cache
   and its latency row is meaningless. Set `JEV_RULES_CACHE` to a fresh path to
   re-ask every question; the live 247-edit pass is ~320 calls and ~40s.
+- Every number above is one decision model grading itself. To measure against a
+  second one, name it as `backend:model`, or a bare model id meaning System One:
+
+```bash
+node dist/eval/compact.js compact --synth 60 --seed 0 --workers 8 \
+  --decision-model decisions:respan/span-01-lite
+python3 eval/rules_eval.py run --sample 250 --seed 0 \
+  --judge-model decisions:respan/span-01-lite
+```
+
+  The `decisions` backend is OpenRouter's `/api/alpha/decisions`, which serves
+  `respan/span-01-lite`: a System One model behind a different URL, same
+  `{state, model, questions}` contract, so the swap is a URL and a model id
+  rather than a second code path. An unknown backend id raises on both clients
+  rather than falling back quietly. Respan accepts only `noul` questions with
+  plain-string criteria, which is every question compaction asks. The backend
+  name is part of the compaction selection signature, so a second model's run
+  cannot read the first model's cached decisions back as its own. Measured over
+  the full population, span-01-lite matches Jev on verbatim coverage, 84.2%
+  against 85.9%, and misses both planted floors, 91.0% and 75.0% against 97.8%
+  and 89.8%: coverage is judge-independent, telling a user constraint from a
+  routine row is not. Read on the real events alone it inverts to 92.3%, which
+  is what the synthetic arm is for.
 
 The rules eval judges each record at its `sha`, and reads
 `eval/global_CLAUDE.md` in place of `~/.claude/CLAUDE.md`. Change a case's
