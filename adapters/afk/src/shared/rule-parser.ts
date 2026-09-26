@@ -571,7 +571,7 @@ const IMPORTISH_RE =
   /^\s*[-+]?\s*(import\b|from\s+\S+\s+import\b|export\s+\*|const\s+\w+\s*=\s*require\(|require\(|use\s+\w|#include\b|using\b)/m;
 const MANIFEST_RE =
   /(^|\/)(package\.json|requirements[^/]*\.txt|pyproject\.toml|go\.mod|Cargo\.toml|Gemfile|setup\.py)$/;
-const TESTISH_RE = /\btest|\bspec\b|describe\(|\bit\(|assert|expect\(/i;
+export const TESTISH_RE = /\btest|\bspec\b|describe\(|\bit\(|assert|expect\(/i;
 const NUMBER_RE = /(?<![\w.])-?\d[\d_]*(\.\d+)?\b/g;
 const STRINGY_RE = /"[^"\n]{4,}"|'[^'\n]{4,}'|`[^`\n]{4,}`/;
 const DEFINES_RE =
