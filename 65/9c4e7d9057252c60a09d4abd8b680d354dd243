@@ -1,0 +1,27 @@
+adapters/afk/src/shared/hunks.ts
+  s_192292c6e473ef::t_a3d8c1a84124eb 1-28
+adapters/afk/src/shared/comparators.ts
+  s_192292c6e473ef::t_cb8d5c10a08eb5 1-384,386-452
+  s_192292c6e473ef::t_996f7a693c64f6 385
+tsconfig.json
+  s_192292c6e473ef::t_9aac0a0296cb63 11
+  s_192292c6e473ef::t_28ad221990a7fd 12
+adapters/afk/src/shared/rule-parser.ts
+  s_192292c6e473ef::t_18d24f987a4438 574
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "659c4e7d9057252c60a09d4abd8b680d354dd243",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
