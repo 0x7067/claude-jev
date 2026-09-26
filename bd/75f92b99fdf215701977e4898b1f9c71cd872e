@@ -1,0 +1,19 @@
+scripts/rules.py
+  s_192292c6e473ef::t_1aa9120b3aaaac 126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bd75f92b99fdf215701977e4898b1f9c71cd872e",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
