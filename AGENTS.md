@@ -229,6 +229,16 @@ python3 eval/rules_eval.py run --sample 250 --seed 0 \
   provider, so the billing path is free apart from records that already
   failed.
 
+  The decisions endpoint returns `HTTP 503` from a gateway above roughly 24
+  concurrent requests, measured: 4, 8, and 16 concurrent all succeed, 24 loses
+  one. `--workers 8` times the per-event chunk parallelism is about that, so run
+  the cross-model compaction eval at `--workers 2`. Note what a gateway error
+  does to the numbers: the compactor is fail-open, so a failed chunk yields no
+  answers, its blocks go unscored, and unscored rows are kept. In the re-read
+  path that inflates coverage, and in the planted path an all-chunks event is
+  dropped and shows up as a smaller `n`. A run degraded only in part is
+  visible in neither, which is why the floors print their own `n`.
+
   The `decisions` backend is OpenRouter's `/api/alpha/decisions`, which serves
   `respan/span-01-lite`: a System One model behind a different URL, same
   `{state, model, questions}` contract, so the swap is a URL and a model id
