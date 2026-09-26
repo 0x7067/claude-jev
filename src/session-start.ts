@@ -22,9 +22,11 @@ async function main(): Promise<void> {
   const cwd = event.cwd || process.cwd();
 
   const allRules = await loadRules(cwd, { cachePath: cachePath() });
+
   if (allRules.length === 0) return;
 
   const digest = formatDigest(allRules);
+
   if (!digest) return;
 
   writeOutput({

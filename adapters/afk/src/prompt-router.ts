@@ -6,6 +6,7 @@ import { jevAsk } from "./shared/jev-client.js";
 import { intentBundle } from "./shared/questions.js";
 
 const MIN_CONFIDENCE = 0.75;
+
 const MAX_QUIET = 0.10;
 
 const GUIDANCE: Record<string, string> = {
@@ -45,14 +46,18 @@ async function main(): Promise<void> {
   if (!choice || !(choice in GUIDANCE) || conf < MIN_CONFIDENCE) return;
 
   const parts = [`[jev router] intent=${choice} conf=${conf.toFixed(2)}`];
+
   if (scope != null) {
     const scopeLabel =
       scope < 0.5 ? "trivial" : scope < 1.5 ? "small" : "substantial";
+
     parts.push(`scope=${scopeLabel}`);
   }
+
   const line = parts.join(" ");
 
   let tip = GUIDANCE[choice]!;
+
   if (choice !== "chat" && scope != null) {
     if (scope < 0.5) tip += " Keep it minimal.";
     else if (scope >= 1.5) tip += " Sketch the plan in a few bullets first.";

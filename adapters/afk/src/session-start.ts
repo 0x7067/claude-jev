@@ -33,6 +33,7 @@ async function main(): Promise<void> {
   if (allRules.length === 0) return;
 
   const digest = formatDigest(allRules);
+
   if (!digest) return;
 
   writeOutput({

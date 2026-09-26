@@ -9,6 +9,7 @@ export interface SessionState {
 
 export function statePath(sessionId: string): string {
   const safe = sessionId.replace(/[^\w-]/g, "_");
+
   return path.join(os.tmpdir(), `jev-afk-${safe}.json`);
 }
 
@@ -16,6 +17,7 @@ export function loadState(sessionId: string): SessionState {
   try {
     const raw = fs.readFileSync(statePath(sessionId), "utf8");
     const data = JSON.parse(raw) as Partial<SessionState>;
+
     return {
       blocks: data.blocks ?? {},
       stopBlocks: data.stopBlocks ?? 0,

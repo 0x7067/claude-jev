@@ -3,6 +3,7 @@ const SYNTHETIC =
 
 export function isSynthetic(text: string): boolean {
   const head = text.slice(0, 200);
+
   return (
     SYNTHETIC.test(text) ||
     head.includes("<teammate-message") ||

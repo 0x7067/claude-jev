@@ -7,6 +7,7 @@ import { subagentBundle, BRIEF_PARTS } from "./shared/questions.js";
 import type { PreToolUseOutput } from "./shared/stdout.js";
 
 const MIN_CONFIDENCE = 0.75;
+
 const BRIEF_MISSING = 0.25;
 
 interface PreToolUseEvent {
@@ -27,6 +28,7 @@ async function main(): Promise<void> {
   if (inp.model) return;
 
   const briefText = (inp.prompt ?? "").slice(0, 8000);
+
   if (!briefText.trim()) return;
 
   const state = [
@@ -39,6 +41,7 @@ async function main(): Promise<void> {
   const tierA = answers["model_tier"] as
     | { choice?: string; confidence?: number }
     | undefined;
+
   const tierChoice = tierA?.choice;
   const tierConf = tierA?.confidence ?? 0;
 
@@ -56,17 +59,21 @@ async function main(): Promise<void> {
 
   if (briefWrites >= MIN_CONFIDENCE) {
     const missing: string[] = [];
+
     for (const key of Object.keys(BRIEF_PARTS)) {
       const a = answers[key] as { noul?: number } | undefined;
       const noul = a?.noul ?? 1;
+
       if (noul <= BRIEF_MISSING) missing.push(key);
     }
 
     if (missing.length > 0) {
       const listed = missing.map((k) => BRIEF_PARTS[k]!).join("; ");
+
       const qualityNote =
         `[jev] brief quality: missing ${listed}. ` +
         `The subagent cannot see this conversation — add the missing parts to the prompt.`;
+
       const existing = out.hookSpecificOutput!.additionalContext;
       out.hookSpecificOutput!.additionalContext = existing
         ? `${existing}\n${qualityNote}`

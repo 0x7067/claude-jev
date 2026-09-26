@@ -1,6 +1,7 @@
 import type { Rule } from "./rule-parser.js";
 
 const MAX_RULES_IN_DIGEST = 40;
+
 const MAX_DIGEST_CHARS = 3000;
 
 export function formatDigest(rules: Rule[]): string {
@@ -12,6 +13,7 @@ export function formatDigest(rules: Rule[]): string {
   if (forbidRules.length > 0) {
     lines.push("");
     lines.push("FORBID:");
+
     for (const r of forbidRules.slice(0, MAX_RULES_IN_DIGEST)) {
       const scope = r.scope.length > 0 ? ` (${r.scope.join(", ")})` : "";
       lines.push(`  - ${r.text}${scope}`);
@@ -21,6 +23,7 @@ export function formatDigest(rules: Rule[]): string {
   if (requireRules.length > 0) {
     lines.push("");
     lines.push("REQUIRE:");
+
     for (const r of requireRules.slice(0, MAX_RULES_IN_DIGEST - forbidRules.length)) {
       const scope = r.scope.length > 0 ? ` (${r.scope.join(", ")})` : "";
       lines.push(`  - ${r.text}${scope}`);
@@ -35,8 +38,10 @@ export function formatDigest(rules: Rule[]): string {
   );
 
   let digest = lines.join("\n");
+
   if (digest.length > MAX_DIGEST_CHARS) {
     digest = digest.slice(0, MAX_DIGEST_CHARS - 20) + "\n  ... (truncated)";
   }
+
   return digest;
 }

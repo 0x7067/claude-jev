@@ -16,22 +16,33 @@ import {
 } from "../src/compactor.js";
 
 const HERE = path.dirname(fileURLToPath2(import.meta.url));
+
 const ROOT = path.resolve(HERE, "..", "..");
+
 const DATA = path.join(ROOT, "eval", "observed");
+
 const COMPACT_CACHE = path.join(DATA, "compact_cache.jsonl");
+
 const COMPACTOR_SRC = path.join(ROOT, "dist", "src", "compactor.js");
+
 const PROJECTS = path.join(os.homedir(), ".claude", "projects");
 
 const CONTINUED = "continued from a previous conversation";
+
 const FILE_TOOLS = new Set(["Read", "Edit", "Write", "MultiEdit", "NotebookEdit", "NotebookRead"]);
+
 const SKIP_TOOLS = new Set(["Task", "TaskCreate", "TaskUpdate", "TaskList", "TaskGet", "TodoWrite"]);
 
 const SYNTH_CHARS = 100_000;
+
 const MIN_POST_RETRIEVALS = 5;
+
 const MIN_BLOCKS = 30;
 
 const FLOOR_REFETCH_FULL = 0.7;
+
 const FLOOR_PLANTED_USER = 0.95;
+
 const FLOOR_PLANTED_BURIED = 0.9;
 
 const SUMMARY_PROMPT = `Your task is to create a detailed summary of the conversation so far between a user and an AI coding assistant, paying close attention to the user's explicit requests and the assistant's previous actions. This summary should be thorough in capturing technical details, code patterns, and architectural decisions that would be essential for continuing development work without losing context.
@@ -53,26 +64,37 @@ interface ToolCall {
 
 function toolKey(name: string, inp: Record<string, unknown>): string | null {
   if (SKIP_TOOLS.has(name)) return null;
+
   if (FILE_TOOLS.has(name)) {
     const p = (inp["file_path"] ?? inp["notebook_path"]) as string | undefined;
+
     return p ? `file:${path.normalize(p)}` : null;
   }
+
   if (name === "Grep") {
     const p = (inp["path"] ?? inp["pattern"]) as string | undefined;
+
     return p ? `grep:${p}` : null;
   }
+
   if (name === "Glob") {
     const p = inp["pattern"] as string | undefined;
+
     return p ? `glob:${p}` : null;
   }
+
   if (name === "Bash") {
     const lines = String(inp["command"] ?? "").trim().split("\n");
+
     return lines[0] ? `bash:${lines[0].trim().slice(0, 120)}` : null;
   }
+
   if (name === "WebFetch") {
     const u = inp["url"] as string | undefined;
+
     return u ? `url:${u}` : null;
   }
+
   return null;
 }
 
@@ -80,31 +102,39 @@ const REFETCH_KINDS = ["file", "grep", "glob", "url"];
 
 function toolCalls(lines: string[], lo: number, hi: number): ToolCall[] {
   const out: ToolCall[] = [];
+
   for (let i = lo; i < hi; i++) {
     const line = lines[i]!;
+
     if (line.length > 2_000_000) continue;
     let d: Record<string, unknown>;
+
     try {
       d = JSON.parse(line) as Record<string, unknown>;
     } catch {
       continue;
     }
+
     if (d["isSidechain"] || d["type"] !== "assistant") continue;
     const content = (d["message"] as Record<string, unknown> | undefined)?.["content"];
+
     for (const b of Array.isArray(content) ? content : []) {
       if (typeof b === "object" && b !== null && (b as Record<string, unknown>)["type"] === "tool_use") {
         const block = b as Record<string, unknown>;
         const name = String(block["name"] ?? "");
         const key = toolKey(name, (block["input"] ?? {}) as Record<string, unknown>);
+
         if (key) out.push({ i, name, key });
       }
     }
   }
+
   return out;
 }
 
 function refetches(pre: ToolCall[], post: ToolCall[]): string[] {
   const fetched = new Set(pre.map((c) => c.key));
+
   return post
     .filter((c) => REFETCH_KINDS.includes(c.key.split(":")[0]!) && fetched.has(c.key))
     .map((c) => c.key);
@@ -115,10 +145,13 @@ function keyTerms(key: string): string[] {
   const kind = key.slice(0, idx);
   const val = key.slice(idx + 1);
   const terms = [val];
+
   if (kind === "file") {
     const base = path.basename(val);
+
     if (base !== val) terms.push(base);
   }
+
   return terms;
 }
 
@@ -135,29 +168,37 @@ interface Boundary {
 
 function boundaries(lines: string[]): Boundary[] {
   const byUuid = new Map<string, Record<string, unknown>>();
+
   for (let i = 0; i < lines.length; i++) {
     try {
       const d = JSON.parse(lines[i]!) as Record<string, unknown>;
+
       if (d["uuid"]) byUuid.set(String(d["uuid"]), d);
     } catch {
       continue;
     }
   }
+
   const out: Boundary[] = [];
+
   for (let i = 0; i < lines.length; i++) {
     let d: Record<string, unknown>;
+
     try {
       d = JSON.parse(lines[i]!) as Record<string, unknown>;
     } catch {
       continue;
     }
+
     if (d["subtype"] !== "compact_boundary") continue;
     const meta = (d["compactMetadata"] ?? {}) as Record<string, unknown>;
     let summary = "";
+
     for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
       try {
         const n = JSON.parse(lines[j]!) as Record<string, unknown>;
         const c = (n["message"] as Record<string, unknown> | undefined)?.["content"];
+
         if (typeof c === "string" && c.includes(CONTINUED)) {
           summary = c;
           break;
@@ -166,14 +207,18 @@ function boundaries(lines: string[]): Boundary[] {
         continue;
       }
     }
+
     const uuids =
       ((meta["preservedMessages"] ?? {}) as Record<string, unknown>)["uuids"] as string[] | undefined;
+
     const preserved = (uuids ?? [])
       .filter((u) => byUuid.has(u))
       .map((u) => blockText(((byUuid.get(u)!)["message"] as Record<string, unknown> | undefined)?.["content"]))
       .join("\n");
+
     out.push({ i, meta, summary, preserved });
   }
+
   return out;
 }
 
@@ -184,18 +229,23 @@ function selectionSig(): string {
 function loadCompactCache(): [Map<string, Record<string, unknown>>, Map<string, string | null>] {
   const judged = new Map<string, Record<string, unknown>>();
   const summaries = new Map<string, string | null>();
+
   if (fs.existsSync(COMPACT_CACHE)) {
     for (const line of fs.readFileSync(COMPACT_CACHE, "utf8").split("\n")) {
       if (!line.trim()) continue;
+
       try {
         const d = JSON.parse(line) as Record<string, unknown>;
+
         if (d["sig"]) judged.set(`${d["key"]}|${d["sig"]}`, d);
+
         if (d["summary"] !== undefined && d["summary"] !== null) summaries.set(String(d["key"]), d["summary"] as string);
       } catch {
         continue;
       }
     }
   }
+
   return [judged, summaries];
 }
 
@@ -217,60 +267,77 @@ async function replay(
   let summary = summaries.get(key) ?? null;
   const cacheKey = `${key}|${sig}`;
   const hit = cache.get(cacheKey);
+
   if (hit) return { kept: hit["kept"] as string[], stats: hit["stats"] as Record<string, unknown>, summary };
   const tmp = path.join(os.tmpdir(), `jev-compact-${process.pid}-${Math.random().toString(36).slice(2)}.jsonl`);
   fs.writeFileSync(tmp, preLines.join("\n"));
   let kept: string[];
   let stats: Record<string, unknown>;
+
   try {
     [kept, stats] = await judge(tmp, null);
   } finally {
     fs.rmSync(tmp, { force: true });
   }
+
   if (summary === null && gen) {
     summary = await gen();
     summaries.set(key, summary);
   }
+
   if (stats["judged"]) {
     const d = { key, sig, kept, stats, summary };
     cache.set(cacheKey, d);
+
     if (cacheF !== null) fs.appendFileSync(cacheF, JSON.stringify(d) + "\n");
   }
+
   return { kept, stats, summary };
 }
 
 function flatten(lines: string[], hi: number): string {
   const parts: string[] = [];
+
   for (const line of lines.slice(0, hi)) {
     let d: Record<string, unknown>;
+
     try {
       d = JSON.parse(line) as Record<string, unknown>;
     } catch {
       continue;
     }
+
     if (d["isSidechain"] || (d["type"] !== "user" && d["type"] !== "assistant")) continue;
     const t = blockText((d["message"] as Record<string, unknown> | undefined)?.["content"]).trim();
+
     if (t) parts.push(t);
   }
+
   return parts.join("\n\n");
 }
 
 function tailText(lines: string[], hi: number, n = 6): string {
   const texts: string[] = [];
+
   for (let i = hi - 1; i >= 0; i--) {
     let d: Record<string, unknown>;
+
     try {
       d = JSON.parse(lines[i]!) as Record<string, unknown>;
     } catch {
       continue;
     }
+
     if (d["type"] !== "user" && d["type"] !== "assistant") continue;
     const t = blockText((d["message"] as Record<string, unknown> | undefined)?.["content"]).trim();
+
     if (t) {
       texts.unshift(t);
+
       if (texts.length >= n) break;
     }
   }
+
   return texts.join("\n");
 }
 
@@ -278,27 +345,35 @@ function synthCut(lines: string[]): number | null {
   let total = 0;
   let blocks = 0;
   let cut: number | null = null;
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
+
     if (line.length > 2_000_000) continue;
     let d: Record<string, unknown>;
+
     try {
       d = JSON.parse(line) as Record<string, unknown>;
     } catch {
       continue;
     }
+
     const text = visibleText(d as never);
+
     if (text === null) continue;
     total += text.length;
     blocks += 1;
+
     if (total >= SYNTH_CHARS && blocks >= MIN_BLOCKS) {
       cut = i + 1;
       break;
     }
   }
+
   if (cut === null) return null;
   const post = toolCalls(lines, cut, lines.length);
   const n = post.filter((c) => REFETCH_KINDS.includes(c.key.split(":")[0]!)).length;
+
   return n >= MIN_POST_RETRIEVALS ? cut : null;
 }
 
@@ -309,6 +384,7 @@ async function genSummary(conversation: string, model: string): Promise<string |
     timeout: 600_000,
     maxBuffer: 64 * 1024 * 1024,
   });
+
   return r.status === 0 && r.stdout.trim() ? r.stdout.trim() : null;
 }
 
@@ -344,7 +420,9 @@ const CONSTRAINTS = [
   "Log lines must use the structured logger, not print or console.log.",
   "Do not run the seed script against the shared staging database.",
 ];
+
 const RESTATE = (c: string) => `Noted, and I'll keep to your constraint: ${c}`;
+
 const KEYS = [
   "migrations/",
   "pnpm",
@@ -360,11 +438,13 @@ const KEYS = [
 
 function mulberry32(seedText: string): () => number {
   let h = crypto.createHash("sha256").update(seedText).digest().readUInt32LE(0);
+
   return () => {
     h |= 0;
     h = (h + 0x6d2b79f5) | 0;
     let t = Math.imul(h ^ (h >>> 15), 1 | h);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
@@ -380,17 +460,22 @@ function plant(blocks: Block[], rng: () => number): [Block[], { key: string; use
   const posUser = hi > lo ? lo + Math.floor(rng() * (hi - lo)) : lo;
   out.splice(posUser, 0, { role: "user", text: c });
   const cands: number[] = [];
+
   for (let i = 0; i < out.length; i++) {
     const b = out[i]!;
+
     if (b.role === "assistant" && i > posUser + 1 && i < out.length - 8 && !b.text.startsWith("[tool_use") && b.text.length < 900) {
       cands.push(i);
     }
   }
+
   let posBuried: number | null = cands.length > 0 ? cands[Math.floor(rng() * cands.length)]! : null;
+
   if (posBuried !== null) {
     const b = out[posBuried]!;
     out[posBuried] = { role: "assistant", text: b.text.replace(/\s+$/, "") + "\n\n" + RESTATE(c) };
   }
+
   return [out, { key, user: posUser, buried: posBuried }];
 }
 
@@ -404,29 +489,39 @@ async function runEvent(
   const tmp = path.join(os.tmpdir(), `jev-planted-${process.pid}-${Math.random().toString(36).slice(2)}.jsonl`);
   fs.writeFileSync(tmp, lines.slice(0, i).join("\n"));
   let blocks: Block[];
+
   try {
     blocks = transcriptBlocks(tmp).slice(-MAX_BLOCKS);
   } finally {
     fs.rmSync(tmp, { force: true });
   }
+
   if (blocks.length < 30) return null;
   const [plantedBlocks, meta] = plant(blocks, mulberry32(`${seed}:${path.basename(fp)}`));
   let kept: Kept[];
   let stats: Record<string, unknown>;
+
   try {
     [kept, stats] = await selectBlocks(plantedBlocks, null);
   } catch (e) {
     process.stderr.write(`  jev failed on ${path.basename(fp)}: ${String(e)}\n`);
+
     return null;
   }
+
   const final = new Map(kept.map((k) => [k.i, k]));
+
   const fate = (pos: number | null): string | null => {
     if (pos === null) return null;
     const k = final.get(pos);
+
     if (k === undefined) return "dropped";
+
     return k.text.includes(meta.key) ? "kept" : "cut";
   };
+
   const rows = stats["rows"] as Array<Record<string, unknown>>;
+
   return {
     file: path.basename(fp),
     kind,
@@ -442,10 +537,12 @@ async function runEvent(
 
 function shuffle<T>(arr: T[], rng: () => number): T[] {
   const a = [...arr];
+
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [a[i], a[j]] = [a[j]!, a[i]!];
   }
+
   return a;
 }
 
@@ -456,18 +553,23 @@ function gate(rows: EventRow[], plants: Array<Record<string, unknown> | null>): 
   const buried = plants.filter((p): p is Record<string, unknown> => p !== null && p["buried"] !== null).map((p) => p["buried"] as string);
   const su = user.length > 0 ? user.filter((v) => v === "kept").length / user.length : NaN;
   const sb = buried.length > 0 ? buried.filter((v) => v === "kept").length / buried.length : NaN;
+
   const checks: Array<[string, number, number, number]> = [
     ["re-fetch verbatim coverage", full, FLOOR_REFETCH_FULL, reads],
     ["planted user constraint survival", su, FLOOR_PLANTED_USER, user.length],
     ["planted buried restatement survival", sb, FLOOR_PLANTED_BURIED, buried.length],
   ];
+
   console.log("\ncompaction gate (both goals, one verdict):");
   let failed = false;
+
   for (const [name, val, floor, n] of checks) {
     const ok = val >= floor;
+
     if (!ok) failed = true;
     console.log(`  ${ok ? "ok  " : "FAIL"} ${name.padEnd(38)} ${(100 * val).toFixed(1).padStart(5)}%  floor ${Math.round(100 * floor)}%  n=${n}`);
   }
+
   return failed ? 2 : 0;
 }
 
@@ -482,6 +584,7 @@ interface Args {
 
 function parseArgs(argv: string[]): Args {
   const args: Args = { synth: 0, seed: 0, workers: 4, model: "sonnet" };
+
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--synth") args.synth = Number(argv[++i]);
     else if (argv[i] === "--seed") args.seed = Number(argv[++i]);
@@ -490,29 +593,37 @@ function parseArgs(argv: string[]): Args {
     else if (argv[i] === "--out") args.out = argv[++i];
     else if (argv[i] === "--projects") args.projects = argv[++i];
   }
+
   return args;
 }
 
 async function pooled<T, R>(items: T[], workers: number, fn: (item: T) => Promise<R>): Promise<Array<PromiseSettledResult<R>>> {
   const results: Array<PromiseSettledResult<R>> = [];
+
   for (let i = 0; i < items.length; i += workers) {
     const batch = items.slice(i, i + workers);
     results.push(...(await Promise.allSettled(batch.map(fn))));
   }
+
   return results;
 }
 
 export async function cmdCompact(args: Args): Promise<number> {
   const files = (function walk(dir: string): string[] {
     const out: string[] = [];
+
     if (!fs.existsSync(dir)) return out;
+
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const p = path.join(dir, entry.name);
+
       if (entry.isDirectory()) out.push(...walk(p));
       else if (entry.name.endsWith(".jsonl")) out.push(p);
     }
+
     return out;
   })(args.projects ?? PROJECTS).sort();
+
   const [cache, summaries] = loadCompactCache();
   fs.mkdirSync(DATA, { recursive: true });
   const cacheF = fs.openSync(COMPACT_CACHE, "a");
@@ -524,25 +635,31 @@ export async function cmdCompact(args: Args): Promise<number> {
 
   for (const fp of files) {
     let lines: string[];
+
     try {
       lines = fs.readFileSync(fp, "utf8").split("\n");
     } catch {
       continue;
     }
+
     const norm = fp.includes("/subagents/")
       ? lines.map((line) => {
           try {
             const d = JSON.parse(line) as Record<string, unknown>;
             delete d["isSidechain"];
+
             return JSON.stringify(d);
           } catch {
             return line;
           }
         })
       : lines;
+
     const evs = boundaries(norm);
+
     if (evs.length > 0) {
       let prev = -1;
+
       for (let n = 0; n < evs.length; n++) {
         const end = n + 1 < evs.length ? evs[n + 1]!.i : norm.length;
         realTodo.push([fp, norm, evs[n]!.i, end, prev, evs[n]!, "real"]);
@@ -551,11 +668,13 @@ export async function cmdCompact(args: Args): Promise<number> {
     } else {
       if (norm.slice(0, 200).some((line) => line.includes(CONTINUED))) skipped.push(fp);
       const cut = synthCut(norm);
+
       if (cut !== null) candidates.push([fp, norm, cut, norm.length, -1, null, "synth"]);
     }
   }
 
   let synthTodo = candidates;
+
   if (args.synth > 0 && candidates.length > args.synth) {
     synthTodo = shuffle(candidates, mulberry32(String(args.seed))).slice(0, args.synth);
   } else if (args.synth === 0) {
@@ -565,6 +684,7 @@ export async function cmdCompact(args: Args): Promise<number> {
   const todo = [...realTodo, ...synthTodo];
   console.error(`  events: ${realTodo.length} real, ${synthTodo.length} synth`);
   let done = 0;
+
   const analyze = async (t: [string, string[], number, number, number, Boundary | null, string]): Promise<EventRow> => {
     const [fp, lines, i, end, prevI, ev, kind] = t;
     const pre = toolCalls(lines, prevI + 1, i);
@@ -577,6 +697,7 @@ export async function cmdCompact(args: Args): Promise<number> {
     let trigger: unknown;
     let kept: string[];
     let stats: Record<string, unknown>;
+
     if (kind === "real") {
       ({ kept, stats } = await replay(lines.slice(0, i), cache, summaries, cacheF));
       defaultCtx = ev!.summary + "\n" + ev!.preserved;
@@ -593,10 +714,12 @@ export async function cmdCompact(args: Args): Promise<number> {
       trigger = "synth";
       summary = r.summary;
     }
+
     const gated = kept.length === 0;
     const digestRows: string[] = gated ? [] : kept;
     const digest = digestRows.join("\n");
     const digestFull = digestRows.filter((t) => !t.includes("elided by jev-compact")).join("\n");
+
     return {
       kind,
       session: fp.split("/").slice(-2, -1)[0]!.slice(0, 48),
@@ -619,15 +742,19 @@ export async function cmdCompact(args: Args): Promise<number> {
   };
 
   const settled = await pooled(todo, args.workers, analyze);
+
   for (const f of settled) {
     if (f.status === "fulfilled") {
       (f.value.kind === "real" ? real : synth).push(f.value);
     } else {
       process.stderr.write(`  event failed: ${String(f.reason).slice(0, 200)}\n`);
     }
+
     done++;
+
     if (done % 5 === 0 || done === todo.length) process.stderr.write(`\r  analyzed ${done}/${todo.length}`);
   }
+
   if (todo.length > 0) process.stderr.write("\n");
   fs.closeSync(cacheF);
 
@@ -635,17 +762,21 @@ export async function cmdCompact(args: Args): Promise<number> {
   const plantResults = plantFuts.filter((f): f is PromiseFulfilledResult<Record<string, unknown>> => f.status === "fulfilled" && f.value !== null).map((f) => f.value);
 
   const tot: Record<string, number> = {};
+
   for (const r of [...real, ...synth]) {
     for (const k of ["post_tokens", "jev_ms", "jev_tokens", "refetch_reads", "refetch_default_covered", "refetch_jev_covered", "refetch_jev_full"] as const) {
       tot[k] = (tot[k] ?? 0) + (r[k] || 0);
     }
+
     tot["events"] = (tot["events"] ?? 0) + 1;
     tot["gated"] = (tot["gated"] ?? 0) + (r.jev_gated ? 1 : 0);
     tot["no_summary"] = (tot["no_summary"] ?? 0) + (r.no_summary ? 1 : 0);
   }
+
   const n = tot["events"] ?? 0;
   console.log("default compaction vs Jev selection, replayed on the same blocks");
   console.log(`  real events: ${real.length}, synth: ${synth.length}, skipped files: ${skipped.length}`);
+
   if (n > 0) {
     console.log(
       `  TOTAL ${n} events | re-reads ${tot["refetch_reads"]} | default covered ${tot["refetch_default_covered"]} | jev covered ${tot["refetch_jev_covered"]} | jev verbatim ${tot["refetch_jev_full"]}`
@@ -653,14 +784,18 @@ export async function cmdCompact(args: Args): Promise<number> {
     console.log(
       `  per event: default ${Math.round(tot["post_tokens"] / n)} tok vs jev ${Math.round(tot["jev_tokens"] / n)} tok (+${Math.round(tot["jev_ms"] / n)}ms judging)`
     );
+
     if (tot["gated"]) console.log(`    * ${tot["gated"]} kept no rows — jev applied nothing`);
+
     if (tot["no_summary"]) console.log(`    ! ${tot["no_summary"]} synthetic events have no summary (claude -p failed)`);
   }
+
   if (skipped.length > 0) console.log(`\nskipped ${skipped.length} transcripts whose compaction happened in an earlier session file`);
 
   const outPath = args.out ?? path.join(DATA, "compare_compact.jsonl");
   fs.writeFileSync(outPath, [...real, ...synth].map((r) => JSON.stringify(r)).join("\n") + "\n");
   console.log(`\nrows -> ${outPath}`);
+
   return gate([...real, ...synth], plantResults);
 }
 
@@ -668,10 +803,12 @@ const isMain = process.argv[1] !== undefined && path.resolve(process.argv[1]) ==
 
 if (isMain) {
   const [cmd, ...rest] = process.argv.slice(2);
+
   if (cmd !== "compact") {
     console.error("usage: node compact.js compact [--synth N] [--seed N] [--workers N] [--model M] [--out P]");
     process.exit(2);
   }
+
   cmdCompact(parseArgs(rest))
     .then((code) => process.exit(code))
     .catch((e) => {

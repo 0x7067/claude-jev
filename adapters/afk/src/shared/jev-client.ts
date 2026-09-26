@@ -19,11 +19,15 @@ export type ScoreQuestion = {
 export type Question = NoulQuestion | ChoiceQuestion | ScoreQuestion;
 
 export type NoulAnswer = { noul: number };
+
 export type ChoiceAnswer = { choice: string; confidence: number };
+
 export type ScoreAnswer = { score: number };
+
 export type Answer = NoulAnswer | ChoiceAnswer | ScoreAnswer;
 
 export type Questions = Record<string, Question>;
+
 export type Answers = Record<string, Answer>;
 
 export function asChoice(answer: Answers[string] | undefined): ChoiceAnswer | undefined {
@@ -39,6 +43,7 @@ export function asScore(answer: Answers[string] | undefined): ScoreAnswer | unde
 }
 
 const DEFAULT_MODEL = "jev-latest";
+
 const DEFAULT_TIMEOUT_MS = 8000;
 
 interface Provider {
@@ -65,19 +70,23 @@ const PROVIDERS: Provider[] = [
 
 function providerFor(key: string): Provider {
   let best: Provider = PROVIDERS[0]!;
+
   for (const p of PROVIDERS) {
     if (key.startsWith(p.keyPrefix) && p.keyPrefix.length >= best.keyPrefix.length) {
       best = p;
     }
   }
+
   return best;
 }
 
 function resolveKey(): { key: string; provider: Provider } {
   for (const p of PROVIDERS) {
     const k = (process.env[p.keyVar] ?? "").trim();
+
     if (k) return { key: k, provider: providerFor(k) };
   }
+
   throw new Error("No Jev API key found. Set TYPESAFE_API_KEY or OPENROUTER_API_KEY.");
 }
 
@@ -115,6 +124,7 @@ export async function jevAsk(
     }
 
     const payload = (await res.json()) as { answers?: Answers };
+
     return payload.answers ?? {};
   } finally {
     clearTimeout(timer);

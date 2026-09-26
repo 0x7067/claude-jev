@@ -28,39 +28,65 @@ import { configDir, enabled } from "../adapters/afk/src/shared/config.js";
 const RULES_CACHE = "jev-ts-rules-cache.json";
 
 const ACT = 0.8;
+
 const FLAG = 0.5;
+
 const MAX_RULES = 40;
+
 const MAX_STATE_CHARS = 8000;
+
 const MAX_TASK_CHARS = 600;
+
 const MAX_ANSWER_CHARS = 1500;
+
 const MAX_BLOCKS = 2;
+
 const MAX_STOP_BLOCKS = 2;
+
 const HOOK_BUDGET = 9.0;
+
 const ESCALATE_MIN = 3.0;
+
 const MAX_HUNK_CHARS = 2000;
+
 const MAX_TURN_CHARS = 16000;
+
 const MAX_PROMPT_TAIL = 400;
+
 const CONTEXT_LINES = 4;
+
 const MAX_CONTEXT_CHARS = 1200;
+
 const SIBLING_CAP = 40;
+
 const ESCALATE = true;
+
 const MAX_BLOCK_CHARS = 3000;
+
 const ACT_DECISIVE = 0.7;
+
 const ACT_NOISY = 0.85;
+
 const CALIB_MIN_CHECKS = 20;
+
 const CALIB_DECISIVE = 0.1;
+
 const CALIB_NOISY = 0.25;
+
 const STRICT_PREAMBLE =
   "This edit was already judged possibly in breach of this rule. Decide it. ";
 
 const ROUTER_LOG = "jev-router-log.jsonl";
+
 const BLOCK_DIR = path.join(configDir(), "jev-rule-blocks");
+
 const CALIB_FILE = path.join(configDir(), "jev-rules-calib.json");
 
 let deadline: number | null = null;
 
 function budgetSeconds(): number | null {
   if (deadline === null) return null;
+
   return Math.max(0.1, deadline - performance.now()) / 1000;
 }
 
@@ -91,12 +117,14 @@ function emptyState(): SessionState {
 
 function sessionPath(sessionId: string): string {
   const safe = (sessionId || "unknown").replace(/[^\w-]/g, "_");
+
   return path.join(BLOCK_DIR, `${safe}.json`);
 }
 
 function readState(sessionId: string): SessionState {
   try {
     const data = JSON.parse(fs.readFileSync(sessionPath(sessionId), "utf8")) as Partial<SessionState>;
+
     return { ...emptyState(), ...data };
   } catch {
     return emptyState();
@@ -120,6 +148,7 @@ function updateState<T>(sessionId: string, change: (state: SessionState) => T): 
   const lockPath = sessionPath(sessionId) + ".lock";
   const giveUp = performance.now() + 2000;
   let fd: number | null = null;
+
   for (;;) {
     try {
       fd = fs.openSync(lockPath, "wx");
@@ -129,10 +158,12 @@ function updateState<T>(sessionId: string, change: (state: SessionState) => T): 
       sleepSync(25);
     }
   }
+
   try {
     const state = readState(sessionId);
     const result = change(state);
     writeState(sessionId, state);
+
     return result;
   } finally {
     if (fd !== null) {
@@ -159,8 +190,10 @@ function recordHunk(state: SessionState, turn: string, rel: string, hunk: string
   enterTurn(state, turn);
   const total = state.hunks.reduce((sum, h) => sum + h.length, 0);
   const room = MAX_TURN_CHARS - total;
+
   if (room <= 0) return;
   state.hunks.push(`--- ${rel}\n${hunk.slice(0, Math.min(MAX_HUNK_CHARS, room))}`);
+
   if (!state.files.includes(rel)) state.files.push(rel);
 }
 
@@ -174,7 +207,9 @@ interface TranscriptEntry {
 
 function textOf(content: unknown): string {
   if (typeof content === "string") return content;
+
   if (!Array.isArray(content)) return "";
+
   return content
     .map((block) =>
       block && typeof block === "object" && (block as { type?: unknown }).type === "text"
@@ -187,17 +222,21 @@ function textOf(content: unknown): string {
 function userPrompt(entry: TranscriptEntry): string {
   if (entry.type !== "user" || entry.isSidechain) return "";
   const text = textOf(entry.message?.content).trim();
+
   return text.startsWith("<") || text.startsWith("/") || text.startsWith("#") ? "" : text;
 }
 
 function questionAnswers(entry: TranscriptEntry): string[] {
   if (entry.type !== "user" || entry.isSidechain) return [];
   const result = entry.toolUseResult;
+
   if (typeof result !== "object" || result === null) return [];
   const r = result as Record<string, unknown>;
   const answers = r["answers"];
+
   if (typeof answers !== "object" || answers === null) return [];
   const options: Record<string, Array<Record<string, unknown>>> = {};
+
   for (const q of (r["questions"] as Array<unknown>) ?? []) {
     if (typeof q !== "object" || q === null) continue;
     const qo = q as Record<string, unknown>;
@@ -206,22 +245,28 @@ function questionAnswers(entry: TranscriptEntry): string[] {
       (o) => typeof o === "object" && o !== null
     ) as Array<Record<string, unknown>>;
   }
+
   const out: string[] = [];
+
   for (const [question, answer] of Object.entries(answers as Record<string, unknown>)) {
     if (typeof answer !== "string") continue;
     const picked = new Set(answer.split(", "));
+
     const notes = (options[question] ?? [])
       .filter((o) => picked.has(String(o["label"])) || String(o["label"]) === answer)
       .map((o) => String(o["description"] ?? ""))
       .filter((n) => n);
+
     const described = notes.length > 0 ? ` (${notes.join("; ")})` : "";
     out.push(`Q: ${question} A: ${answer}${described}`);
   }
+
   return out;
 }
 
 function requestWithAnswers(task: string, answers: string[]): string {
   if (answers.length === 0) return task;
+
   return (
     task +
     "\nThe user's answers to the agent's questions since that request:\n" +
@@ -232,50 +277,66 @@ function requestWithAnswers(task: string, answers: string[]): string {
 function lastUserPrompt(transcriptPath: string | undefined): [string, string, number] {
   if (!transcriptPath) return ["", "", 0];
   let lines: string[];
+
   try {
     lines = fs.readFileSync(transcriptPath, "utf8").split("\n").slice(-MAX_PROMPT_TAIL);
   } catch {
     return ["", "", 0];
   }
+
   const answers: string[] = [];
+
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]!;
+
     if (line.length > 500_000) continue;
     let entry: TranscriptEntry;
+
     try {
       entry = JSON.parse(line) as TranscriptEntry;
     } catch {
       continue;
     }
+
     const text = userPrompt(entry);
+
     if (text) {
       const request = requestWithAnswers(text.slice(0, MAX_TASK_CHARS), [...answers].reverse());
+
       return [entry.uuid ?? "", request, answers.length];
     }
+
     answers.push(...[...questionAnswers(entry)].reverse());
   }
+
   return ["", "", 0];
 }
 
 function relativeTo(filePath: string, cwd: string): string {
   const rel = path.relative(cwd, filePath);
+
   return rel.startsWith("..") ? filePath : rel;
 }
 
 function gitSync(cwd: string, args: string[], env?: NodeJS.ProcessEnv, timeoutMs = 4000): string {
   const r = spawnSync("git", args, { cwd, env: env ? { ...process.env, ...env } : undefined, encoding: "utf8", timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 });
+
   if (r.status !== 0 || r.error) throw new Error(String(r.stderr ?? r.error ?? "git failed"));
+
   return r.stdout;
 }
 
 function writeHunk(cwd: string, rel: string, content: string): string {
   try {
     const diff = gitSync(cwd, ["diff", "--no-color", "--no-ext-diff", "-U3", "--", rel], undefined, 5000);
+
     if (diff.trim()) return diff;
     const tracked = spawnSync("git", ["ls-files", "--error-unmatch", rel], { cwd, timeout: 5000 });
+
     if (tracked.status === 0) return "";
   } catch {
   }
+
   return `NEW FILE (whole content):\n${content}`;
 }
 
@@ -291,31 +352,44 @@ interface EditInput {
 function editHunks(inp: EditInput, cwd?: string): string {
   if (Array.isArray(inp.edits)) {
     const parts: string[] = [];
+
     for (const e of inp.edits) {
       if (typeof e !== "object" || e === null) continue;
       const edit = e as Record<string, unknown>;
       let hunk = "";
+
       if (edit["old_string"]) hunk += `REMOVED:\n${edit["old_string"]}\n`;
+
       if (edit["new_string"]) hunk += `ADDED:\n${edit["new_string"]}`;
+
       if (hunk) parts.push(hunk);
     }
+
     return parts.filter(Boolean).join("\n\n");
   }
+
   if (inp.old_string != null || inp.new_string != null) {
     let hunk = "";
+
     if (inp.old_string) hunk += `REMOVED:\n${inp.old_string}\n`;
+
     if (inp.new_string) hunk += `ADDED:\n${inp.new_string}`;
+
     return hunk;
   }
+
   const content = String(inp.content ?? inp.new_source ?? "");
+
   if (content && cwd && typeof inp.file_path === "string" && inp.file_path) {
     return writeHunk(cwd, relativeTo(inp.file_path, cwd), content);
   }
+
   return content;
 }
 
 function needleOf(inp: EditInput): string {
   let fresh = inp.new_string;
+
   if (fresh == null && Array.isArray(inp.edits)) {
     for (const e of inp.edits) {
       if (typeof e === "object" && e !== null && (e as Record<string, unknown>)["new_string"]) {
@@ -324,10 +398,13 @@ function needleOf(inp: EditInput): string {
       }
     }
   }
+
   if (fresh == null) fresh = inp.content ?? inp.new_source ?? "";
+
   for (const line of String(fresh ?? "").split("\n")) {
     if (line.trim()) return line.trim();
   }
+
   return "";
 }
 
@@ -336,22 +413,27 @@ const MODULE_EXT = [".py", ".ts", ".tsx", ".js", ".jsx", ".mjs"];
 function siblingModules(filePath: string): string {
   let entries: string[];
   const dir = path.dirname(filePath) || ".";
+
   try {
     entries = fs.readdirSync(dir).sort();
   } catch {
     return "";
   }
+
   const names: string[] = [];
+
   for (const e of entries) {
     const full = path.join(dir, e);
     const ext = path.extname(e);
     const stem = path.basename(e, ext);
     let isDir = false;
+
     try {
       isDir = fs.statSync(full).isDirectory();
     } catch {
       continue;
     }
+
     if (isDir) {
       if (MODULE_EXT.some((x) => fs.existsSync(path.join(full, `index${x}`))) || fs.existsSync(path.join(full, "__init__.py"))) {
         names.push(e);
@@ -360,50 +442,63 @@ function siblingModules(filePath: string): string {
       names.push(stem);
     }
   }
+
   return [...new Set(names)].join(", ");
 }
 
 function fileContext(filePath: string, needle: string): string {
   if (!filePath || !needle) return "";
   let lines: string[];
+
   try {
     lines = fs.readFileSync(filePath, "utf8").split("\n");
   } catch {
     return "";
   }
+
   const at = lines.findIndex((line) => line.includes(needle));
+
   if (at < 0) return "";
   const lo = Math.max(0, at - CONTEXT_LINES);
+
   return lines.slice(lo, at + CONTEXT_LINES + 1).join("\n").slice(0, MAX_CONTEXT_CHARS);
 }
 
 function enclosingBlock(filePath: string, needle: string): string {
   if (!filePath || !needle) return "";
   let lines: string[];
+
   try {
     lines = fs.readFileSync(filePath, "utf8").split("\n");
   } catch {
     return "";
   }
+
   const anchor = lines.findIndex((line) => line.includes(needle));
+
   if (anchor < 0) return "";
   const indent = (line: string) => line.length - line.trimStart().length;
   let depth = indent(lines[anchor]!);
   let start = anchor;
+
   for (let i = anchor - 1; i >= 0; i--) {
     if (lines[i]!.trim() && indent(lines[i]!) < depth) {
       start = i;
       depth = indent(lines[i]!);
+
       if (depth === 0) break;
     }
   }
+
   let end = lines.length;
+
   for (let i = anchor + 1; i < lines.length; i++) {
     if (lines[i]!.trim() && indent(lines[i]!) <= depth && i > start) {
       end = i;
       break;
     }
   }
+
   return lines.slice(start, end).join("\n").slice(0, MAX_BLOCK_CHARS);
 }
 
@@ -421,11 +516,14 @@ const EDIT_REQUIRE_CRITERIA = {
 function ruleQuestion(rule: Rule, strict = false): NoulQuestion {
   const pre = strict ? STRICT_PREAMBLE : "";
   const isEdit = rule.when === "edit";
+
   const scopeNote = isEdit
     ? "Judge only what the edit itself introduces, not pre-existing code."
     : "Judge only what these changes introduce, not pre-existing code.";
+
   if ((rule.polarity || "forbid") === "require") {
     const what = isEdit ? "this edit" : "these changes";
+
     return {
       type: "noul",
       instructions:
@@ -434,9 +532,11 @@ function ruleQuestion(rule: Rule, strict = false): NoulQuestion {
       criteria: EDIT_REQUIRE_CRITERIA,
     };
   }
+
   const added = isEdit
     ? "the ADDED or CHANGED code in this edit"
     : "the ADDED or CHANGED code in these changes";
+
   return {
     type: "noul",
     instructions: pre + `Does ${added} do what this rule forbids: "${rule.text}"? ${scopeNote}`,
@@ -446,6 +546,7 @@ function ruleQuestion(rule: Rule, strict = false): NoulQuestion {
 
 function verdictOf(answer: Answers[string] | undefined): number {
   const p = asNoul(answer)?.noul;
+
   return typeof p === "number" ? Math.min(1, Math.max(0, p)) : 0;
 }
 
@@ -459,24 +560,30 @@ async function askRules(
   if (rules.length === 0) return {};
   const questions: Record<string, Question> = {};
   const seen = new Set<string>();
+
   for (const r of rules as Keyed[]) {
     let key = r.id;
     let n = 2;
+
     while (seen.has(key)) {
       key = `${r.id}-${n}`;
       n++;
     }
+
     seen.add(key);
     r._qkey = key;
     questions[key] = ruleQuestion(r, strict);
   }
+
   const budget = budgetSeconds();
+
   return jevAsk(stateText, questions, budget === null ? undefined : Math.round(budget * 1000));
 }
 
 function loadCalib(): Record<string, Record<string, unknown>> {
   try {
     const data = JSON.parse(fs.readFileSync(CALIB_FILE, "utf8"));
+
     return typeof data === "object" && data !== null ? (data as Record<string, Record<string, unknown>>) : {};
   } catch {
     return {};
@@ -487,12 +594,17 @@ const CALIB = loadCalib();
 
 function actFor(rule: Rule, act = ACT, calib: Record<string, Record<string, unknown>> = CALIB): number {
   const c = calib[rule.id];
+
   if (typeof c !== "object" || c === null || act !== ACT) return act;
   const median = c["median"];
   const n = typeof c["n"] === "number" ? c["n"] : 0;
+
   if (typeof median !== "number") return act;
+
   if (n >= CALIB_MIN_CHECKS && median <= CALIB_DECISIVE) return ACT_DECISIVE;
+
   if (median >= CALIB_NOISY) return ACT_NOISY;
+
   return act;
 }
 
@@ -509,8 +621,10 @@ interface Hit {
 
 function hitsFrom(rules: Rule[], probs: Record<string, number>, act: number, flag: number): Hit[] {
   const hits: Hit[] = [];
+
   for (const r of rules) {
     const p = probs[r.id] ?? 0;
+
     if (p >= flag) {
       hits.push({
         rule: r.id,
@@ -524,6 +638,7 @@ function hitsFrom(rules: Rule[], probs: Record<string, number>, act: number, fla
       });
     }
   }
+
   return hits;
 }
 
@@ -534,9 +649,11 @@ function collectVerdicts(
   flag: number
 ): [Hit[], Record<string, number>] {
   const probs: Record<string, number> = {};
+
   for (const r of rules as Keyed[]) {
     probs[r.id] = Math.round(verdictOf(answers[r._qkey ?? r.id]) * 1000) / 1000;
   }
+
   return [hitsFrom(rules, probs, act, flag), probs];
 }
 
@@ -544,24 +661,33 @@ function scopedRules(rules: Rule[], phase: string, files: string[]): Rule[] {
   const hit = rules.filter(
     (r) => r.when === phase && (r.scope.length === 0 || files.some((f) => globMatch(f, r.scope)))
   );
+
   const tiers = new Map<string, Map<string, Rule[]>>();
+
   for (const r of hit) {
     const tier = `${r.scope.length === 0}|${r.file.startsWith("~/")}`;
+
     if (!tiers.has(tier)) tiers.set(tier, new Map());
     const byFile = tiers.get(tier)!;
+
     if (!byFile.has(r.file)) byFile.set(r.file, []);
     byFile.get(r.file)!.push(r);
   }
+
   const out: Rule[] = [];
+
   for (const tier of [...tiers.keys()].sort()) {
     const queues = [...tiers.get(tier)!.values()];
+
     while (queues.length > 0 && out.length < MAX_RULES) {
       for (const q of [...queues]) {
         if (q.length > 0) out.push(q.shift()!);
+
         if (q.length === 0) queues.splice(queues.indexOf(q), 1);
       }
     }
   }
+
   return out.slice(0, MAX_RULES);
 }
 
@@ -579,16 +705,20 @@ function inputDigest(event: HookEvent): string | null {
 
 function ruleHashes(inScope: Rule[]): Record<string, string> {
   const out: Record<string, string> = {};
+
   for (const r of inScope) {
     if (r.fileHash) out[r.file] = r.fileHash;
   }
+
   return out;
 }
 
 function cite(v: Hit): string {
   let text = v.text.split(/\s+/).join(" ");
+
   if (text.length > 220) text = text.slice(0, 217) + "...";
   const where = v.line ? `${v.file} line ${v.line}` : v.file;
+
   return `- [${v.polarity ?? "forbid"}/${v.subject ?? "other"}] Rule "${v.rule}" from ${where}: "${text}" (${v.prob.toFixed(2)})`;
 }
 
@@ -636,6 +766,7 @@ function logDecision(
       rule_hashes: opts.hashes ?? {},
       user_answers: opts.userAnswers ?? 0,
     };
+
     fs.appendFileSync(path.join(configDir(), ROUTER_LOG), JSON.stringify(row) + "\n");
   } catch {
   }
@@ -651,6 +782,7 @@ function logError(e: unknown, event: HookEvent): void {
       path: (event.tool_input ?? {})["file_path"],
       error: String(e).slice(0, 300),
     };
+
     fs.appendFileSync(path.join(configDir(), ROUTER_LOG), JSON.stringify(row) + "\n");
   } catch {
   }
@@ -669,55 +801,72 @@ async function judgeEdit(
   flag = FLAG
 ): Promise<[Hit[], Record<string, number>, Answers, Rule[], string[], Record<string, number>]> {
   const parts = [`File: ${rel}`];
+
   if (task) parts.push(`The user's current request: ${task}`);
   parts.push(`The edit:\n${hunk.slice(0, MAX_STATE_CHARS)}`);
+
   if (context) parts.push(`Surrounding lines after the edit:\n${context}`);
   const asked = inScope.filter((r) => isSubjectRelevant(hunk, r.subject, rel));
   const skipped = inScope.filter((r) => !asked.includes(r));
+
   if (siblings && asked.some((r) => r.subject === "imports_deps")) {
     const names = siblings.split(", ").slice(0, SIBLING_CAP).join(", ");
     parts.push(`Local modules importable from this file's directory: ${names}`);
   }
+
   const cmpChars: Record<string, number> = {};
+
   if (cwd) {
     for (const subject of [...new Set(asked.map((r) => r.subject))]) {
       const found = await comparator(subject || "other", hunk, rel, cwd);
+
       if (found) {
         cmpChars[subject] = found.length;
         parts.push(found);
       }
     }
   }
+
   const answers = await askRules(parts.join("\n\n"), asked);
   let [hits, probs] = collectVerdicts(inScope, answers, act, flag);
 
   const escalated: string[] = [];
+
   const undecided = (asked as Keyed[]).filter(
     (r) => flag <= (probs[r.id] ?? 0) && (probs[r.id] ?? 0) < actFor(r, act)
   );
+
   const budget = budgetSeconds();
+
   if (ESCALATE && undecided.length > 0 && (budget === null || budget >= ESCALATE_MIN)) {
     const extra = [...parts];
+
     if (blockText) extra.push(`The function or block this edit landed in, after the edit:\n${blockText}`);
+
     const around = undecided
       .filter((r) => r.context)
       .map((r) => `[${r.id}] ${r.context}`)
       .join("\n");
+
     if (around) extra.push(`The instruction file says, around this rule:\n${around}`);
     let second: Answers = {};
+
     try {
       second = await askRules(extra.join("\n\n"), undecided, true);
     } catch {
       second = {};
     }
+
     if (Object.keys(second).length > 0) {
       for (const r of undecided) {
         probs[r.id] = Math.round(verdictOf(second[r._qkey ?? r.id]) * 1000) / 1000;
         escalated.push(r.id);
       }
+
       hits = hitsFrom(inScope, probs, act, flag);
     }
   }
+
   return [hits, probs, answers, skipped, escalated, cmpChars];
 }
 
@@ -726,15 +875,19 @@ async function handleEdit(event: HookEvent): Promise<PostToolUseOutput | StopOut
   const cwd = event.cwd ?? process.cwd();
   const filePath = typeof inp.file_path === "string" ? inp.file_path : "";
   const rel = relativeTo(filePath, cwd);
+
   if (!filePath || EXCLUDED_RE.test(rel) || isOutside(rel)) return {};
   const rules = await loadRules(cwd, { cachePath: path.join(configDir(), RULES_CACHE) });
+
   if (rules.length === 0) return {};
   const inScope = scopedRules(rules, "edit", [rel]);
   const hunk = editHunks(inp, cwd).trim();
+
   if (!hunk) return {};
   const sid = event.session_id ?? "unknown";
   const [turn, task, nAnswers] = lastUserPrompt(event.transcript_path);
   updateState(sid, (st) => recordHunk(st, turn, rel, hunk));
+
   if (!inScope.length) return {};
 
   const context = fileContext(filePath, needleOf(inp));
@@ -743,6 +896,7 @@ async function handleEdit(event: HookEvent): Promise<PostToolUseOutput | StopOut
 
   const sg = astWhich()[1];
   const t0 = performance.now();
+
   const [hits, probs, answers, skipped, escalated, cmpChars] = await judgeEdit(
     rel,
     hunk,
@@ -753,22 +907,27 @@ async function handleEdit(event: HookEvent): Promise<PostToolUseOutput | StopOut
     blockText,
     cwd
   );
+
   const ms = Math.round(performance.now() - t0);
 
   const acting =
     hits.length > 0
       ? updateState(sid, (st) => {
           const list: Hit[] = [];
+
           for (const v of hits) {
             const key = `${v.rule}|${rel}`;
+
             if (v.band === "act" && (st.blocks[key] ?? 0) < MAX_BLOCKS) {
               st.blocks[key] = (st.blocks[key] ?? 0) + 1;
               list.push(v);
             }
           }
+
           return list;
         })
       : [];
+
   const flagged = hits.filter((v) => !acting.includes(v));
 
   logDecision(event, answers, probs, hits, rules.length, rules.length - inScope.length, "edit", {
@@ -785,10 +944,12 @@ async function handleEdit(event: HookEvent): Promise<PostToolUseOutput | StopOut
   });
 
   const out: PostToolUseOutput = {};
+
   if (flagged.length > 0) {
     const listed = flagged.map((v) => `${v.rule} ${v.prob.toFixed(2)}`).join(", ");
     out.systemMessage = `[jev rules] uncertain about ${listed} on ${rel} — not sent to the agent`;
   }
+
   if (acting.length > 0) {
     const lines = ["This edit appears to break a rule from this repository's instructions."];
     lines.push(...acting.map(cite));
@@ -796,6 +957,7 @@ async function handleEdit(event: HookEvent): Promise<PostToolUseOutput | StopOut
     out.decision = "block";
     out.reason = lines.join("\n");
   }
+
   return out;
 }
 
@@ -805,12 +967,14 @@ function worktreeTree(cwd: string): [string, string, string] {
   const index = path.join(root, indexPath);
   const scratch = path.join(BLOCK_DIR, `index-${process.pid}`);
   fs.mkdirSync(BLOCK_DIR, { recursive: true });
+
   try {
     if (fs.existsSync(index)) fs.copyFileSync(index, scratch);
     const env = { GIT_INDEX_FILE: scratch };
     gitSync(root, ["add", "-A"], env);
     const ignored = gitSync(root, ["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"]);
     const tree = gitSync(root, ["write-tree"], env).trim();
+
     return [root, tree, crypto.createHash("sha256").update(ignored).digest("hex")];
   } finally {
     try {
@@ -828,18 +992,23 @@ async function handleBashBefore(event: HookEvent): Promise<Record<string, never>
   const sid = event.session_id ?? "unknown";
   const cwd = event.cwd ?? process.cwd();
   const [turn] = lastUserPrompt(event.transcript_path);
+
   if (!turn) return {};
   let tree: [string, string, string] | null = null;
+
   try {
     tree = worktreeTree(cwd);
   } catch {
     tree = null;
   }
+
   updateState(sid, (st) => {
     enterTurn(st, turn);
+
     if (tree) st.snapshots[snapshotKey(event)] = tree;
     else st.partial = true;
   });
+
   return {};
 }
 
@@ -848,26 +1017,34 @@ async function handleBashAfter(event: HookEvent): Promise<Record<string, never>>
   const cwd = event.cwd ?? process.cwd();
   const [turn] = lastUserPrompt(event.transcript_path);
   const key = snapshotKey(event);
+
   const before = updateState(sid, (st) => {
     if (st.turn !== turn) return null;
     const snap = st.snapshots[key] ?? null;
     delete st.snapshots[key];
+
     return snap;
   });
+
   if (!turn || !before) return {};
   const [root, oldTree, oldIgnored] = before;
   let hunks: Array<[string, string]> = [];
+
   try {
     const [, newTree, newIgnored] = worktreeTree(root);
+
     if (newIgnored !== oldIgnored) {
       updateState(sid, (st) => {
         st.partial = true;
       });
     }
+
     const names = gitSync(root, ["diff", "--name-only", "-z", oldTree, newTree]).split("\0").filter(Boolean);
     hunks = [];
+
     for (const name of names) {
       const rel = relativeTo(path.join(root, name), path.resolve(cwd));
+
       if (EXCLUDED_RE.test(rel) || isOutside(rel)) continue;
       const hunk = gitSync(root, ["diff", "--no-color", "--no-ext-diff", "-U3", oldTree, newTree, "--", name]);
       hunks.push([rel, hunk]);
@@ -876,13 +1053,16 @@ async function handleBashAfter(event: HookEvent): Promise<Record<string, never>>
     updateState(sid, (st) => {
       st.partial = true;
     });
+
     return {};
   }
+
   if (hunks.length > 0) {
     updateState(sid, (st) => {
       for (const [rel, hunk] of hunks) recordHunk(st, turn, rel, hunk);
     });
   }
+
   return {};
 }
 
@@ -890,19 +1070,23 @@ async function handleStop(event: HookEvent): Promise<StopOutput | Record<string,
   const sid = event.session_id ?? "unknown";
   const sstate = readState(sid);
   const [turn, task, nAnswers] = lastUserPrompt(event.transcript_path);
+
   if (!turn || sstate.turn !== turn || !(sstate.hunks.length > 0 || sstate.partial)) return {};
   const cwd = event.cwd ?? process.cwd();
   const rules = await loadRules(cwd, { cachePath: path.join(configDir(), RULES_CACHE) });
   const turnRules = scopedRules(rules, "turn", sstate.files);
+
   if (turnRules.length === 0) return {};
 
   const diff = sstate.hunks.join("\n\n");
   const parts = [`Files changed this turn: ${sstate.files.join(", ") || "none recorded"}`];
+
   if (sstate.partial) {
     parts.push(
       "This turn also ran shell commands. Changes they made are not in the diff below, so it is partial."
     );
   }
+
   if (task) parts.push(`The user's current request: ${task}`);
   parts.push(`The changes:\n${diff.slice(0, MAX_TURN_CHARS)}`);
   const asked = turnRules.filter((r) => isSubjectRelevant(diff, r.subject, sstate.files.join(", ")));
@@ -917,15 +1101,18 @@ async function handleStop(event: HookEvent): Promise<StopOutput | Record<string,
     hits.length > 0
       ? updateState(sid, (st) => {
           const list: Hit[] = [];
+
           for (const v of hits) {
             if (v.band === "act" && !already && st.stop_blocks < MAX_STOP_BLOCKS) {
               st.stop_blocks += 1;
               list.push(v);
             }
           }
+
           return list;
         })
       : [];
+
   const flagged = hits.filter((v) => !acting.includes(v));
 
   logDecision(event, answers, probs, hits, rules.length, rules.length - turnRules.length, "turn", {
@@ -937,10 +1124,12 @@ async function handleStop(event: HookEvent): Promise<StopOutput | Record<string,
   });
 
   const out: StopOutput = {};
+
   if (flagged.length > 0) {
     const listed = flagged.map((v) => `${v.rule} ${v.prob.toFixed(2)}`).join(", ");
     out.systemMessage = `[jev rules] uncertain about ${listed} at end of turn — not sent to the agent`;
   }
+
   if (acting.length > 0) {
     const files = sstate.files.join(", ");
     const lines = ["The changes this turn appear to break a rule from this repository's instructions."];
@@ -949,18 +1138,22 @@ async function handleStop(event: HookEvent): Promise<StopOutput | Record<string,
     out.decision = "block";
     out.reason = lines.join("\n");
   }
+
   return out;
 }
 
 async function main(): Promise<void> {
   let event: HookEvent = {};
+
   try {
     deadline = performance.now() + HOOK_BUDGET * 1000;
+
     if (!enabled("rules")) return;
     event = await readStdinJson<HookEvent>();
     const name = event.hook_event_name ?? "PostToolUse";
     const bash = event.tool_name === "Bash";
     let out: object = {};
+
     if (name === "Stop") {
       out = await handleStop(event);
     } else if (name === "PreToolUse") {
@@ -968,6 +1161,7 @@ async function main(): Promise<void> {
     } else {
       out = bash ? await handleBashAfter(event) : await handleEdit(event);
     }
+
     if (Object.keys(out).length > 0) writeOutput(out as never);
   } catch (e) {
     logError(e, event);

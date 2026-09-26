@@ -94,18 +94,21 @@ export function subagentBundle(
   tiers?: Record<string, string>
 ): Questions {
   const q: Questions = {};
+
   for (const [k, v] of Object.entries(BRIEF_CHECKS)) {
     q[k] = { type: "noul", instructions: v } satisfies NoulQuestion;
   }
+
   if (askTier) {
     q["model_tier"] = {
       type: "choice",
       instructions:
         "A coding assistant is delegating this task to a subagent. " +
         "What is the cheapest Claude model tier the subagent needs to do it well?",
-      criteria: { ...TIER_CRITERIA, ...(tiers ?? {}) },
+      criteria: { ...TIER_CRITERIA, ...tiers },
     } satisfies ChoiceQuestion;
   }
+
   return q;
 }
 
@@ -146,12 +149,14 @@ export const TURN_CRITERIA = {
 };
 
 export const POLARITY_Q = "Does item [{i}] forbid something, or require something?";
+
 export const POLARITY_CRITERIA = {
   forbid: "the rule says not to do or add something",
   require: "the rule says something must be present or done a certain way",
 };
 
 export const SUBJECT_Q = "What kind of thing in a code diff does item [{i}] govern?";
+
 export const SUBJECT_CRITERIA = {
   imports_deps: "imports, requires, dependencies, third-party packages",
   comments: "comments, docstrings, explanatory text inside code",
@@ -168,6 +173,7 @@ export const SUBJECT_CRITERIA = {
 
 export function ruleQuestions(count: number): Questions {
   const q: Questions = {};
+
   for (let i = 0; i < count; i++) {
     q[`q${i}`] = {
       type: "noul",
@@ -189,12 +195,18 @@ export function ruleQuestions(count: number): Questions {
       criteria: SUBJECT_CRITERIA,
     } satisfies ChoiceQuestion;
   }
+
   return q;
 }
 
 export const INSTRUCTION_MIN = 0.5;
+
 export const TURN_MIN = 0.5;
+
 export const CHOICE_MIN = 0.5;
+
 export const DEFAULT_SUBJECT = "other";
+
 export const DEFAULT_POLARITY = "forbid";
+
 export const ITEMS_PER_REQUEST = 15;

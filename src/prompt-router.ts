@@ -16,8 +16,11 @@ import { isSynthetic } from "../adapters/afk/src/shared/synthetic.js";
 import { configDir, enabled, pluginVersion } from "../adapters/afk/src/shared/config.js";
 
 const MIN_CONFIDENCE = 0.75;
+
 const MAX_QUIET = 0.1;
+
 const CONTEXT_LINES = 400;
+
 const ROUTER_LOG = "jev-router-log.jsonl";
 
 const GUIDANCE: Record<string, string> = {
@@ -49,7 +52,9 @@ interface TailResult {
 
 function textOf(content: unknown): string {
   if (typeof content === "string") return content;
+
   if (!Array.isArray(content)) return "";
+
   return content
     .map((block) =>
       block && typeof block === "object" && (block as { type?: unknown }).type === "text"
@@ -61,6 +66,7 @@ function textOf(content: unknown): string {
 
 function conversationTail(transcriptPath: string, prompt: string): TailResult {
   let lines: string[];
+
   try {
     lines = fs.readFileSync(transcriptPath, "utf8").split("\n").slice(-CONTEXT_LINES);
   } catch {
@@ -70,60 +76,80 @@ function conversationTail(transcriptPath: string, prompt: string): TailResult {
   let prevUser = "";
   let prevAssistant = "";
   let model: string | null = null;
+
   for (let i = lines.length - 1; i >= 0; i--) {
     if (prevUser && prevAssistant && model) break;
     const line = lines[i]!;
+
     if (line.length > 500_000) continue;
     let entry: TranscriptEntry;
+
     try {
       entry = JSON.parse(line) as TranscriptEntry;
     } catch {
       continue;
     }
+
     if (entry.isSidechain) continue;
     const content = entry.message?.content;
+
     if (entry.type === "user" && !prevUser) {
       const text = textOf(content).trim();
+
       if (text && text !== prompt && !text.startsWith("<")) prevUser = text;
     } else if (entry.type === "assistant" && Array.isArray(content)) {
       if (model === null) {
         const m = entry.message?.model;
+
         if (typeof m === "string") model = m;
       }
+
       if (!prevAssistant) prevAssistant = textOf(content).trim();
     }
   }
+
   return { prevUser, prevAssistant, model };
 }
 
 function buildState(prompt: string, prevUser: string, prevAssistant: string): string {
   if (!prevUser && !prevAssistant) return prompt;
   const parts: string[] = [];
+
   if (prevUser) parts.push(`Earlier user message: ${prevUser.slice(0, 300)}`);
+
   if (prevAssistant) parts.push(`Assistant's last reply (truncated): ${prevAssistant.slice(-600)}`);
   parts.push(`Current user message: ${prompt}`);
+
   return parts.join("\n\n");
 }
 
 function tierOf(modelName: string | null): string | null {
   if (!modelName) return null;
   const low = modelName.toLowerCase();
+
   for (const tier of TIER_ORDER) if (low.includes(tier)) return tier;
+
   return null;
 }
 
 function tierHint(answers: Answers, modelNow: string | null): string | null {
   const tier = asChoice(answers["model_tier"]);
+
   if (!tier || !TIER_ORDER.includes(tier.choice) || tier.confidence < MIN_CONFIDENCE) {
     return null;
   }
+
   const current = tierOf(modelNow);
+
   if (current === tier.choice) return null;
   const line = `[jev router] model=${tier.choice} conf=${tier.confidence.toFixed(2)} — `;
+
   if (current === null) return `${line}this prompt looks like ${tier.choice} work`;
+
   if (TIER_ORDER.indexOf(tier.choice) < TIER_ORDER.indexOf(current)) {
     return `${line}looks like ${tier.choice} work; you're on ${current}`;
   }
+
   return `${line}may want ${tier.choice} for this; you're on ${current}`;
 }
 
@@ -142,14 +168,18 @@ function decide(answers: Answers): string | null {
 
   const scope = asScore(answers["scope"])?.score;
   const parts = [`[jev router] intent=${picked} conf=${conf.toFixed(2)}`];
+
   if (scope !== undefined) {
     parts.push(`scope=${scope < 0.5 ? "trivial" : scope < 1.5 ? "small" : "substantial"}`);
   }
+
   let tip = GUIDANCE[picked]!;
+
   if (picked !== "chat" && scope !== undefined) {
     if (scope < 0.5) tip += " Keep it minimal.";
     else if (scope >= 1.5) tip += " Sketch the plan in a few bullets first.";
   }
+
   return `${parts.join(" ")}\n${tip}`;
 }
 
@@ -174,6 +204,7 @@ function logDecision(
       ms,
       v: pluginVersion(),
     };
+
     fs.appendFileSync(path.join(configDir(), ROUTER_LOG), JSON.stringify(row) + "\n");
   } catch {
   }
@@ -185,11 +216,13 @@ async function main(): Promise<void> {
   const prompt = (event.prompt ?? "").trim();
 
   if (prompt.length < 3 || prompt.startsWith("/") || prompt.startsWith("#")) return;
+
   if (isSynthetic(prompt)) return;
 
   let prevUser = "";
   let prevAssistant = "";
   let modelNow: string | null = null;
+
   if (event.transcript_path) {
     const tail = conversationTail(event.transcript_path, prompt);
     prevUser = tail.prevUser;
@@ -207,7 +240,9 @@ async function main(): Promise<void> {
 
   if (!ctx && !tier) return;
   const out: UserPromptSubmitOutput = {};
+
   if (ctx) out.hookSpecificOutput = { hookEventName: "UserPromptSubmit", additionalContext: ctx };
+
   if (tier) out.systemMessage = tier;
   writeOutput(out);
 }

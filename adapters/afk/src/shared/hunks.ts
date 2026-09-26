@@ -9,10 +9,13 @@ const ADDED_HEAD_CHARS = 200;
 
 export function addedBody(hunk: string): string {
   const marker = "ADDED:\n";
+
   if (hunk.includes(marker)) return hunk.split(marker)[1] ?? "";
+
   if (hunk.startsWith("NEW FILE")) {
     return hunk.includes("\n") ? hunk.split("\n").slice(1).join("\n") : "";
   }
+
   if (/^\s*(diff --git|---|@@|index )/.test(hunk)) {
     return hunk
       .split("\n")
@@ -20,6 +23,7 @@ export function addedBody(hunk: string): string {
       .map((line) => line.slice(1))
       .join("\n");
   }
+
   return hunk;
 }
 
