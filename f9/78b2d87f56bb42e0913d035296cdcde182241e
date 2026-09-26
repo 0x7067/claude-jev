@@ -1,0 +1,23 @@
+README.md
+  s_192292c6e473ef::t_fe6dca4bb5c9b9 175
+AGENTS.md
+  s_192292c6e473ef::t_9393d3b833a9a4 23,43-54,128-139,228-230
+CHANGELOG.md
+  s_192292c6e473ef::t_a954995fd3721d 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f978b2d87f56bb42e0913d035296cdcde182241e",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
