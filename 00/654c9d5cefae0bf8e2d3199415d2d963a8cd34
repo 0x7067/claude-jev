@@ -1,0 +1,27 @@
+.cursor/skills/verify-claude-jev/features/session-compaction.md
+  s_192292c6e473ef::t_86958021863f1f 4,22,38-39,53,59
+.cursor/skills/verify-claude-jev/features/README.md
+  s_192292c6e473ef::t_43b9c17cd1b6b3 68
+src/compactor.ts
+  s_192292c6e473ef::t_1bd7b3c62ca4bd 818
+.cursor/skills/verify-claude-jev/SKILL.md
+  s_192292c6e473ef::t_0529d102ca1b48 30,36,108-109,186
+.cursor/skills/verify-claude-jev/bin/control-jev
+  s_192292c6e473ef::t_10c316b6a3c5f7 25,262,269,363-365,378,380
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "00654c9d5cefae0bf8e2d3199415d2d963a8cd34",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
