@@ -199,11 +199,7 @@ python3 eval/compare.py compact --synth 60
 The compaction command is the only way to measure `scripts/compactor.py`.
 It prints re-fetch coverage and planted-constraint survival in one gate and
 exits 2 below either floor, so a wording that keeps paths but drops what the
-user said, or the reverse, cannot pass on one number. It also counts backend
-chunk calls and failures, and any failure fails the gate: the compactor is
-fail-open, so a failed chunk leaves its blocks unscored and unscored rows are
-kept, which raises coverage. A run degraded in part was visible in neither the
-floors nor the probe counts, and a 503 storm could pass on optimistic numbers. `eval/sweep.py` and
+user said, or the reverse, cannot pass on one number. `eval/sweep.py` and
 `eval/planted.py` are diagnostics for reading a change, not gates.
 
 `--seed 0 --sample 250` selects the same real edits as the numbers in
@@ -213,58 +209,6 @@ the answer cache and re-costs the run.
 - `run --out` moves the answer file, not the cache, so a re-score times the cache
   and its latency row is meaningless. Set `JEV_RULES_CACHE` to a fresh path to
   re-ask every question; the live 247-edit pass is ~320 calls and ~40s.
-- Every number above is one decision model grading itself. To measure against a
-  second one, name it as `backend:model`, or a bare model id meaning System One:
-
-```bash
-node dist/eval/compact.js compact --synth 60 --seed 0 --workers 8 \
-  --decision-model decisions:respan/span-01-lite
-python3 eval/rules_eval.py run --sample 250 --seed 0 \
-  --judge-model decisions:respan/span-01-lite
-```
-
-  Provider selection does not fall through. `PROVIDERS` is read in order and
-  `TYPESAFE_API_KEY` wins whenever it is set, so a run against an exhausted
-  TypeSafe account returns `HTTP 402` instead of trying `OPENROUTER_API_KEY`,
-  which serves the same `jev-latest` under the same System One protocol. Pin
-  `CLAUDE_PLUGIN_OPTION_PROVIDER=openrouter` for `scripts/`, or unset
-  `TYPESAFE_API_KEY` for the TypeScript harness, whose `resolveKey()` behaves
-  the same way. Answer caches key on model, state, and questions rather than
-  provider, so the billing path is free apart from records that already
-  failed.
-
-  The decisions endpoint returns `HTTP 503` from a gateway above roughly 24
-  requests in flight, measured: 4, 8, and 16 concurrent all succeed, 24 loses
-  one. `--workers` does not express that limit, because each event fans out to
-  about seven chunk calls, so `--workers 8` is roughly 56 requests and lost
-  every one of its 98 events. Use `--workers 8 --max-inflight 12`: the cap
-  applies to requests actually issued, so queued work does not count, and the
-  run finishes in well under five minutes with zero failed chunks. `--workers 2`
-  is not the safe answer either, it still timed out 0.6% of chunks.
-
-  Note what a gateway error does to the numbers: the compactor is fail-open, so
-  a failed chunk yields no answers, its blocks go unscored, and unscored rows
-  are kept. In the re-read path that inflates coverage, and in the planted path
-  an all-chunks event is dropped and shows up as a smaller `n`. A run degraded
-  only in part was visible in neither, which is why the gate now counts backend
-  calls and failures and fails the run on any of them.
-
-  The `decisions` backend is OpenRouter's `/api/alpha/decisions`, which serves
-  `respan/span-01-lite`: a System One model behind a different URL, same
-  `{state, model, questions}` contract, so the swap is a URL and a model id
-  rather than a second code path. An unknown backend id raises on both clients
-  rather than falling back quietly. Respan accepts only `noul` questions with
-  plain-string criteria, which is every question compaction asks. The backend
-  name is part of the compaction selection signature, so a second model's run
-  cannot read the first model's cached decisions back as its own. Measured over
-  the full population, span-01-lite passes all three compaction floors: 81.3%
-  verbatim coverage against Jev's 86.1%, with planted survival 97.8% and 94.3%
-  against 97.8% and 96.6%, and no cut in either. It trails on coverage and on
-  tokens, 3591 per event against 3523, but it is usable as the compaction
-  decision model. It is not usable for the rules, where it catches 1 of 29
-  hand-written violations against Jev's 16 and blocks nothing at any `ACT`.
-  Run it at `--workers 8 --max-inflight 12`; the endpoint 503s above roughly
-  24 requests in flight and `--workers` alone does not express that.
 
 The rules eval judges each record at its `sha`, and reads
 `eval/global_CLAUDE.md` in place of `~/.claude/CLAUDE.md`. Change a case's
