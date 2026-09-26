@@ -58,6 +58,41 @@ const MIN_POST_RETRIEVALS = 5;
 
 const MIN_BLOCKS = 30;
 
+interface BackendTally {
+  calls: number;
+  failed: number;
+  errors: Map<string, number>;
+}
+
+interface Tallied {
+  backend: DecisionBackend;
+  tally: BackendTally;
+}
+
+function tallying(inner: DecisionBackend): Tallied {
+  const tally: BackendTally = { calls: 0, failed: 0, errors: new Map() };
+
+  return {
+    tally,
+    backend: {
+      name: inner.name,
+      ask: async (state, questions, timeoutMs) => {
+        tally.calls += 1;
+
+        try {
+          return await inner.ask(state, questions, timeoutMs);
+        } catch (e) {
+          tally.failed += 1;
+          const why = String(e).slice(0, 100);
+          tally.errors.set(why, (tally.errors.get(why) ?? 0) + 1);
+
+          throw e;
+        }
+      },
+    },
+  };
+}
+
 const FLOOR_REFETCH_FULL = 0.7;
 
 const FLOOR_PLANTED_USER = 0.95;
@@ -649,7 +684,7 @@ function shuffle<T>(arr: T[], rng: () => number): T[] {
   return a;
 }
 
-function gate(rows: EventRow[], plants: Array<PlantResult | null>): number {
+function gate(rows: EventRow[], plants: Array<PlantResult | null>, tally: BackendTally): number {
   const reads = rows.reduce((sum, r) => sum + r.refetch_reads, 0);
   const full = reads > 0 ? rows.reduce((sum, r) => sum + r.refetch_jev_full, 0) / reads : NaN;
   const user = plants.flatMap((p) => (p !== null && p.user !== null ? [p.user] : []));
@@ -671,6 +706,20 @@ function gate(rows: EventRow[], plants: Array<PlantResult | null>): number {
 
     if (!ok) failed = true;
     console.log(`  ${ok ? "ok  " : "FAIL"} ${name.padEnd(38)} ${(100 * val).toFixed(1).padStart(5)}%  floor ${Math.round(100 * floor)}%  n=${n}`);
+  }
+
+  if (tally.calls > 0) {
+    const rate = tally.failed / tally.calls;
+    const clean = tally.failed === 0;
+
+    if (!clean) failed = true;
+    console.log(
+      `  ${clean ? "ok  " : "FAIL"} ${"backend chunk failures".padEnd(38)} ${(100 * rate).toFixed(1).padStart(5)}%  ceiling 0%  n=${tally.calls}`
+    );
+
+    for (const [why, count] of [...tally.errors].sort((a, b) => b[1] - a[1]).slice(0, 3)) {
+      console.log(`         ${count}x ${why}`);
+    }
   }
 
   const byKind: Array<[string, string[], Array<string | null>]> = [
@@ -739,10 +788,12 @@ async function pooled<T, R>(items: T[], workers: number, fn: (item: T) => Promis
 }
 
 export async function cmdCompact(args: Args): Promise<number> {
-  const decisionBackend: DecisionBackend =
+  const base: DecisionBackend =
     args.decisionModel === undefined
       ? DEFAULT_BACKEND
       : resolveDecisionBackend(args.decisionModel);
+
+  const { backend: decisionBackend, tally } = tallying(base);
 
   const files = (function walk(dir: string): string[] {
     const out: string[] = [];
@@ -997,7 +1048,7 @@ export async function cmdCompact(args: Args): Promise<number> {
     }
   }
 
-  return gate([...real, ...synth], plantResults);
+  return gate([...real, ...synth], plantResults, tally);
 }
 
 const isMain = process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath2(import.meta.url);
