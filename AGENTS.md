@@ -199,7 +199,11 @@ python3 eval/compare.py compact --synth 60
 The compaction command is the only way to measure `scripts/compactor.py`.
 It prints re-fetch coverage and planted-constraint survival in one gate and
 exits 2 below either floor, so a wording that keeps paths but drops what the
-user said, or the reverse, cannot pass on one number. `eval/sweep.py` and
+user said, or the reverse, cannot pass on one number. It also counts backend
+chunk calls and failures, and any failure fails the gate: the compactor is
+fail-open, so a failed chunk leaves its blocks unscored and unscored rows are
+kept, which raises coverage. A run degraded in part was visible in neither the
+floors nor the probe counts, and a 503 storm could pass on optimistic numbers. `eval/sweep.py` and
 `eval/planted.py` are diagnostics for reading a change, not gates.
 
 `--seed 0 --sample 250` selects the same real edits as the numbers in
