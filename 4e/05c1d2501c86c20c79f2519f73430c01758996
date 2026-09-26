@@ -1,0 +1,20 @@
+src/compactor.ts
+  s_192292c6e473ef::t_bc9561f8687208 19
+  s_192292c6e473ef::t_0499fad6e33ec7 433-440,574,576,584
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4e05c1d2501c86c20c79f2519f73430c01758996",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "space-bunny-alpha"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
