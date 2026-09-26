@@ -1,0 +1,21 @@
+src/rules.ts
+  s_192292c6e473ef::t_e6f16e16bf2790 1-27,30-729,731-894,896-955,974-978,980
+  s_192292c6e473ef::t_4016047e2b5e9e 28-29,730,895
+  s_192292c6e473ef::t_8bed270421a6a7 956-973,979
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "64e668579bc4eb03e4ae4a5944b5f224b5a297cf",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
