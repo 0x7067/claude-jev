@@ -75,7 +75,7 @@ function pluginEnv() {
 }
 
 function runNode($, args, stdin) {
-  const argv = ["node", `${$.plugin.root}/dist/${args[0]}`, ...args.slice(1)];
+  const argv = ["node", "--experimental-strip-types", `${$.plugin.root}/${args[0]}`, ...args.slice(1)];
   const base = { env: pluginEnv(), timeoutMs: HOOK_TIMEOUT_MS };
 
   return stdin === undefined
@@ -496,7 +496,7 @@ export function register(on, options) {
       const [cwd, sessionId] = await Promise.all([$.session.cwd(), $.session.id()]);
       run = await runNode(
         $,
-        ["src/compactor.js", "rows"],
+        ["src/compactor.ts", "rows"],
         JSON.stringify({
           trigger: e.trigger,
           instructions: e.instructions ?? null,

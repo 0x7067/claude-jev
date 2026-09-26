@@ -14,7 +14,7 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
       - uses: astral-sh/ruff-action@v4.1.0
         with:
           version: "0.16.8"
@@ -24,14 +24,13 @@ jobs:
           version: "0.16.8"
           args: check
       - run: npm ci
-      - run: npm run build
-      - run: git diff --exit-code dist
+      - run: npx tsc --noEmit
       - run: npx oxlint
       - run: python3 -m compileall -q scripts eval
       - run: python3 scripts/check_no_comments.py
       - run: python3 scripts/check_no_stubs.py
       - run: echo '{"prompt":"hi","transcript_path":""}' | CLAUDE_CONFIG_DIR="${{ runner.temp }}" python3 scripts/prompt_router.py
-      - run: echo '' | node dist/src/compactor.js rows
-      - run: echo 'not json' | node dist/src/prompt-router.js
-      - run: echo 'not json' | node dist/src/subagent-router.js
-      - run: echo 'not json' | node dist/src/rules.js
+      - run: echo '' | node --experimental-strip-types src/compactor.ts rows
+      - run: echo 'not json' | node --experimental-strip-types src/prompt-router.ts
+      - run: echo 'not json' | node --experimental-strip-types src/subagent-router.ts
+      - run: echo 'not json' | node --experimental-strip-types src/rules.ts

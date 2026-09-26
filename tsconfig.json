@@ -4,9 +4,9 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "strict": true,
-    "outDir": "dist",
-    "declaration": true,
-    "sourceMap": true
+    "rewriteRelativeImportExtensions": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true
   },
   "include": ["src/**/*.ts", "adapters/afk/src/**/*.ts", "eval/**/*.ts"],
   "exclude": ["node_modules", "dist", "eval/observed"]

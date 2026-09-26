@@ -3,14 +3,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { readStdinJson } from "./shared/stdin.js";
-import { writeOutput } from "./shared/stdout.js";
-import { jevAsk, asNoul } from "./shared/jev-client.js";
-import type { Answers, NoulQuestion } from "./shared/jev-client.js";
-import { isString, parseJsonObject } from "./shared/json.js";
-import { loadRules, globMatch, isSubjectRelevant, type Rule } from "./shared/rule-parser.js";
-import { slugify } from "./shared/utils.js";
-import { loadState, saveState } from "./shared/state.js";
+import { readStdinJson } from "./shared/stdin.ts";
+import { writeOutput } from "./shared/stdout.ts";
+import { jevAsk, asNoul } from "./shared/jev-client.ts";
+import type { Answers, NoulQuestion } from "./shared/jev-client.ts";
+import { isString, parseJsonObject } from "./shared/json.ts";
+import { loadRules, globMatch, isSubjectRelevant, type Rule } from "./shared/rule-parser.ts";
+import { slugify } from "./shared/utils.ts";
+import { loadState, saveState } from "./shared/state.ts";
 
 const ACT = 0.80;
 

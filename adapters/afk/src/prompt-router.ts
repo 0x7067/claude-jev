@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-import { readStdinJson } from "./shared/stdin.js";
-import { writeOutput } from "./shared/stdout.js";
-import { jevAsk, asChoice, asNoul, asScore } from "./shared/jev-client.js";
-import { intentBundle } from "./shared/questions.js";
+import { readStdinJson } from "./shared/stdin.ts";
+import { writeOutput } from "./shared/stdout.ts";
+import { jevAsk, asChoice, asNoul, asScore } from "./shared/jev-client.ts";
+import { intentBundle } from "./shared/questions.ts";
 
 const MIN_CONFIDENCE = 0.75;
 

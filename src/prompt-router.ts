@@ -2,25 +2,25 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { readStdinJson } from "../adapters/afk/src/shared/stdin.js";
-import { writeOutput, type UserPromptSubmitOutput } from "../adapters/afk/src/shared/stdout.js";
+import { readStdinJson } from "../adapters/afk/src/shared/stdin.ts";
+import { writeOutput, type UserPromptSubmitOutput } from "../adapters/afk/src/shared/stdout.ts";
 import {
   jevAsk,
   asChoice,
   asNoul,
   asScore,
   type Answers,
-} from "../adapters/afk/src/shared/jev-client.js";
-import { intentBundle } from "../adapters/afk/src/shared/questions.js";
-import { isSynthetic } from "../adapters/afk/src/shared/synthetic.js";
+} from "../adapters/afk/src/shared/jev-client.ts";
+import { intentBundle } from "../adapters/afk/src/shared/questions.ts";
+import { isSynthetic } from "../adapters/afk/src/shared/synthetic.ts";
 import {
   isJsonObject,
   isJsonArray,
   isString,
   parseJsonObject,
   type Json,
-} from "../adapters/afk/src/shared/json.js";
-import { configDir, enabled, pluginVersion } from "../adapters/afk/src/shared/config.js";
+} from "../adapters/afk/src/shared/json.ts";
+import { configDir, enabled, pluginVersion } from "../adapters/afk/src/shared/config.ts";
 
 const MIN_CONFIDENCE = 0.75;
 

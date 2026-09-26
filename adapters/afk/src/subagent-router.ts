@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-import { readStdinJson } from "./shared/stdin.js";
-import { writeOutput } from "./shared/stdout.js";
-import { jevAsk } from "./shared/jev-client.js";
-import { subagentBundle, BRIEF_PARTS } from "./shared/questions.js";
-import { asNoul, asChoice } from "./shared/jev-client.js";
-import type { PreToolUseOutput } from "./shared/stdout.js";
+import { readStdinJson } from "./shared/stdin.ts";
+import { writeOutput } from "./shared/stdout.ts";
+import { jevAsk } from "./shared/jev-client.ts";
+import { subagentBundle, BRIEF_PARTS } from "./shared/questions.ts";
+import { asNoul, asChoice } from "./shared/jev-client.ts";
+import type { PreToolUseOutput } from "./shared/stdout.ts";
 
 const MIN_CONFIDENCE = 0.75;
 

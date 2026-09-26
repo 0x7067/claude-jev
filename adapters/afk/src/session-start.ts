@@ -13,10 +13,10 @@
  * cached runs need no API call).
  */
 
-import { readStdinJson } from "./shared/stdin.js";
-import { writeOutput } from "./shared/stdout.js";
-import { loadRules } from "./shared/rule-parser.js";
-import { formatDigest } from "./shared/digest.js";
+import { readStdinJson } from "./shared/stdin.ts";
+import { writeOutput } from "./shared/stdout.ts";
+import { loadRules } from "./shared/rule-parser.ts";
+import { formatDigest } from "./shared/digest.ts";
 
 interface SessionStartEvent {
   session_id?: string;

@@ -4,22 +4,22 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
-import { readStdinJson } from "../adapters/afk/src/shared/stdin.js";
-import { writeOutput, type HookOutput, type PostToolUseOutput, type StopOutput } from "../adapters/afk/src/shared/stdout.js";
+import { readStdinJson } from "../adapters/afk/src/shared/stdin.ts";
+import { writeOutput, type HookOutput, type PostToolUseOutput, type StopOutput } from "../adapters/afk/src/shared/stdout.ts";
 import {
   jevAsk,
   asNoul,
   type Answers,
   type NoulQuestion,
   type Question,
-} from "../adapters/afk/src/shared/jev-client.js";
+} from "../adapters/afk/src/shared/jev-client.ts";
 import {
   loadRules,
   globMatch,
   isSubjectRelevant,
   type Rule,
-} from "../adapters/afk/src/shared/rule-parser.js";
-import { addedHead, EXCLUDED_RE, isOutside } from "../adapters/afk/src/shared/hunks.js";
+} from "../adapters/afk/src/shared/rule-parser.ts";
+import { addedHead, EXCLUDED_RE, isOutside } from "../adapters/afk/src/shared/hunks.ts";
 import {
   isJsonObject,
   isJsonArray,
@@ -28,9 +28,9 @@ import {
   parseJsonObject,
   type Json,
   type JsonValue,
-} from "../adapters/afk/src/shared/json.js";
-import { comparator, which as astWhich } from "../adapters/afk/src/shared/comparators.js";
-import { configDir, enabled } from "../adapters/afk/src/shared/config.js";
+} from "../adapters/afk/src/shared/json.ts";
+import { comparator, which as astWhich } from "../adapters/afk/src/shared/comparators.ts";
+import { configDir, enabled } from "../adapters/afk/src/shared/config.ts";
 
 const RULES_CACHE = "jev-ts-rules-cache.json";
 

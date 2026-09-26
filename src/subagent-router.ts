@@ -2,17 +2,17 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { readStdinJson } from "../adapters/afk/src/shared/stdin.js";
-import { writeOutput, type PreToolUseOutput } from "../adapters/afk/src/shared/stdout.js";
+import { readStdinJson } from "../adapters/afk/src/shared/stdin.ts";
+import { writeOutput, type PreToolUseOutput } from "../adapters/afk/src/shared/stdout.ts";
 import {
   jevAsk,
   asNoul,
   asChoice,
   type Answers,
-} from "../adapters/afk/src/shared/jev-client.js";
-import { subagentBundle, BRIEF_PARTS } from "../adapters/afk/src/shared/questions.js";
-import { configDir, enabled } from "../adapters/afk/src/shared/config.js";
-import { isString, parseJsonObject, type Json } from "../adapters/afk/src/shared/json.js";
+} from "../adapters/afk/src/shared/jev-client.ts";
+import { subagentBundle, BRIEF_PARTS } from "../adapters/afk/src/shared/questions.ts";
+import { configDir, enabled } from "../adapters/afk/src/shared/config.ts";
+import { isString, parseJsonObject, type Json } from "../adapters/afk/src/shared/json.ts";
 
 const MIN_CONFIDENCE = 0.75;
 

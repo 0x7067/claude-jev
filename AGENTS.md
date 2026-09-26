@@ -15,10 +15,10 @@ building it, and cite it when resisting.
 | Path | What lives there |
 |---|---|
 | `scripts/jev.py` | API client and CLI. Every other script imports it. |
-| `scripts/prompt_router.py` | Measurement reference for the routing eval; production runs `dist/src/prompt-router.js` |
+| `scripts/prompt_router.py` | Measurement reference for the routing eval; production runs `src/prompt-router.ts` under node type stripping |
 | `scripts/rules.py` | `PostToolUse` on edits, `PreToolUse`/`PostToolUse` on Bash to record shell writes, and `Stop` — rule enforcement |
-| `hooks/register.ts` | Experimental function-hooks module: `session.compact` -> `node dist/src/compactor.js rows`, and the `/claude-jev` settings pane. A bridge, not a second implementation. |
-| `src/` | The TypeScript hook implementations the plugin runs; built to `dist/`, which is committed because a marketplace install does not build |
+| `hooks/register.ts` | Experimental function-hooks module: `session.compact` -> `node --experimental-strip-types src/compactor.ts rows`, and the `/claude-jev` settings pane. A bridge, not a second implementation. |
+| `src/` | The TypeScript hook implementations the plugin runs, executed directly as source under node type stripping (needs node >= 22.18) |
 | `adapters/afk/` | The AFK host adapter: a TypeScript implementation of the same hooks with its own manifest, `hooks.json`, and README. Its known-gaps list is the contract — do not claim parity that table does not state. |
 | `scripts/comparators.py` | ast-grep lookups the rule hook adds to a judgment |
 | `scripts/observed.py` | Scores what a past turn actually did |
@@ -44,7 +44,7 @@ building it, and cite it when resisting.
   client, and the shipped Claude Code plugin carries no dependency file.
   `hooks/register.ts`, the one non-Python file in that plugin, exists because
   Claude Code loads function-hook modules as JavaScript; it holds no judgment,
-  only the call into `node dist/src/compactor.js rows`, the fail-open fallthrough to
+  only the call into `node --experimental-strip-types src/compactor.ts rows`, the fail-open fallthrough to
   `next(e)`, and the `/claude-jev` pane. Even its debug-log line is the
   `summary` string Python sends, and the pane's key source, provider, and last
   call come from `jev.py status`. Keep it that way. `adapters/afk/` holds the
@@ -168,7 +168,7 @@ changed a matching JSON event on stdin and check the exit code.
 The `rows` bridge answers bad input with `{"fallback": ...}` and exit 0:
 
 ```bash
-echo '' | node dist/src/compactor.js rows
+echo '' | node --experimental-strip-types src/compactor.ts rows
 ```
 
 Out-of-band (not claimed on Grok Bot / default cloud agents): exercise the
@@ -192,7 +192,7 @@ against the table in `README.md`:
 python3 eval/replay.py run --variant v7_no_unclear --sample 250
 python3 eval/rules_eval.py run --sample 250 --seed 0
 python3 eval/rules_eval.py report --sweep
-node dist/eval/compact.js compact --synth 60 --seed 0 --workers 8 --max-inflight 12
+node --experimental-strip-types eval/compact.ts compact --synth 60 --seed 0 --workers 8 --max-inflight 12
 ```
 
 The compaction command is the only way to measure the TypeScript compactor.

@@ -1,4 +1,4 @@
-import type { Questions, NoulQuestion, ChoiceQuestion } from "./jev-client.js";
+import type { Questions, NoulQuestion, ChoiceQuestion } from "./jev-client.ts";
 
 export function intentBundle(): Questions {
   return {

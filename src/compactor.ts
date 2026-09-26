@@ -2,9 +2,9 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { readStdinJson } from "../adapters/afk/src/shared/stdin.js";
-import { DEFAULT_BACKEND, type Answers, type DecisionBackend } from "../adapters/afk/src/shared/jev-client.js";
-import { configDir } from "../adapters/afk/src/shared/config.js";
+import { readStdinJson } from "../adapters/afk/src/shared/stdin.ts";
+import { DEFAULT_BACKEND, type Answers, type DecisionBackend } from "../adapters/afk/src/shared/jev-client.ts";
+import { configDir } from "../adapters/afk/src/shared/config.ts";
 import {
   isJsonObject,
   isJsonArray,
@@ -13,7 +13,7 @@ import {
   parseJsonObject,
   type Json,
   type JsonValue,
-} from "../adapters/afk/src/shared/json.js";
+} from "../adapters/afk/src/shared/json.ts";
 import { fileURLToPath } from "node:url";
 
 export const KEEP_THRESHOLD = 0.5;

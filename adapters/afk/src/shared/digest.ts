@@ -1,4 +1,4 @@
-import type { Rule } from "./rule-parser.js";
+import type { Rule } from "./rule-parser.ts";
 
 const MAX_RULES_IN_DIGEST = 40;
 

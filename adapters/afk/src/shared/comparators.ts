@@ -4,10 +4,10 @@ import path from "node:path";
 import zlib from "node:zlib";
 import { execFile, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { addedBody, EXCLUDED_RE } from "./hunks.js";
-import { TESTISH_RE } from "./rule-parser.js";
-import { configDir } from "./config.js";
-import { isJsonObject, isJsonArray, isString, isNumber } from "./json.js";
+import { addedBody, EXCLUDED_RE } from "./hunks.ts";
+import { TESTISH_RE } from "./rule-parser.ts";
+import { configDir } from "./config.ts";
+import { isJsonObject, isJsonArray, isString, isNumber } from "./json.ts";
 
 const VERSION = "0.45.3";
 

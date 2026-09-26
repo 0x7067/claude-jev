@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isString, parseJsonObject } from "./json.js";
+import { isString, parseJsonObject } from "./json.ts";
 
 export function configDir(): string {
   return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");

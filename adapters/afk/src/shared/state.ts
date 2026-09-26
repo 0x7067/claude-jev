@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { isJsonObject, isNumber, parseJsonObject } from "./json.js";
+import { isJsonObject, isNumber, parseJsonObject } from "./json.ts";
 
 export interface SessionState {
   blocks: Record<string, number>;

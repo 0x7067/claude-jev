@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import os from "node:os";
-import { jevAsk, type Questions } from "./jev-client.js";
+import { jevAsk, type Questions } from "./jev-client.ts";
 import {
   isJsonObject,
   isJsonArray,
@@ -11,7 +11,7 @@ import {
   parseJsonObject,
   type Json,
   type JsonValue,
-} from "./json.js";
+} from "./json.ts";
 import {
   ruleQuestions,
   INSTRUCTION_MIN,
@@ -22,9 +22,9 @@ import {
   ITEMS_PER_REQUEST,
   POLARITY_CRITERIA,
   SUBJECT_CRITERIA,
-} from "./questions.js";
-import { slugify } from "./utils.js";
-import { configDir } from "./config.js";
+} from "./questions.ts";
+import { slugify } from "./utils.ts";
+import { configDir } from "./config.ts";
 
 export interface Rule {
   id: string;

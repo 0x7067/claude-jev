@@ -7,7 +7,7 @@ import {
   resolveDecisionBackend,
   DEFAULT_BACKEND,
   type DecisionBackend,
-} from "../adapters/afk/src/shared/jev-client.js";
+} from "../adapters/afk/src/shared/jev-client.ts";
 import {
   judge,
   blockText,
@@ -21,7 +21,7 @@ import {
   type Block,
   type Kept,
   type Stats,
-} from "../src/compactor.js";
+} from "../src/compactor.ts";
 import {
   isJsonObject,
   isJsonArray,
@@ -30,7 +30,7 @@ import {
   parseJsonObject,
   type Json,
   type JsonValue,
-} from "../adapters/afk/src/shared/json.js";
+} from "../adapters/afk/src/shared/json.ts";
 
 const HERE = path.dirname(fileURLToPath2(import.meta.url));
 

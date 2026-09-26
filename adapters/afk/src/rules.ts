@@ -3,18 +3,18 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { readStdinJson } from "./shared/stdin.js";
-import { writeOutput, type PostToolUseOutput } from "./shared/stdout.js";
-import { jevAsk } from "./shared/jev-client.js";
-import { asNoul, type Answers } from "./shared/jev-client.js";
+import { readStdinJson } from "./shared/stdin.ts";
+import { writeOutput, type PostToolUseOutput } from "./shared/stdout.ts";
+import { jevAsk } from "./shared/jev-client.ts";
+import { asNoul, type Answers } from "./shared/jev-client.ts";
 import {
   loadRules,
   globMatch,
   isSubjectRelevant,
   type Rule,
-} from "./shared/rule-parser.js";
-import { slugify } from "./shared/utils.js";
-import { loadState, saveState } from "./shared/state.js";
+} from "./shared/rule-parser.ts";
+import { slugify } from "./shared/utils.ts";
+import { loadState, saveState } from "./shared/state.ts";
 
 const ACT = 0.80;
 
@@ -81,7 +81,7 @@ function editHunks(inp: PostToolUseEvent["tool_input"] = {}): string {
   return inp.content ?? "";
 }
 
-function ruleQuestion(rule: Rule): import("./shared/jev-client.js").NoulQuestion {
+function ruleQuestion(rule: Rule): import("./shared/jev-client.ts").NoulQuestion {
   if (rule.polarity === "require") {
     return {
       type: "noul",
@@ -158,7 +158,7 @@ async function main(): Promise<void> {
 
   if (relevant.length === 0) return;
 
-  const questions: Record<string, import("./shared/jev-client.js").Question> = {};
+  const questions: Record<string, import("./shared/jev-client.ts").Question> = {};
   const qkeyMap = new Map<Rule, string>();
   const seen = new Set<string>();
 

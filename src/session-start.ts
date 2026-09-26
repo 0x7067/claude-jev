@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 import path from "node:path";
-import { readStdinJson } from "../adapters/afk/src/shared/stdin.js";
-import { writeOutput } from "../adapters/afk/src/shared/stdout.js";
-import { loadRules } from "../adapters/afk/src/shared/rule-parser.js";
-import { formatDigest } from "../adapters/afk/src/shared/digest.js";
-import { configDir } from "../adapters/afk/src/shared/config.js";
+import { readStdinJson } from "../adapters/afk/src/shared/stdin.ts";
+import { writeOutput } from "../adapters/afk/src/shared/stdout.ts";
+import { loadRules } from "../adapters/afk/src/shared/rule-parser.ts";
+import { formatDigest } from "../adapters/afk/src/shared/digest.ts";
+import { configDir } from "../adapters/afk/src/shared/config.ts";
 
 interface SessionStartEvent {
   session_id?: string;

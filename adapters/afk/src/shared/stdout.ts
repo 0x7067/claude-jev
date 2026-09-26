@@ -1,4 +1,4 @@
-import type { Json } from "./json.js";
+import type { Json } from "./json.ts";
 
 export interface UserPromptSubmitOutput {
   hookSpecificOutput?: {

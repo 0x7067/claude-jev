@@ -90,7 +90,12 @@ function savedKey(): string {
   return (process.env["CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY"] ?? "").trim();
 }
 
-function resolveKey(): { key: string; provider: Provider } {
+interface ResolvedKey {
+  key: string;
+  provider: Provider;
+}
+
+function resolveKey(): ResolvedKey {
   const pinned = pinnedProvider();
 
   for (const p of pinned ? [pinned] : PROVIDERS) {
