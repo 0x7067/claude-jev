@@ -1,0 +1,19 @@
+AGENTS.md
+  s_192292c6e473ef::t_3334dc8223b267 217-224
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "256fe29f185ac0513936339177e1634803119bf3",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
