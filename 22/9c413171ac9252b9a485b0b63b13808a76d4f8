@@ -1,0 +1,19 @@
+eval/compact.ts
+  s_192292c6e473ef::t_494717c3fb7f98 72,74-93,100,108,111-112,781,788,796,821
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "229c413171ac9252b9a485b0b63b13808a76d4f8",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "space-bunny-alpha"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
