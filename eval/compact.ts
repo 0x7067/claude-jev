@@ -662,6 +662,25 @@ function gate(rows: EventRow[], plants: Array<PlantResult | null>): number {
     console.log(`  ${ok ? "ok  " : "FAIL"} ${name.padEnd(38)} ${(100 * val).toFixed(1).padStart(5)}%  floor ${Math.round(100 * floor)}%  n=${n}`);
   }
 
+  const fatesByKind: Array<[string, string[]]> = [
+    ["user", user],
+    ["buried", buried],
+  ];
+
+  for (const [name, fates] of fatesByKind) {
+    const tally = fates.reduce<Record<string, number>>((acc, f) => {
+      acc[f] = (acc[f] ?? 0) + 1;
+
+      return acc;
+    }, {});
+
+    console.log(
+      `  ${name.padEnd(38)} ${Object.entries(tally)
+        .map(([k, v]) => `${k} ${v}`)
+        .join("  ")}`
+    );
+  }
+
   return failed ? 2 : 0;
 }
 
