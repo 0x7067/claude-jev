@@ -1,0 +1,20 @@
+scripts/rules.py
+  s_192292c6e473ef::t_18c0c462bf30f4 126-137,506-510
+  s_192292c6e473ef::t_c101b5a118e830 123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "329e10a5942d74fdb67859a6447057bbc7675c0c",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "space-bunny-alpha"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
