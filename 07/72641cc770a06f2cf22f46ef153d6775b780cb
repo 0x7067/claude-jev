@@ -1,0 +1,27 @@
+adapters/afk/src/shared/stdout.ts
+  s_192292c6e473ef::t_d043509bf69950 15
+adapters/afk/src/shared/jev-client.ts
+  s_192292c6e473ef::t_dbe5e8543a138c 29-40
+adapters/afk/src/shared/questions.ts
+  s_192292c6e473ef::t_45291341ac1d66 92-95,106
+src/prompt-router.ts
+  s_192292c6e473ef::t_676919f2adc783 9-11
+src/subagent-router.ts
+  s_192292c6e473ef::t_94a9b7ebe5a764 1-175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0772641cc770a06f2cf22f46ef153d6775b780cb",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
