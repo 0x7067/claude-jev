@@ -247,11 +247,14 @@ python3 eval/rules_eval.py run --sample 250 --seed 0 \
   plain-string criteria, which is every question compaction asks. The backend
   name is part of the compaction selection signature, so a second model's run
   cannot read the first model's cached decisions back as its own. Measured over
-  the full population, span-01-lite matches Jev on verbatim coverage, 84.2%
-  against 85.9%, and misses both planted floors, 91.0% and 75.0% against 97.8%
-  and 89.8%: coverage is judge-independent, telling a user constraint from a
-  routine row is not. Read on the real events alone it inverts to 92.3%, which
-  is what the synthetic arm is for.
+  the full population, span-01-lite passes all three compaction floors: 81.3%
+  verbatim coverage against Jev's 86.1%, with planted survival 97.8% and 94.3%
+  against 97.8% and 96.6%, and no cut in either. It trails on coverage and on
+  tokens, 3591 per event against 3523, but it is usable as the compaction
+  decision model. It is not usable for the rules, where it catches 1 of 29
+  hand-written violations against Jev's 16 and blocks nothing at any `ACT`.
+  Run it at `--workers 2`; the endpoint 503s above roughly 24 concurrent
+  requests.
 
 The rules eval judges each record at its `sha`, and reads
 `eval/global_CLAUDE.md` in place of `~/.claude/CLAUDE.md`. Change a case's
