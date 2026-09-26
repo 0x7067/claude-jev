@@ -1,0 +1,26 @@
+adapters/afk/src/shared/jev-client.ts
+  s_192292c6e473ef::t_e36180fa89504e 181
+  s_192292c6e473ef::t_f4bb65979cde57 182
+eval/compact.ts
+  s_192292c6e473ef::t_a962dc25c982ea 514-515
+scripts/jev.py
+  s_192292c6e473ef::t_cecfcdf21f9b83 175,179-180,213-214
+src/compactor.ts
+  s_192292c6e473ef::t_8accc6a87f547c 376,385,392,401
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4ea4475fbe21c612577267be243d975dcbd51c58",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
