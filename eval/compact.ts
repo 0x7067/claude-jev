@@ -69,14 +69,35 @@ interface Tallied {
   tally: BackendTally;
 }
 
-function tallying(inner: DecisionBackend): Tallied {
+function tallying(inner: DecisionBackend, maxInflight: number): Tallied {
   const tally: BackendTally = { calls: 0, failed: 0, errors: new Map() };
+  const waiting: Array<() => void> = [];
+  let inflight = 0;
+
+  const acquire = (): Promise<void> => {
+    if (maxInflight <= 0 || inflight < maxInflight) {
+      inflight += 1;
+
+      return Promise.resolve();
+    }
+
+    return new Promise<void>((done) => waiting.push(() => {
+      inflight += 1;
+      done();
+    }));
+  };
+
+  const release = (): void => {
+    inflight -= 1;
+    waiting.shift()?.();
+  };
 
   return {
     tally,
     backend: {
       name: inner.name,
       ask: async (state, questions, timeoutMs) => {
+        await acquire();
         tally.calls += 1;
 
         try {
@@ -84,9 +105,11 @@ function tallying(inner: DecisionBackend): Tallied {
         } catch (e) {
           tally.failed += 1;
           const why = String(e).slice(0, 100);
-          tally.errors.set(why, (tally.errors.get(why) ?? 0) + 1);
+          tally.errors.set(why, (tally.errors.get(why) ?? 0) 	+ 1);
 
           throw e;
+        } finally {
+          release();
         }
       },
     },
@@ -755,13 +778,14 @@ interface Args {
   seed: number;
   workers: number;
   explain: boolean;
+  maxInflight: number;
   decisionModel?: string;
   out?: string;
   projects?: string;
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { synth: 0, seed: 0, workers: 4, explain: false };
+  const args: Args = { synth: 0, seed: 0, workers: 4, explain: false, maxInflight: 0 };
 
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--synth") args.synth = Number(argv[++i]);
@@ -769,6 +793,7 @@ function parseArgs(argv: string[]): Args {
     else if (argv[i] === "--workers") args.workers = Number(argv[++i]);
     else if (argv[i] === "--explain") args.explain = true;
     else if (argv[i] === "--decision-model") args.decisionModel = argv[++i];
+    else if (argv[i] === "--max-inflight") args.maxInflight = Number(argv[++i]);
     else if (argv[i] === "--out") args.out = argv[++i];
     else if (argv[i] === "--projects") args.projects = argv[++i];
   }
@@ -793,7 +818,7 @@ export async function cmdCompact(args: Args): Promise<number> {
       ? DEFAULT_BACKEND
       : resolveDecisionBackend(args.decisionModel);
 
-  const { backend: decisionBackend, tally } = tallying(base);
+  const { backend: decisionBackend, tally } = tallying(base, args.maxInflight);
 
   const files = (function walk(dir: string): string[] {
     const out: string[] = [];
