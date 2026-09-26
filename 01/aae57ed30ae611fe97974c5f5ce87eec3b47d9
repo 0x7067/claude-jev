@@ -1,0 +1,20 @@
+CHANGELOG.md
+  s_192292c6e473ef::t_dfa813f24cb1dc 7-8
+  s_192292c6e473ef::t_7ab514e1b8a4ae 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "01aae57ed30ae611fe97974c5f5ce87eec3b47d9",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "space-bunny-alpha"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
