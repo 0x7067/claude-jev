@@ -227,7 +227,15 @@ def at_commit(cwd: str, sha: str) -> str:
             timeout=120,
         )
         if r.returncode != 0:
-            raise SystemExit(f"cannot check out {top} at {sha[:12]}: {r.stderr.strip()}")
+            raise SystemExit(
+                f"cannot check out {top} at {sha[:12]}: {r.stderr.strip()}\n"
+                f"That commit is gone from {top}. Extraction pins the repo HEAD at extract\n"
+                f"time, so a rewritten or force-pushed history invalidates every record\n"
+                f"pinned to it, and a run cannot reproduce the rule files it measured.\n"
+                f"Re-extract to repin the corpus, or drop the records whose commit no\n"
+                f"longer exists; do not judge them at the live checkout, which measures a\n"
+                f"different thing under the same name."
+            )
     return os.path.normpath(os.path.join(dest, os.path.relpath(cwd, top)))
 
 
