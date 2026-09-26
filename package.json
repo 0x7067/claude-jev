@@ -1,0 +1,14 @@
+{
+  "name": "@claude-jev/afk-adapter",
+  "version": "0.2.0",
+  "description": "TypeScript AFK host adapter for claude-jev",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "echo 'No tests yet — see README for known gaps'"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^5.4.0"
+  }
+}

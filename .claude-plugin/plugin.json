@@ -1,0 +1,5 @@
+{
+  "name": "claude-jev-afk",
+  "description": "Jev judgment hooks for AFK — automatic rule enforcement, prompt routing, and turn-level compliance. Hooks are fences the agent cannot skip; MCP tools are lenses the agent chooses to use.",
+  "version": "0.2.0"
+}
