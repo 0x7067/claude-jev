@@ -234,14 +234,20 @@ python3 eval/rules_eval.py run --sample 250 --seed 0 \
   failed.
 
   The decisions endpoint returns `HTTP 503` from a gateway above roughly 24
-  concurrent requests, measured: 4, 8, and 16 concurrent all succeed, 24 loses
-  one. `--workers 8` times the per-event chunk parallelism is about that, so run
-  the cross-model compaction eval at `--workers 2`. Note what a gateway error
-  does to the numbers: the compactor is fail-open, so a failed chunk yields no
-  answers, its blocks go unscored, and unscored rows are kept. In the re-read
-  path that inflates coverage, and in the planted path an all-chunks event is
-  dropped and shows up as a smaller `n`. A run degraded only in part is
-  visible in neither, which is why the floors print their own `n`.
+  requests in flight, measured: 4, 8, and 16 concurrent all succeed, 24 loses
+  one. `--workers` does not express that limit, because each event fans out to
+  about seven chunk calls, so `--workers 8` is roughly 56 requests and lost
+  every one of its 98 events. Use `--workers 8 --max-inflight 12`: the cap
+  applies to requests actually issued, so queued work does not count, and the
+  run finishes in well under five minutes with zero failed chunks. `--workers 2`
+  is not the safe answer either, it still timed out 0.6% of chunks.
+
+  Note what a gateway error does to the numbers: the compactor is fail-open, so
+  a failed chunk yields no answers, its blocks go unscored, and unscored rows
+  are kept. In the re-read path that inflates coverage, and in the planted path
+  an all-chunks event is dropped and shows up as a smaller `n`. A run degraded
+  only in part was visible in neither, which is why the gate now counts backend
+  calls and failures and fails the run on any of them.
 
   The `decisions` backend is OpenRouter's `/api/alpha/decisions`, which serves
   `respan/span-01-lite`: a System One model behind a different URL, same
@@ -257,8 +263,8 @@ python3 eval/rules_eval.py run --sample 250 --seed 0 \
   tokens, 3591 per event against 3523, but it is usable as the compaction
   decision model. It is not usable for the rules, where it catches 1 of 29
   hand-written violations against Jev's 16 and blocks nothing at any `ACT`.
-  Run it at `--workers 2`; the endpoint 503s above roughly 24 concurrent
-  requests.
+  Run it at `--workers 8 --max-inflight 12`; the endpoint 503s above roughly
+  24 requests in flight and `--workers` alone does not express that.
 
 The rules eval judges each record at its `sha`, and reads
 `eval/global_CLAUDE.md` in place of `~/.claude/CLAUDE.md`. Change a case's
