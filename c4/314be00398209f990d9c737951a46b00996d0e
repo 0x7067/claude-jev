@@ -1,0 +1,29 @@
+eval/compact.ts
+  s_192292c6e473ef::t_8aaf5429506a76 222,405
+  s_192292c6e473ef::t_b19f1b9d01966a 480,491,515
+  s_192292c6e473ef::t_89cf5354ee940f 578-579,581,589,597
+  s_192292c6e473ef::t_fa1c2315d8fef4 19-20,378-380,532
+  s_192292c6e473ef::t_a1823165d166e7 1-18,21,23-221,223-377,381-404,406-479,481-490,492-514,516-531,533-577,580,582-588,590-596,598-681
+  s_192292c6e473ef::t_b3936a0b3b5e1a 22
+tsconfig.json
+  s_192292c6e473ef::t_133c9c9b8c3623 11
+  s_192292c6e473ef::t_5860ca4c46942c 12
+src/compactor.ts
+  s_192292c6e473ef::t_f2dd687a01e336 11,15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c4314be00398209f990d9c737951a46b00996d0e",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
