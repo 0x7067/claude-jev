@@ -25,6 +25,7 @@ jobs:
           args: check
       - run: npm ci
       - run: npm run build
+      - run: git diff --exit-code dist
       - run: npx oxlint
       - run: python3 -m compileall -q scripts eval
       - run: python3 scripts/check_no_comments.py
