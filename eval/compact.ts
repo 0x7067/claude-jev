@@ -511,6 +511,8 @@ async function genSummary(conversation: string): Promise<string | null> {
 
     child.stdout.on("data", (d: Buffer) => {
       out += d.toString();
+
+      if (out.length > 1_000_000) child.kill("SIGKILL");
     });
     child.stderr.on("data", (d: Buffer) => {
       err += d.toString();

@@ -373,12 +373,7 @@ async function askChunked(
 export const ELISION = (n: number) =>
   `[\u2026 ${n} chars elided by jev-compact \u2014 re-read the file or re-run the command if needed]`;
 
-interface HeadCut {
-  kept: string;
-  at: number;
-}
-
-function headOf(text: string, chars: number): HeadCut {
+function headOf(text: string, chars: number): string {
   let cut = -1;
   let idx = text.indexOf("\n\n", Math.floor(chars / 2));
 
@@ -387,16 +382,14 @@ function headOf(text: string, chars: number): HeadCut {
     idx = text.indexOf("\n\n", idx + 1);
   }
 
-  if (cut > 0) return { kept: text.slice(0, cut), at: cut };
-
-  return { kept: text.slice(0, chars), at: chars };
+  return cut > 0 ? text.slice(0, cut) : text.slice(0, chars);
 }
 
 export function cutMarked(text: string, chars: number): string {
   if (text.length <= chars) return text;
   const head = headOf(text, chars);
 
-  return `${head.kept}\n${ELISION(text.length - head.kept.length)}`;
+  return `${head}\n${ELISION(text.length - head.length)}`;
 }
 
 export function truncateBlock(text: string): string {
@@ -405,7 +398,7 @@ export function truncateBlock(text: string): string {
   const head = headOf(text, HEAD_CHARS);
   const tail = text.slice(text.length - TAIL_CHARS).replace(/^\s+/, "");
 
-  return `${head.kept}\n${ELISION(text.length - head.kept.length - tail.length)}\n${tail}`;
+  return `${head}\n${ELISION(text.length - head.length - tail.length)}\n${tail}`;
 }
 
 export interface Kept {

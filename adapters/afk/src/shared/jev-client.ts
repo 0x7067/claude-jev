@@ -178,6 +178,8 @@ export function resolveDecisionBackend(spec: string): DecisionBackend {
 
   if (make === undefined) throw new Error(`unknown decision backend: ${id}`);
 
+  if (model === "") throw new Error(`empty decision model: ${spec}`);
+
   return make(model);
 }
 

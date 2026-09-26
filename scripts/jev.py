@@ -172,10 +172,12 @@ BACKENDS = ("systemone", "decisions")
 def split_spec(spec: str) -> tuple[str, str]:
     """A `backend:model` spec, or a bare model id meaning System One."""
     backend, sep, model = spec.partition(":")
-    if not sep or not model:
+    if not sep:
         return "systemone", spec
     if backend not in BACKENDS:
         raise JevError(f"unknown Jev backend: {backend}")
+    if not model:
+        raise JevError(f"empty model in decision backend spec: {spec!r}")
     return backend, model
 
 
@@ -207,16 +209,14 @@ def ask(
         provider = DECISIONS_PROVIDER
     else:
         source, key, provider = resolve()
-        if source == "missing":
-            raise JevError(missing_key_message(provider))
         provider = provider or PROVIDERS[0]
+    if source == "missing":
+        raise JevError(missing_key_message(provider))
     body = {
         "state": state,
         "model": model_id,
         "questions": questions,
     }
-    if source == "missing":
-        raise JevError(missing_key_message(provider))
     req = urllib.request.Request(
         provider.url,
         data=json.dumps(body).encode(),
