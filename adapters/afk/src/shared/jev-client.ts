@@ -90,20 +90,22 @@ function resolveKey() {
   throw new Error("No Jev API key found. Set TYPESAFE_API_KEY or OPENROUTER_API_KEY.");
 }
 
-export async function jevAsk(
+
+export interface DecisionBackend {
+  readonly name: string;
+  ask(state: string, questions: Questions, timeoutMs: number): Promise<Answers>;
+}
+
+const DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
+
+async function typedAsk(
+  url: string,
+  model: string,
+  key: string,
   state: string,
   questions: Questions,
-  timeoutMs: number = DEFAULT_TIMEOUT_MS
+  timeoutMs: number
 ): Promise<Answers> {
-  const { key, provider } = resolveKey();
-  const url = process.env["JEV_BASE_URL"] ?? provider.url;
-
-  const body = JSON.stringify({
-    state,
-    model: DEFAULT_MODEL,
-    questions,
-  });
-
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -114,7 +116,7 @@ export async function jevAsk(
         Authorization: `Bearer ${key}`,
         "Content-Type": "application/json",
       },
-      body,
+      body: JSON.stringify({ state, model, questions }),
       signal: controller.signal,
     });
 
@@ -123,11 +125,70 @@ export async function jevAsk(
       throw new Error(`HTTP ${res.status}: ${detail.slice(0, 300)}`);
     }
 
-    // SAFETY: the SystemOne answers endpoint returns { answers } per the API contract.
+    // SAFETY: the SystemOne and decisions answers endpoints return { answers } per the API contract.
     const payload = (await res.json()) as { answers?: Answers };
 
     return payload.answers ?? {};
   } finally {
     clearTimeout(timer);
   }
+}
+
+function systemoneBackend(model: string): DecisionBackend {
+  return {
+    name: `systemone:${model}`,
+    ask: (state, questions, timeoutMs) => {
+      const { key, provider } = resolveKey();
+
+      return typedAsk(
+        process.env["JEV_BASE_URL"] ?? provider.url,
+        model,
+        key,
+        state,
+        questions,
+        timeoutMs
+      );
+    },
+  };
+}
+
+function decisionsBackend(model: string): DecisionBackend {
+  return {
+    name: `decisions:${model}`,
+    ask: (state, questions, timeoutMs) => {
+      const key = (process.env["OPENROUTER_API_KEY"] ?? "").trim();
+
+      if (!key) throw new Error("decisions backend needs OPENROUTER_API_KEY");
+
+      return typedAsk(DECISIONS_URL, model, key, state, questions, timeoutMs);
+    },
+  };
+}
+
+const BACKENDS = new Map<string, (model: string) => DecisionBackend>([
+  ["systemone", systemoneBackend],
+  ["decisions", decisionsBackend],
+]);
+
+export function resolveDecisionBackend(spec: string): DecisionBackend {
+  const at = spec.indexOf(":");
+  const id = at === -1 ? "systemone" : spec.slice(0, at);
+  const model = at === -1 ? spec : spec.slice(at + 1);
+  const make = BACKENDS.get(id);
+
+  if (make === undefined) throw new Error(`unknown decision backend: ${id}`);
+
+  if (model === "") throw new Error(`empty decision model: ${spec}`);
+
+  return make(model);
+}
+
+export const DEFAULT_BACKEND: DecisionBackend = systemoneBackend(DEFAULT_MODEL);
+
+export async function jevAsk(
+  state: string,
+  questions: Questions,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS
+): Promise<Answers> {
+  return DEFAULT_BACKEND.ask(state, questions, timeoutMs);
 }

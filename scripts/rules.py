@@ -120,7 +120,21 @@ SKIP_DIRS = {
     ".cache",
     "target",
     ".claude",
+    "Library",
 }
+
+
+def same_filesystem(parent: str, path: str) -> bool:
+    """Whether `path` is an entry on the same filesystem as `parent`. A mount
+    point is a different project on a different volume, so a nested
+    instruction file there is not this project's, and lstat on the mountpoint
+    itself never reaches what is mounted behind it: a volume that is slow or
+    unreachable cannot wedge the walk."""
+    try:
+        return os.lstat(path).st_dev == os.lstat(parent).st_dev
+    except OSError:
+        return False
+
 
 BULLET = re.compile(r"^\s*(?:[-*+]|\d+\.)\s+(.*)")
 HEADING = re.compile(r"^\s*#{1,6}\s+")
@@ -490,13 +504,11 @@ def nested_files(cwd: str) -> list[tuple[str, str]]:
                     out.append((p, f"{rel}/**"))
         for e in entries:
             sub = os.path.join(d, e)
-            if (
-                os.path.isdir(sub)
-                and e not in SKIP_DIRS
-                and not e.startswith(".")
-                and not os.path.exists(os.path.join(sub, ".git"))
-            ):
-                walk(sub, depth + 1)
+            if e in SKIP_DIRS or e.startswith("."):
+                continue
+            if same_filesystem(d, sub) and os.path.isdir(sub):
+                if not os.path.exists(os.path.join(sub, ".git")):
+                    walk(sub, depth + 1)
 
     walk(cwd, 0)
     return out

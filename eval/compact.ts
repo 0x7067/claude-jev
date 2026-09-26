@@ -2,7 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
+import {
+  resolveDecisionBackend,
+  DEFAULT_BACKEND,
+  type DecisionBackend,
+} from "../adapters/afk/src/shared/jev-client.js";
 import {
   judge,
   blockText,
@@ -12,6 +17,7 @@ import {
   transcriptBlocks,
   PIN_TAIL,
   MAX_BLOCKS,
+  KEEP_THRESHOLD,
   type Block,
   type Kept,
   type Stats,
@@ -34,6 +40,8 @@ const DATA = path.join(ROOT, "eval", "observed");
 
 const COMPACT_CACHE = path.join(DATA, "compact_cache.jsonl");
 
+const SUMMARY_CACHE = path.join(DATA, "summary_cache.jsonl");
+
 const COMPACTOR_SRC = path.join(ROOT, "dist", "src", "compactor.js");
 
 const PROJECTS = path.join(os.homedir(), ".claude", "projects");
@@ -49,6 +57,64 @@ const SYNTH_CHARS = 100_000;
 const MIN_POST_RETRIEVALS = 5;
 
 const MIN_BLOCKS = 30;
+
+interface BackendTally {
+  calls: number;
+  failed: number;
+  errors: Map<string, number>;
+}
+
+interface Tallied {
+  backend: DecisionBackend;
+  tally: BackendTally;
+}
+
+function tallying(inner: DecisionBackend, maxInflight: number): Tallied {
+  const tally: BackendTally = { calls: 0, failed: 0, errors: new Map() };
+  const waiting: Array<() => void> = [];
+  let inflight = 0;
+
+  const acquire = (): Promise<void> => {
+    if (maxInflight <= 0 || inflight < maxInflight) {
+      inflight += 1;
+
+      return Promise.resolve();
+    }
+
+    return new Promise<void>((done) => waiting.push(() => {
+      inflight += 1;
+      done();
+    }));
+  };
+
+  const release = (): void => {
+    inflight -= 1;
+    waiting.shift()?.();
+  };
+
+  return {
+    tally,
+    backend: {
+      name: inner.name,
+      ask: async (state, questions, timeoutMs) => {
+        await acquire();
+        tally.calls += 1;
+
+        try {
+          return await inner.ask(state, questions, timeoutMs);
+        } catch (e) {
+          tally.failed += 1;
+          const why = String(e).slice(0, 100);
+          tally.errors.set(why, (tally.errors.get(why) ?? 0) 	+ 1);
+
+          throw e;
+        } finally {
+          release();
+        }
+      },
+    },
+  };
+}
 
 const FLOOR_REFETCH_FULL = 0.7;
 
@@ -225,8 +291,13 @@ function boundaries(lines: string[]): Boundary[] {
   return out;
 }
 
-function selectionSig(): string {
-  return crypto.createHash("sha256").update(fs.readFileSync(COMPACTOR_SRC)).digest("hex").slice(0, 16);
+function selectionSig(decisionBackend: DecisionBackend): string {
+  return crypto
+    .createHash("sha256")
+    .update(fs.readFileSync(COMPACTOR_SRC))
+    .update(decisionBackend.name)
+    .digest("hex")
+    .slice(0, 16);
 }
 
 interface CacheRow {
@@ -289,6 +360,16 @@ function loadCompactCache(): [Map<string, CacheRow>, Map<string, string | null>]
     }
   }
 
+  if (fs.existsSync(SUMMARY_CACHE)) {
+    for (const line of fs.readFileSync(SUMMARY_CACHE, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+
+      const d = parseJsonObject(line);
+
+      if (d !== null && isString(d["key"]) && isString(d["summary"])) summaries.set(d["key"], d["summary"]);
+    }
+  }
+
   return [judged, summaries];
 }
 
@@ -303,11 +384,23 @@ async function replay(
   cache: Map<string, CacheRow>,
   summaries: Map<string, string | null>,
   cacheF: number | null,
+  decisionBackend: DecisionBackend,
   gen?: () => Promise<string | null>
 ): Promise<ReplayResult> {
   const key = crypto.createHash("sha256").update(preLines.join("")).digest("hex");
-  const sig = selectionSig();
+  const sig = selectionSig(decisionBackend);
   let summary = summaries.get(key) ?? null;
+
+  if (summary === null && gen) {
+    summary = await gen();
+
+    summaries.set(key, summary);
+
+    if (summary !== null) {
+      fs.appendFileSync(SUMMARY_CACHE, JSON.stringify({ key, summary }) + "\n");
+    }
+  }
+
   const cacheKey = `${key}|${sig}`;
   const hit = cache.get(cacheKey);
 
@@ -318,14 +411,9 @@ async function replay(
   let stats: Stats;
 
   try {
-    [kept, stats] = await judge(tmp, null);
+    [kept, stats] = await judge(tmp, null, decisionBackend);
   } finally {
     fs.rmSync(tmp, { force: true });
-  }
-
-  if (summary === null && gen) {
-    summary = await gen();
-    summaries.set(key, summary);
   }
 
   if (stats.judged > 0) {
@@ -411,15 +499,44 @@ function synthCut(lines: string[]): number | null {
   return n >= MIN_POST_RETRIEVALS ? cut : null;
 }
 
-async function genSummary(conversation: string, model: string): Promise<string | null> {
-  const r = spawnSync("claude", ["-p", "--model", model, SUMMARY_PROMPT], {
-    input: conversation,
-    encoding: "utf8",
-    timeout: 600_000,
-    maxBuffer: 64 * 1024 * 1024,
-  });
+async function genSummary(conversation: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const child = spawn("pi", ["-p", "--no-session", "--no-tools", SUMMARY_PROMPT], {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
 
-  return r.status === 0 && r.stdout.trim() ? r.stdout.trim() : null;
+    const timer = setTimeout(() => child.kill("SIGKILL"), 600_000);
+    let out = "";
+    let err = "";
+
+    child.stdout.on("data", (d: Buffer) => {
+      out += d.toString();
+
+      if (out.length > 1_000_000) child.kill("SIGKILL");
+    });
+    child.stderr.on("data", (d: Buffer) => {
+      err += d.toString();
+    });
+    child.on("error", () => {
+      clearTimeout(timer);
+
+      resolve(null);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+
+      if (code !== 0 || !out.trim()) {
+        console.error(`genSummary failed: status=${code} err=${err.slice(0, 300)}`);
+
+        resolve(null);
+
+        return;
+      }
+
+      resolve(out.trim());
+    });
+    child.stdin.end(conversation);
+  });
 }
 
 interface EventRow {
@@ -516,6 +633,8 @@ function plant(blocks: Block[], rng: () => number): [Block[], { key: string; use
 interface PlantResult {
   user: string | null;
   buried: string | null;
+  userCut: string | null;
+  buriedCut: string | null;
   kept: number;
   blocks: number;
 }
@@ -525,7 +644,8 @@ async function runEvent(
   lines: string[],
   i: number,
   kind: string,
-  seed: number
+  seed: number,
+  decisionBackend: DecisionBackend
 ): Promise<PlantResult | null> {
   const tmp = path.join(os.tmpdir(), `jev-planted-${process.pid}-${Math.random().toString(36).slice(2)}.jsonl`);
   fs.writeFileSync(tmp, lines.slice(0, i).join("\n"));
@@ -543,7 +663,7 @@ async function runEvent(
   let stats: Stats;
 
   try {
-    [kept, stats] = await selectBlocks(plantedBlocks, null);
+    [kept, stats] = await selectBlocks(plantedBlocks, null, null, decisionBackend);
   } catch (e) {
     process.stderr.write(`  jev failed on ${path.basename(fp)}: ${String(e)}\n`);
 
@@ -561,9 +681,18 @@ async function runEvent(
     return k.text.includes(meta.key) ? "kept" : "cut";
   };
 
+  const cutOffset = (pos: number | null): string | null => {
+    if (pos === null || fate(pos) !== "cut") return null;
+    const original = plantedBlocks[pos]!.text;
+
+    return `${original.indexOf(meta.key)}/${original.length}->${final.get(pos)!.text.length}`;
+  };
+
   return {
     user: fate(meta.user),
     buried: fate(meta.buried),
+    userCut: cutOffset(meta.user),
+    buriedCut: cutOffset(meta.buried),
     kept: stats.kept,
     blocks: plantedBlocks.length,
   };
@@ -580,7 +709,7 @@ function shuffle<T>(arr: T[], rng: () => number): T[] {
   return a;
 }
 
-function gate(rows: EventRow[], plants: Array<PlantResult | null>): number {
+function gate(rows: EventRow[], plants: Array<PlantResult | null>, tally: BackendTally): number {
   const reads = rows.reduce((sum, r) => sum + r.refetch_reads, 0);
   const full = reads > 0 ? rows.reduce((sum, r) => sum + r.refetch_jev_full, 0) / reads : NaN;
   const user = plants.flatMap((p) => (p !== null && p.user !== null ? [p.user] : []));
@@ -604,6 +733,45 @@ function gate(rows: EventRow[], plants: Array<PlantResult | null>): number {
     console.log(`  ${ok ? "ok  " : "FAIL"} ${name.padEnd(38)} ${(100 * val).toFixed(1).padStart(5)}%  floor ${Math.round(100 * floor)}%  n=${n}`);
   }
 
+  if (tally.calls > 0) {
+    const rate = tally.failed / tally.calls;
+    const clean = tally.failed === 0;
+
+    if (!clean) failed = true;
+    console.log(
+      `  ${clean ? "ok  " : "FAIL"} ${"backend chunk failures".padEnd(38)} ${(100 * rate).toFixed(1).padStart(5)}%  ceiling 0%  n=${tally.calls}`
+    );
+
+    for (const [why, count] of [...tally.errors].sort((a, b) => b[1] - a[1]).slice(0, 3)) {
+      console.log(`         ${count}x ${why}`);
+    }
+  }
+
+  const byKind: Array<[string, string[], Array<string | null>]> = [
+    ["user", user, plants.flatMap((p) => (p !== null ? [p.userCut] : []))],
+    ["buried", buried, plants.flatMap((p) => (p !== null ? [p.buriedCut] : []))],
+  ];
+
+  for (const [name, fates, cuts] of byKind) {
+    const tally = fates.reduce<Record<string, number>>((acc, f) => {
+      acc[f] = (acc[f] ?? 0) + 1;
+
+      return acc;
+    }, {});
+
+    console.log(
+      `  ${name.padEnd(38)} ${Object.entries(tally)
+        .map(([k, v]) => `${k} ${v}`)
+        .join("  ")}`
+    );
+
+    const reported = cuts.filter((v) => v !== null);
+
+    if (reported.length > 0) {
+      console.log(`    ${name} cut, key offset/original->kept: ${reported.join(" ")}`);
+    }
+  }
+
   return failed ? 2 : 0;
 }
 
@@ -611,19 +779,23 @@ interface Args {
   synth: number;
   seed: number;
   workers: number;
-  model: string;
+  explain: boolean;
+  maxInflight: number;
+  decisionModel?: string;
   out?: string;
   projects?: string;
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { synth: 0, seed: 0, workers: 4, model: "sonnet" };
+  const args: Args = { synth: 0, seed: 0, workers: 4, explain: false, maxInflight: 0 };
 
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--synth") args.synth = Number(argv[++i]);
     else if (argv[i] === "--seed") args.seed = Number(argv[++i]);
     else if (argv[i] === "--workers") args.workers = Number(argv[++i]);
-    else if (argv[i] === "--model") args.model = argv[++i]!;
+    else if (argv[i] === "--explain") args.explain = true;
+    else if (argv[i] === "--decision-model") args.decisionModel = argv[++i];
+    else if (argv[i] === "--max-inflight") args.maxInflight = Number(argv[++i]);
     else if (argv[i] === "--out") args.out = argv[++i];
     else if (argv[i] === "--projects") args.projects = argv[++i];
   }
@@ -643,6 +815,13 @@ async function pooled<T, R>(items: T[], workers: number, fn: (item: T) => Promis
 }
 
 export async function cmdCompact(args: Args): Promise<number> {
+  const base: DecisionBackend =
+    args.decisionModel === undefined
+      ? DEFAULT_BACKEND
+      : resolveDecisionBackend(args.decisionModel);
+
+  const { backend: decisionBackend, tally } = tallying(base, args.maxInflight);
+
   const files = (function walk(dir: string): string[] {
     const out: string[] = [];
 
@@ -718,6 +897,8 @@ export async function cmdCompact(args: Args): Promise<number> {
   console.error(`  events: ${realTodo.length} real, ${synthTodo.length} synth`);
   let done = 0;
 
+  const explainRows: { session: string; event_i: number; key: string; cause: string }[] = [];
+
   const analyze = async (t: [string, string[], number, number, number, Boundary | null, string]): Promise<EventRow> => {
     const [fp, lines, i, end, prevI, ev, kind] = t;
     const pre = toolCalls(lines, prevI + 1, i);
@@ -732,7 +913,7 @@ export async function cmdCompact(args: Args): Promise<number> {
     let stats: Stats;
 
     if (kind === "real") {
-      ({ kept, stats } = await replay(lines.slice(0, i), cache, summaries, cacheF));
+      ({ kept, stats } = await replay(lines.slice(0, i), cache, summaries, cacheF, decisionBackend));
       defaultCtx = ev!.summary + "\n" + ev!.preserved;
       const meta = ev!.meta;
       const durationMs = meta["durationMs"];
@@ -740,7 +921,15 @@ export async function cmdCompact(args: Args): Promise<number> {
       durationS = Math.round((isNumber(durationMs) ? durationMs : 0) / 100) / 10;
       trigger = meta["trigger"] ?? null;
     } else {
-      const r = await replay(lines.slice(0, i), cache, summaries, cacheF, () => genSummary(flatten(lines, i), args.model));
+      const r = await replay(
+        lines.slice(0, i),
+        cache,
+        summaries,
+        cacheF,
+        decisionBackend,
+        () => genSummary(flatten(lines, i))
+      );
+
       ({ kept, stats } = r);
       defaultCtx = (r.summary ?? "") + "\n" + tailText(lines, i);
       postTokens = Math.floor(defaultCtx.length / 4);
@@ -753,10 +942,35 @@ export async function cmdCompact(args: Args): Promise<number> {
     const digestRows: string[] = gated ? [] : kept;
     const digest = digestRows.join("\n");
     const digestFull = digestRows.filter((t) => !t.includes("elided by jev-compact")).join("\n");
+    const sessionKey = fp.split("/").slice(-2, -1)[0]!.slice(0, 48);
+
+    if (args.explain && kind === "real" && !gated) {
+      for (const k of reads) {
+        if (covered(k, digest)) continue;
+
+        const terms = keyTerms(k);
+        const hits = stats.rows.filter((r) => terms.some((t) => r.ref.includes(t)));
+
+        let cause = "no-match";
+
+        if (hits.length > 0) {
+          const best = hits.find((r) => r.verdict !== "dropped") ?? hits[0]!;
+
+          cause =
+            best.verdict === "dropped"
+              ? best.keep !== null && best.keep >= KEEP_THRESHOLD
+                ? "dropped-budget"
+                : `dropped-judge:${best.kind}:k${best.keep === null ? "null" : best.keep.toFixed(2)}`
+              : `kept-${best.verdict}`;
+        }
+
+        explainRows.push({ session: sessionKey, event_i: i, key: k, cause });
+      }
+    }
 
     return {
       kind,
-      session: fp.split("/").slice(-2, -1)[0]!.slice(0, 48),
+      session: sessionKey,
       subagent: fp.includes("/subagents/"),
       event_i: i,
       n_blocks: stats.judged + stats.pinned,
@@ -792,7 +1006,10 @@ export async function cmdCompact(args: Args): Promise<number> {
   if (todo.length > 0) process.stderr.write("\n");
   fs.closeSync(cacheF);
 
-  const plantFuts = await pooled(todo, args.workers, (t) => runEvent(t[0], t[1], t[2], t[6], args.seed));
+  const plantFuts = await pooled(todo, args.workers, (t) =>
+    runEvent(t[0], t[1], t[2], t[6], args.seed, decisionBackend)
+  );
+
   const plantResults = plantFuts.filter((f): f is PromiseFulfilledResult<PlantResult> => f.status === "fulfilled" && f.value !== null).map((f) => f.value);
 
   const tot: Record<string, number> = {};
@@ -821,7 +1038,7 @@ export async function cmdCompact(args: Args): Promise<number> {
 
     if (tot["gated"]) console.log(`    * ${tot["gated"]} kept no rows — jev applied nothing`);
 
-    if (tot["no_summary"]) console.log(`    ! ${tot["no_summary"]} synthetic events have no summary (claude -p failed)`);
+    if (tot["no_summary"]) console.log(`    ! ${tot["no_summary"]} synthetic events have no summary (pi -p failed)`);
   }
 
   if (skipped.length > 0) console.log(`\nskipped ${skipped.length} transcripts whose compaction happened in an earlier session file`);
@@ -830,7 +1047,35 @@ export async function cmdCompact(args: Args): Promise<number> {
   fs.writeFileSync(outPath, [...real, ...synth].map((r) => JSON.stringify(r)).join("\n") + "\n");
   console.log(`\nrows -> ${outPath}`);
 
-  return gate([...real, ...synth], plantResults);
+  if (args.explain) {
+    const byCause = new Map<string, number>();
+
+    for (const e of explainRows) byCause.set(e.cause, (byCause.get(e.cause) ?? 0) + 1);
+
+    console.log("\nuncovered re-read attribution (real events):");
+
+    for (const [c, n] of [...byCause].sort((a, b) => b[1] - a[1])) console.log(`  ${c}: ${n}`);
+
+    const byEvent = new Map<string, number>();
+
+    for (const e of explainRows) {
+      const k = `${e.session}:${e.event_i}`;
+
+      byEvent.set(k, (byEvent.get(k) ?? 0) + 1);
+    }
+
+    const worst = new Set([...byEvent].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => k));
+
+    console.log("worst events (detail):");
+
+    for (const e of explainRows) {
+      const k = `${e.session}:${e.event_i}`;
+
+      if (worst.has(k)) console.log(`  ${k}  ${e.cause.padEnd(16)} ${e.key.slice(0, 80)}`);
+    }
+  }
+
+  return gate([...real, ...synth], plantResults, tally);
 }
 
 const isMain = process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath2(import.meta.url);
@@ -839,7 +1084,7 @@ if (isMain) {
   const [cmd, ...rest] = process.argv.slice(2);
 
   if (cmd !== "compact") {
-    console.error("usage: node compact.js compact [--synth N] [--seed N] [--workers N] [--model M] [--out P]");
+    console.error("usage: node compact.js compact [--synth N] [--seed N] [--workers N] [--out P]");
     process.exit(2);
   }
 

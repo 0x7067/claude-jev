@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { readStdinJson } from "../adapters/afk/src/shared/stdin.js";
-import { jevAsk, type Answers } from "../adapters/afk/src/shared/jev-client.js";
+import { DEFAULT_BACKEND, type Answers, type DecisionBackend } from "../adapters/afk/src/shared/jev-client.js";
 import { configDir } from "../adapters/afk/src/shared/config.js";
 import {
   isJsonObject,
@@ -16,7 +16,7 @@ import {
 } from "../adapters/afk/src/shared/json.js";
 import { fileURLToPath } from "node:url";
 
-const KEEP_THRESHOLD = 0.5;
+export const KEEP_THRESHOLD = 0.5;
 
 export const MAX_BLOCKS = 150;
 
@@ -41,6 +41,8 @@ const BLOCK_CHARS = 1200;
 const KEEP_CHARS = 1500;
 
 const HEAD_CHARS = 400;
+
+const TAIL_CHARS = 150;
 
 const HEAD_SLACK = 200;
 
@@ -324,6 +326,7 @@ async function askChunked(
   lo: number,
   hi: number,
   directive: string | null = null,
+  decisionBackend: DecisionBackend = DEFAULT_BACKEND,
   names: readonly (keyof typeof CHECKS)[] = ASK_CHECKS
 ): Promise<Answers> {
   const questions = keepQuestions(hi, names);
@@ -341,7 +344,7 @@ async function askChunked(
     }
 
     try {
-      return await jevAsk(compactState(blocks, clo, chi, context), q, ASK_TIMEOUT_MS);
+      return await decisionBackend.ask(compactState(blocks, clo, chi, context), q, ASK_TIMEOUT_MS);
     } catch {
       return {};
     }
@@ -370,8 +373,7 @@ async function askChunked(
 export const ELISION = (n: number) =>
   `[\u2026 ${n} chars elided by jev-compact \u2014 re-read the file or re-run the command if needed]`;
 
-export function cutMarked(text: string, chars: number): string {
-  if (text.length <= chars) return text;
+function headOf(text: string, chars: number): string {
   let cut = -1;
   let idx = text.indexOf("\n\n", Math.floor(chars / 2));
 
@@ -380,15 +382,23 @@ export function cutMarked(text: string, chars: number): string {
     idx = text.indexOf("\n\n", idx + 1);
   }
 
-  const head = cut > 0 ? text.slice(0, cut) : text.slice(0, chars);
+  return cut > 0 ? text.slice(0, cut) : text.slice(0, chars);
+}
+
+export function cutMarked(text: string, chars: number): string {
+  if (text.length <= chars) return text;
+  const head = headOf(text, chars);
 
   return `${head}\n${ELISION(text.length - head.length)}`;
 }
 
 export function truncateBlock(text: string): string {
-  if (text.length <= HEAD_CHARS + HEAD_SLACK) return text;
+  if (text.length <= HEAD_CHARS + TAIL_CHARS + HEAD_SLACK) return text;
 
-  return cutMarked(text, HEAD_CHARS);
+  const head = headOf(text, HEAD_CHARS);
+  const tail = text.slice(text.length - TAIL_CHARS).replace(/^\s+/, "");
+
+  return `${head}\n${ELISION(text.length - head.length - tail.length)}\n${tail}`;
 }
 
 export interface Kept {
@@ -429,6 +439,14 @@ export function fitKept(kept: Kept[], blocks: Block[]): Kept[] {
 }
 
 const REF_CHARS = 160;
+
+function isReadResult(blocks: Block[], i: number): boolean {
+  return (
+    i > 0 &&
+    blockKind(blocks[i]!.text) === "tool_result" &&
+    blockKind(blocks[i - 1]!.text) === "tool_use:Read"
+  );
+}
 
 export function blockKind(text: string): string {
   if (text.startsWith("[tool_use")) {
@@ -482,9 +500,15 @@ export function blockRows(blocks: Block[], kept: Kept[], answers: Answers): Row[
 
 export async function judge(
   transcriptPath: string,
-  cwd: string | null
+  cwd: string | null,
+  decisionBackend: DecisionBackend = DEFAULT_BACKEND
 ): Promise<[string[], Stats]> {
-  const [kept, stats] = await selectBlocks(transcriptBlocks(transcriptPath).slice(-(MAX_BLOCKS + RESCUE_BLOCKS)), cwd);
+  const [kept, stats] = await selectBlocks(
+    transcriptBlocks(transcriptPath).slice(-(MAX_BLOCKS + RESCUE_BLOCKS)),
+    cwd,
+    null,
+    decisionBackend
+  );
 
   return [kept.map((k) => k.text), stats];
 }
@@ -509,7 +533,8 @@ function emptyStats(judged: number): Stats {
 export async function selectBlocks(
   blocks: Block[],
   cwd: string | null,
-  directive: string | null = null
+  directive: string | null = null,
+  decisionBackend: DecisionBackend = DEFAULT_BACKEND
 ): Promise<[Kept[], Stats]> {
   if (blocks.length === 0) return [[], emptyStats(0)];
   const window = Math.max(0, blocks.length - MAX_BLOCKS);
@@ -519,14 +544,14 @@ export async function selectBlocks(
 
   let answers: Answers =
     nJudged > window
-      ? await askChunked(blocks, cwd, window, nJudged, directive)
+      ? await askChunked(blocks, cwd, window, nJudged, directive, decisionBackend)
       : {};
 
   let rescueAnswers: Answers = {};
 
   if (window > rescueLo) {
     try {
-      rescueAnswers = await askChunked(blocks, cwd, rescueLo, window, directive, ["constraint"]);
+      rescueAnswers = await askChunked(blocks, cwd, rescueLo, window, directive, decisionBackend, ["constraint"]);
     } catch {
     }
   }
@@ -563,8 +588,9 @@ export async function selectBlocks(
     }
 
     const { keep, full } = verdicts(answers, i);
+    const readKept = keep !== null && keep < KEEP_THRESHOLD && isReadResult(blocks, i);
 
-    if (keep === null || keep >= KEEP_THRESHOLD) {
+    if (keep === null || keep >= KEEP_THRESHOLD || readKept) {
       const kind =
         keep !== null && full !== null && full < KEEP_THRESHOLD ? "truncated" : "full";
 
@@ -572,7 +598,7 @@ export async function selectBlocks(
         i,
         text: kind === "truncated" ? truncateBlock(b.text) : cutMarked(b.text, KEEP_CHARS),
         kind,
-        keep: keep ?? 1,
+        keep: readKept ? 1 : keep ?? 1,
         full: full ?? 1,
       });
     }
