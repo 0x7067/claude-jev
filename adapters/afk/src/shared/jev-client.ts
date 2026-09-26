@@ -80,12 +80,28 @@ function providerFor(key: string): Provider {
   return best;
 }
 
-function resolveKey() {
-  for (const p of PROVIDERS) {
+function pinnedProvider(): Provider | undefined {
+  const name = (process.env["CLAUDE_PLUGIN_OPTION_PROVIDER"] ?? "").trim();
+
+  return PROVIDERS.find((p) => p.name === name);
+}
+
+function savedKey(): string {
+  return (process.env["CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY"] ?? "").trim();
+}
+
+function resolveKey(): { key: string; provider: Provider } {
+  const pinned = pinnedProvider();
+
+  for (const p of pinned ? [pinned] : PROVIDERS) {
     const k = (process.env[p.keyVar] ?? "").trim();
 
-    if (k) return { key: k, provider: providerFor(k) };
+    if (k) return { key: k, provider: pinned ?? providerFor(k) };
   }
+
+  const saved = savedKey();
+
+  if (saved) return { key: saved, provider: pinned ?? providerFor(saved) };
 
   throw new Error("No Jev API key found. Set TYPESAFE_API_KEY or OPENROUTER_API_KEY.");
 }
@@ -156,7 +172,8 @@ function decisionsBackend(model: string): DecisionBackend {
   return {
     name: `decisions:${model}`,
     ask: (state, questions, timeoutMs) => {
-      const key = (process.env["OPENROUTER_API_KEY"] ?? "").trim();
+      const key =
+        (process.env["OPENROUTER_API_KEY"] ?? "").trim() || savedKey();
 
       if (!key) throw new Error("decisions backend needs OPENROUTER_API_KEY");
 

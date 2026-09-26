@@ -1,4 +1,4 @@
-const PYTHON_TIMEOUT_MS = 30000;
+const HOOK_TIMEOUT_MS = 30000;
 
 const PLUGIN = "claude-jev";
 
@@ -62,7 +62,7 @@ function pinnedProvider(rows) {
   return PROVIDER_CHOICES.some(([name]) => name === value) ? value : "auto";
 }
 
-function pythonEnv() {
+function pluginEnv() {
   const env: Record<string, string> = {};
 
   env.CLAUDE_PLUGIN_OPTION_PROVIDER = pinnedProvider();
@@ -74,9 +74,9 @@ function pythonEnv() {
   return env;
 }
 
-function runPython($, args, stdin) {
-  const argv = ["python3", `${$.plugin.root}/scripts/${args[0]}`, ...args.slice(1)];
-  const base = { env: pythonEnv(), timeoutMs: PYTHON_TIMEOUT_MS };
+function runNode($, args, stdin) {
+  const argv = ["node", `${$.plugin.root}/dist/${args[0]}`, ...args.slice(1)];
+  const base = { env: pluginEnv(), timeoutMs: HOOK_TIMEOUT_MS };
 
   return stdin === undefined
     ? $.process.run(argv, base)
@@ -494,9 +494,9 @@ export function register(on, options) {
 
     try {
       const [cwd, sessionId] = await Promise.all([$.session.cwd(), $.session.id()]);
-      run = await runPython(
+      run = await runNode(
         $,
-        ["compactor.py", "rows"],
+        ["src/compactor.js", "rows"],
         JSON.stringify({
           trigger: e.trigger,
           instructions: e.instructions ?? null,
@@ -510,7 +510,7 @@ export function register(on, options) {
     }
 
     if (run.exitCode !== 0) {
-      return fallThrough(`compactor.py exit ${run.exitCode}: ${run.stderr.slice(0, 300)}`);
+      return fallThrough(`compactor exit ${run.exitCode}: ${run.stderr.slice(0, 300)}`);
     }
 
     let out;

@@ -15,11 +15,10 @@ building it, and cite it when resisting.
 | Path | What lives there |
 |---|---|
 | `scripts/jev.py` | API client and CLI. Every other script imports it. |
-| `scripts/prompt_router.py` | `UserPromptSubmit` — routing hint |
-| `scripts/subagent_router.py` | `PreToolUse` on `Agent\|Task` — sets subagent model, denies a file-changing brief that omits paths, acceptance, verification, or commit policy |
+| `scripts/prompt_router.py` | Measurement reference for the routing eval; production runs `dist/src/prompt-router.js` |
 | `scripts/rules.py` | `PostToolUse` on edits, `PreToolUse`/`PostToolUse` on Bash to record shell writes, and `Stop` — rule enforcement |
-| `scripts/compactor.py` | The `rows` bridge behind `session.compact`; `judge` is kept for the eval |
-| `hooks/register.ts` | Experimental function-hooks module: `session.compact` -> `compactor.py rows`, and the `/claude-jev` settings pane. A bridge, not a second implementation. |
+| `hooks/register.ts` | Experimental function-hooks module: `session.compact` -> `node dist/src/compactor.js rows`, and the `/claude-jev` settings pane. A bridge, not a second implementation. |
+| `src/` | The TypeScript hook implementations the plugin runs; built to `dist/`, which is committed because a marketplace install does not build |
 | `adapters/afk/` | The AFK host adapter: a TypeScript implementation of the same hooks with its own manifest, `hooks.json`, and README. Its known-gaps list is the contract — do not claim parity that table does not state. |
 | `scripts/comparators.py` | ast-grep lookups the rule hook adds to a judgment |
 | `scripts/observed.py` | Scores what a past turn actually did |
@@ -45,7 +44,7 @@ building it, and cite it when resisting.
   client, and the shipped Claude Code plugin carries no dependency file.
   `hooks/register.ts`, the one non-Python file in that plugin, exists because
   Claude Code loads function-hook modules as JavaScript; it holds no judgment,
-  only the call into `compactor.py rows`, the fail-open fallthrough to
+  only the call into `node dist/src/compactor.js rows`, the fail-open fallthrough to
   `next(e)`, and the `/claude-jev` pane. Even its debug-log line is the
   `summary` string Python sends, and the pane's key source, provider, and last
   call come from `jev.py status`. Keep it that way. `adapters/afk/` holds the
@@ -63,7 +62,7 @@ building it, and cite it when resisting.
   `/config`. Claude Code hands those fields to hooks as
   `CLAUDE_PLUGIN_OPTION_<FIELD>`, its own variables, read only through
   `jev.plugin_option()`; `hooks/register.ts` passes the saved key to
-  `compactor.py` under the same name.
+  the compactor under the same name.
   `CLAUDE_CONFIG_DIR` is Claude Code's own variable, not a plugin tunable:
   `jev.config_dir()` honors it and every path under the user's config
   directory goes through that helper, never through a literal `~/.claude`.
@@ -169,7 +168,7 @@ changed a matching JSON event on stdin and check the exit code.
 The `rows` bridge answers bad input with `{"fallback": ...}` and exit 0:
 
 ```bash
-echo '' | python3 scripts/compactor.py rows
+echo '' | node dist/src/compactor.js rows
 ```
 
 Out-of-band (not claimed on Grok Bot / default cloud agents): exercise the
@@ -193,14 +192,16 @@ against the table in `README.md`:
 python3 eval/replay.py run --variant v7_no_unclear --sample 250
 python3 eval/rules_eval.py run --sample 250 --seed 0
 python3 eval/rules_eval.py report --sweep
-python3 eval/compare.py compact --synth 60
+node dist/eval/compact.js compact --synth 60 --seed 0 --workers 8 --max-inflight 12
 ```
 
-The compaction command is the only way to measure `scripts/compactor.py`.
+The compaction command is the only way to measure the TypeScript compactor.
 It prints re-fetch coverage and planted-constraint survival in one gate and
 exits 2 below either floor, so a wording that keeps paths but drops what the
-user said, or the reverse, cannot pass on one number. `eval/sweep.py` and
-`eval/planted.py` are diagnostics for reading a change, not gates.
+user said, or the reverse, cannot pass on one number. It also fails on any
+failed backend chunk: the compactor is fail-open, so a chunk that never
+answers leaves its blocks unscored, and unscored rows are kept, which raises
+coverage.
 
 `--seed 0 --sample 250` selects the same real edits as the numbers in
 `README.md`; keep it when comparing. A rule-question wording change misses
