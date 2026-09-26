@@ -1,0 +1,25 @@
+src/compactor.ts
+  s_192292c6e473ef::t_9512a794dc74e1 376-381
+  s_192292c6e473ef::t_2371a50456b5bf 45,390,392-399,403-406,408
+  s_192292c6e473ef::t_6ab7e9988a8eab 46
+eval/compact.ts
+  s_192292c6e473ef::t_f044241f388747 576-577,625-630,693,695
+  s_192292c6e473ef::t_7281ddf1a05629 624,634-635
+  s_192292c6e473ef::t_79e105da13eed2 676-678,681,694,696-698
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "683a157dba63b753b8d6c967b5aa61d25627cb48",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "space-bunny-alpha"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
