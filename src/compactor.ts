@@ -16,7 +16,7 @@ import {
 } from "../adapters/afk/src/shared/json.js";
 import { fileURLToPath } from "node:url";
 
-const KEEP_THRESHOLD = 0.5;
+export const KEEP_THRESHOLD = 0.5;
 
 export const MAX_BLOCKS = 150;
 
@@ -430,6 +430,14 @@ export function fitKept(kept: Kept[], blocks: Block[]): Kept[] {
 
 const REF_CHARS = 160;
 
+function isReadResult(blocks: Block[], i: number): boolean {
+  return (
+    i > 0 &&
+    blockKind(blocks[i]!.text) === "tool_result" &&
+    blockKind(blocks[i - 1]!.text) === "tool_use:Read"
+  );
+}
+
 export function blockKind(text: string): string {
   if (text.startsWith("[tool_use")) {
     const end = text.indexOf("]");
@@ -563,8 +571,9 @@ export async function selectBlocks(
     }
 
     const { keep, full } = verdicts(answers, i);
+    const readKept = keep !== null && keep < KEEP_THRESHOLD && isReadResult(blocks, i);
 
-    if (keep === null || keep >= KEEP_THRESHOLD) {
+    if (keep === null || keep >= KEEP_THRESHOLD || readKept) {
       const kind =
         keep !== null && full !== null && full < KEEP_THRESHOLD ? "truncated" : "full";
 
@@ -572,7 +581,7 @@ export async function selectBlocks(
         i,
         text: kind === "truncated" ? truncateBlock(b.text) : cutMarked(b.text, KEEP_CHARS),
         kind,
-        keep: keep ?? 1,
+        keep: readKept ? 1 : keep ?? 1,
         full: full ?? 1,
       });
     }
