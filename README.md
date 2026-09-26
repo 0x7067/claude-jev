@@ -172,7 +172,7 @@ cd adapters/afk && npm install && npm run build
 cp -r adapters/afk ~/.afk/plugins/claude-jev
 ```
 
-Same hooks, TypeScript, installable as an AFK plugin. See [`adapters/afk/README.md`](adapters/afk/README.md).
+Same enforcement, TypeScript, installable as an AFK plugin. The deltas run both ways: it adds a SessionStart rule digest the Claude Code plugin lacks, and it drops compaction and the subagent-spawn denial, which AFK's hooks cannot express. Known gaps: [`adapters/afk/README.md`](adapters/afk/README.md).
 
 ## Does it work?
 

@@ -20,6 +20,7 @@ building it, and cite it when resisting.
 | `scripts/rules.py` | `PostToolUse` on edits, `PreToolUse`/`PostToolUse` on Bash to record shell writes, and `Stop` — rule enforcement |
 | `scripts/compactor.py` | The `rows` bridge behind `session.compact`; `judge` is kept for the eval |
 | `hooks/register.ts` | Experimental function-hooks module: `session.compact` -> `compactor.py rows`, and the `/claude-jev` settings pane. A bridge, not a second implementation. |
+| `adapters/afk/` | The AFK host adapter: a TypeScript implementation of the same hooks with its own manifest, `hooks.json`, and README. Its known-gaps list is the contract — do not claim parity that table does not state. |
 | `scripts/comparators.py` | ast-grep lookups the rule hook adds to a judgment |
 | `scripts/observed.py` | Scores what a past turn actually did |
 | `scripts/stats.py` | The Stats row in `/claude-jev`, or `python3 scripts/stats.py` — scores live decisions from the three logs under `~/.claude`: `jev-router-log.jsonl` (router, subagent, rules), `jev-compact-log.jsonl`, `jev-calls.jsonl` (every API call, written by `jev.ask`) |
@@ -39,13 +40,18 @@ building it, and cite it when resisting.
   `scripts/comparators.py`, fetched to `~/.claude/jev-bin` by a detached
   process outside the hook's budget, and never required: every comparator
   answers `""` without it, and the judgment proceeds as before.
-- **Python 3 standard library only.** No dependency file, no third-party
-  imports. `urllib.request` is the HTTP client. The one non-Python file,
-  `hooks/register.ts`, exists because Claude Code loads function-hook modules
-  as JavaScript; it holds no judgment, only the call into `compactor.py rows`,
-  the fail-open fallthrough to `next(e)`, and the `/claude-jev` pane. Even its
-  debug-log line is the `summary` string Python sends, and the pane's key
-  source, provider, and last call come from `jev.py status`. Keep it that way.
+- **Standard library only, per host.** `scripts/` and `eval/` are Python 3
+  standard library only: no third-party imports, `urllib.request` is the HTTP
+  client, and the shipped Claude Code plugin carries no dependency file.
+  `hooks/register.ts`, the one non-Python file in that plugin, exists because
+  Claude Code loads function-hook modules as JavaScript; it holds no judgment,
+  only the call into `compactor.py rows`, the fail-open fallthrough to
+  `next(e)`, and the `/claude-jev` pane. Even its debug-log line is the
+  `summary` string Python sends, and the pane's key source, provider, and last
+  call come from `jev.py status`. Keep it that way. `adapters/afk/` holds the
+  same line in TypeScript: zero runtime dependencies — `typescript` and
+  `@types/node` are devDependencies — and Node's standard modules for HTTP,
+  files, and paths.
 - **One key variable per provider:** each entry in `PROVIDERS`
   (`scripts/jev.py`) names its URL, key prefix, and variable
   (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`). A new provider is a new entry
@@ -119,7 +125,18 @@ ruff check .
 ```
 
 `ruff.toml` configures it. It is not a dependency file: no hook imports
-Ruff. Live Claude Code session verification is out-of-band: it needs a
+Ruff.
+
+The AFK adapter has its own contract, and claiming it requires running it:
+
+```bash
+cd adapters/afk && npm ci && npm run build
+echo '{"session_id":"test","cwd":"'$(pwd)'"}' | node dist/session-start.js; echo "exit=$?"
+```
+
+`npm ci && npm run build` is what a doc-only run can claim for
+`adapters/afk/`; the second line is its no-key hook smoke, and the keyed
+hooks are not part of any default claim. Live Claude Code session verification is out-of-band: it needs a
 machine with `claude` and `TYPESAFE_API_KEY`, and is not claimed as proved
 by those local checks alone.
 
@@ -208,6 +225,8 @@ running a full sweep.
 - Numbers in `README.md` and `eval/README.md` come from eval runs. Change one
   only with a run behind it, and say which run.
 - Bump `version` in `.claude-plugin/plugin.json` for a behavior change, and
-  add the change under `## [Unreleased]` in `CHANGELOG.md`. Releases go
+  add the change under `## [Unreleased]` in `CHANGELOG.md`. The AFK adapter
+  carries its own version in `adapters/afk/.claude-plugin/plugin.json`,
+  mirrored in its `package.json`, and bumps by the same rule. Releases go
   through `/release` (`.claude/skills/release`), which refuses an empty
   section.
