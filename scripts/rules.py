@@ -123,6 +123,7 @@ SKIP_DIRS = {
     "Library",
 }
 
+
 def same_filesystem(parent: str, path: str) -> bool:
     """Whether `path` is an entry on the same filesystem as `parent`. A mount
     point is a different project on a different volume, so a nested
