@@ -18,15 +18,24 @@ All five fail open: any error, missing key, or timeout produces no output and ne
 
 ## Install
 
-### As an AFK plugin (recommended)
+### From GitHub (recommended)
+
+The `afk` branch of `0x7067/claude-jev` holds this directory at its root, refreshed on every release. agent-afk 5.257.3 fails to install a branch by name (`'--detach' cannot be used with '-b'`), so install its current commit, then follow the branch on update:
 
 ```bash
-# Copy into AFK's plugin directory
-cp -r adapters/afk ~/.afk/plugins/claude-jev
-
-# Or symlink for development
-ln -s "$(pwd)/adapters/afk" ~/.afk/plugins/claude-jev
+afk plugin install 0x7067/claude-jev claude-jev --ref "$(git ls-remote https://github.com/0x7067/claude-jev.git refs/heads/afk | cut -f1)" -y
+afk plugin update claude-jev --ref afk
 ```
+
+Always update with `--ref afk`. A bare `afk plugin update` checks out the newest version tag in the repository, and those tags are the Claude Code plugin, not this one.
+
+### From a checkout
+
+```bash
+afk plugin install "$(pwd)/adapters/afk" claude-jev
+```
+
+This symlinks the directory, so it follows whatever the checkout has.
 
 AFK discovers the plugin on the next session start and wires hooks from `hooks/hooks.json`. AFK runs plugin hooks only when `~/.afk/config/afk.config.json` sets `"enablePluginHooks": true`.
 
@@ -58,22 +67,14 @@ afk config env set TYPESAFE_API_KEY
 
 The hooks look for `$AFK_HOME/config/afk.env`, or `~/.afk/config/afk.env` when `AFK_HOME` is unset.
 
-### 2. Build
-
-```sh
-cd adapters/afk
-npm install
-npm run build
-```
-
-### 3. Verify
+### 2. Verify
 
 ```sh
 # SessionStart hook (no API key needed)
-echo '{"session_id":"test","cwd":"'$(pwd)'"}' | node dist/session-start.js
+echo '{"session_id":"test","cwd":"'$(pwd)'"}' | node --experimental-strip-types src/session-start.ts
 
 # Prompt router (needs API key)
-echo '{"prompt":"list files in this directory","session_id":"test"}' | node dist/prompt-router.js
+echo '{"prompt":"list files in this directory","session_id":"test"}' | node --experimental-strip-types src/prompt-router.ts
 ```
 
 ## Rule sources
@@ -127,10 +128,10 @@ adapters/afk/
     subagent-router.ts # PreToolUse(Agent): model tier
     rules.ts           # PostToolUse(edit): rule enforcement
     stop-sweep.ts      # Stop: turn-level compliance
-  dist/                # Compiled JS (npm run build)
+  dist/                # Compiled JS from npm run build; the hooks run src/ directly
 ```
 
 ## Runtime requirements
 
-- Node.js 18+
-- `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` (except SessionStart, which needs no key)
+- Node.js 22.18 or later, which runs the TypeScript hooks without a build
+- `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` in AFK's `afk.env` (except SessionStart, which needs no key)
