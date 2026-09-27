@@ -86,6 +86,19 @@ needs a stronger one is at most 0.10. Jev's argmax leans cheap: it called 47
 of 96 opus-labelled briefs sonnet and 43 of 156 sonnet-labelled briefs haiku.
 The rule offsets that lean; it does not remove it.
 
+`run --variant judgment` asks with tier text rewritten toward the user's own
+delegation rules: judgment-heavy work such as grading, verifying, auditing,
+and analysis is opus even when it edits nothing. On the first 100 spawns of
+seed 0 it fixed much of the lean at argmax: opus-labelled briefs called opus
+went from 13 to 24 of 31. But under the shipped gate it changed nothing that
+100 spawns can resolve: 54 matches, 13 too cheap, 33 too dear, against 55,
+14, and 31 with the shipped text. The shipped text stays.
+
+```bash
+CLAUDE_PLUGIN_OPTION_PROVIDER=openrouter python3 eval/subagent_eval.py run --variant judgment --sample 100 --seed 0
+python3 eval/subagent_eval.py report --variant shipped --variant judgment
+```
+
 Limits: the numbers are in-sample, with no holdout. The labelled spawns are
 the ones the router never touches live, because an explicit model wins. So
 this measures agreement on your own choices as a stand-in for the unlabelled

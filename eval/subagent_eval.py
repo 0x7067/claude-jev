@@ -7,8 +7,10 @@ extract   every Agent/Task spawn in ~/.claude/projects whose input names a
           the label.
 run       ask the shipped `jev.subagent_bundle` about a seeded sample, with
           the state `src/subagent-router.ts` builds, and append the answers
-          to eval/observed/subagent_answers.jsonl. Spawns already answered
-          are skipped, so a re-run only pays for new ones.
+          to eval/observed/subagent_answers.jsonl. `--variant` swaps in
+          other tier text from VARIANTS and writes its own answer file.
+          Spawns already answered are skipped, so a re-run only pays for
+          new ones.
 report    for each gate rule, land every spawn on the routed tier, or on
           the parent's model when the gate holds back, and count matches,
           too-cheap picks (the costly miss), and too-dear picks.
@@ -32,8 +34,31 @@ import jev
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "observed")
 SPAWNS = os.path.join(DATA, "subagent_spawns.jsonl")
-ANSWERS = os.path.join(DATA, "subagent_answers.jsonl")
 TIERS = ["haiku", "sonnet", "opus", "fable"]
+VARIANTS = {
+    "shipped": {},
+    "judgment": {
+        "haiku": "Mechanical work with one obvious way to do it: search, fetch, "
+        "count, list, run a named command and report its output, or apply "
+        "an edit the brief spells out exactly. No judgment about code or "
+        "about results",
+        "sonnet": "Well-specified implementation: the brief names the files, the "
+        "change, and the check, and the work follows an existing pattern. "
+        "Needs local judgment about code, but the brief has already made "
+        "the design decisions",
+        "opus": "Work whose result rests on judgment, even when it edits nothing: "
+        "grading, verifying, or reviewing someone else's work; auditing a "
+        "setup against its docs; research or data analysis that must reach "
+        "a conclusion; implementation that leaves design choices open, "
+        "spans many files, or lands in unfamiliar code; debugging without "
+        "a clear signal",
+    },
+}
+
+
+def answers_path(variant: str) -> str:
+    suffix = "" if variant == "shipped" else f"_{variant}"
+    return os.path.join(DATA, f"subagent_answers{suffix}.jsonl")
 
 
 def spawn_key(prompt: str) -> str:
@@ -108,9 +133,10 @@ def load(path: str) -> list[dict]:
 def cmd_run(args) -> None:
     spawns = load(SPAWNS)
     random.Random(args.seed).shuffle(spawns)
-    done = {r["key"] for r in load(ANSWERS)}
+    out = answers_path(args.variant)
+    done = {r["key"] for r in load(out)}
     todo = [r for r in spawns[: args.sample] if r["key"] not in done]
-    bundle = jev.subagent_bundle()
+    bundle = jev.subagent_bundle(tiers=VARIANTS[args.variant])
 
     def one(r: dict):
         try:
@@ -119,13 +145,13 @@ def cmd_run(args) -> None:
             return r, None, str(e)
 
     failed = 0
-    with ThreadPoolExecutor(args.workers) as pool, open(ANSWERS, "a") as f:
+    with ThreadPoolExecutor(args.workers) as pool, open(out, "a") as f:
         for r, answers, err in pool.map(one, todo):
             if err:
                 failed += 1
                 continue
             f.write(json.dumps({"key": r["key"], "model": r["model"], "answers": answers}) + "\n")
-    print(f"asked {len(todo)}, failed {failed}, answers -> {ANSWERS}")
+    print(f"asked {len(todo)}, failed {failed}, answers -> {out}")
 
 
 def gate_margin(t: dict, floor: float):
@@ -164,10 +190,19 @@ def tier_of(model: str) -> str | None:
     return next((t for t in TIERS if t in model.lower()), None)
 
 
-def cmd_report(_args) -> None:
+def cmd_report(args) -> None:
     parents = {r["key"]: tier_of(r.get("parent") or "") for r in load(SPAWNS)}
-    rows = [r for r in load(ANSWERS) if (r["answers"] or {}).get("model_tier")]
-    rows = [r for r in rows if parents.get(r["key"])]
+    by_variant = {
+        v: {r["key"]: r for r in load(answers_path(v)) if (r["answers"] or {}).get("model_tier")}
+        for v in args.variant or ["shipped"]
+    }
+    common = set.intersection(*(set(rows) for rows in by_variant.values()))
+    for variant, answered in by_variant.items():
+        print(f"== {variant}")
+        report_rows([answered[k] for k in sorted(common) if parents.get(k)], parents)
+
+
+def report_rows(rows: list[dict], parents: dict) -> None:
     print(
         f"{len(rows)} answered spawns, labels {dict(collections.Counter(r['model'] for r in rows))}"
     )
@@ -190,6 +225,7 @@ def cmd_report(_args) -> None:
     print("\nlabel -> Jev argmax")
     for label in TIERS:
         print(f"  {label:<7}", {k[1]: v for k, v in confusion.items() if k[0] == label})
+    print()
 
 
 def main() -> None:
@@ -200,7 +236,9 @@ def main() -> None:
     run.add_argument("--sample", type=int, default=300)
     run.add_argument("--seed", type=int, default=0)
     run.add_argument("--workers", type=int, default=8)
-    sub.add_parser("report")
+    run.add_argument("--variant", choices=list(VARIANTS), default="shipped")
+    report = sub.add_parser("report")
+    report.add_argument("--variant", choices=list(VARIANTS), action="append")
     args = p.parse_args()
     {"extract": cmd_extract, "run": cmd_run, "report": cmd_report}[args.cmd](args)
 
