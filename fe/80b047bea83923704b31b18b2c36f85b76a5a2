@@ -1,0 +1,22 @@
+hooks/register.ts
+  s_e145aadd0ac504::t_adb0084f42f982 86-92
+.oxlintrc.json
+  s_e145aadd0ac504::t_509a4843ec2332 45-47
+  s_e145aadd0ac504::t_59477735fbd1b1 42-44,48-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fe80b047bea83923704b31b18b2c36f85b76a5a2",
+  "prompts": {},
+  "sessions": {
+    "s_e145aadd0ac504": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f81b9f05-64eb-4826-b924-e5515d9cfab5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
