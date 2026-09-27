@@ -15,11 +15,11 @@ building it, and cite it when resisting.
 | Path | What lives there |
 |---|---|
 | `scripts/jev.py` | API client and CLI. Every other script imports it. |
-| `scripts/prompt_router.py` | `UserPromptSubmit` — routing hint |
-| `scripts/subagent_router.py` | `PreToolUse` on `Agent\|Task` — sets subagent model, denies a file-changing brief that omits paths, acceptance, verification, or commit policy |
+| `scripts/prompt_router.py` | Measurement reference for the routing eval; production runs `src/prompt-router.ts` under node type stripping |
 | `scripts/rules.py` | `PostToolUse` on edits, `PreToolUse`/`PostToolUse` on Bash to record shell writes, and `Stop` — rule enforcement |
-| `scripts/compactor.py` | The `rows` bridge behind `session.compact`; `judge` is kept for the eval |
-| `hooks/register.ts` | Experimental function-hooks module: `session.compact` -> `compactor.py rows`, and the `/claude-jev` settings pane. A bridge, not a second implementation. |
+| `hooks/register.ts` | Experimental function-hooks module: `session.compact` -> `node --experimental-strip-types src/compactor.ts rows`, and the `/claude-jev` settings pane. A bridge, not a second implementation. |
+| `src/` | The TypeScript hook implementations the plugin runs, executed directly as source under node type stripping (needs node >= 22.18) |
+| `adapters/afk/` | The AFK host adapter: a TypeScript implementation of the same hooks with its own manifest, `hooks.json`, and README. Its known-gaps list is the contract — do not claim parity that table does not state. |
 | `scripts/comparators.py` | ast-grep lookups the rule hook adds to a judgment |
 | `scripts/observed.py` | Scores what a past turn actually did |
 | `scripts/stats.py` | The Stats row in `/claude-jev`, or `python3 scripts/stats.py` — scores live decisions from the three logs under `~/.claude`: `jev-router-log.jsonl` (router, subagent, rules), `jev-compact-log.jsonl`, `jev-calls.jsonl` (every API call, written by `jev.ask`) |
@@ -39,13 +39,19 @@ building it, and cite it when resisting.
   `scripts/comparators.py`, fetched to `~/.claude/jev-bin` by a detached
   process outside the hook's budget, and never required: every comparator
   answers `""` without it, and the judgment proceeds as before.
-- **Python 3 standard library only.** No dependency file, no third-party
-  imports. `urllib.request` is the HTTP client. The one non-Python file,
-  `hooks/register.ts`, exists because Claude Code loads function-hook modules
-  as JavaScript; it holds no judgment, only the call into `compactor.py rows`,
-  the fail-open fallthrough to `next(e)`, and the `/claude-jev` pane. Even its
-  debug-log line is the `summary` string Python sends, and the pane's key
-  source, provider, and last call come from `jev.py status`. Keep it that way.
+- **Standard library only, per host.** `scripts/` and the Python files in
+  `eval/` are Python 3 standard library only: no third-party imports, and
+  `urllib.request` is the HTTP client.
+- The hooks in `src/`, the shared modules in `adapters/afk/src/shared/`, and
+  `eval/compact.ts` are TypeScript with zero runtime dependencies. They use
+  Node's standard modules only; `typescript`, `oxlint`, and `@types/node` are
+  devDependencies. The shipped plugin runs them as source under node type
+  stripping, with no build step.
+- `hooks/register.ts` holds no judgment. It runs
+  `node --experimental-strip-types src/compactor.ts rows`, falls through to
+  `next(e)` on failure, and draws the `/claude-jev` pane. Its debug-log line
+  is the `summary` string the compactor sends, and the pane's key source,
+  provider, and last call come from `python3 scripts/jev.py status`.
 - **One key variable per provider:** each entry in `PROVIDERS`
   (`scripts/jev.py`) names its URL, key prefix, and variable
   (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`). A new provider is a new entry
@@ -57,7 +63,7 @@ building it, and cite it when resisting.
   `/config`. Claude Code hands those fields to hooks as
   `CLAUDE_PLUGIN_OPTION_<FIELD>`, its own variables, read only through
   `jev.plugin_option()`; `hooks/register.ts` passes the saved key to
-  `compactor.py` under the same name.
+  the compactor under the same name.
   `CLAUDE_CONFIG_DIR` is Claude Code's own variable, not a plugin tunable:
   `jev.config_dir()` honors it and every path under the user's config
   directory goes through that helper, never through a literal `~/.claude`.
@@ -119,7 +125,18 @@ ruff check .
 ```
 
 `ruff.toml` configures it. It is not a dependency file: no hook imports
-Ruff. Live Claude Code session verification is out-of-band: it needs a
+Ruff.
+
+The AFK adapter has its own contract, and claiming it requires running it:
+
+```bash
+cd adapters/afk && npm ci && npm run build
+echo '{"session_id":"test","cwd":"'$(pwd)'"}' | node dist/session-start.js; echo "exit=$?"
+```
+
+`npm ci && npm run build` is what a doc-only run can claim for
+`adapters/afk/`; the second line is its no-key hook smoke, and the keyed
+hooks are not part of any default claim. Live Claude Code session verification is out-of-band: it needs a
 machine with `claude` and `TYPESAFE_API_KEY`, and is not claimed as proved
 by those local checks alone.
 
@@ -152,7 +169,7 @@ changed a matching JSON event on stdin and check the exit code.
 The `rows` bridge answers bad input with `{"fallback": ...}` and exit 0:
 
 ```bash
-echo '' | python3 scripts/compactor.py rows
+echo '' | node --experimental-strip-types src/compactor.ts rows
 ```
 
 Out-of-band (not claimed on Grok Bot / default cloud agents): exercise the
@@ -176,14 +193,16 @@ against the table in `README.md`:
 python3 eval/replay.py run --variant v7_no_unclear --sample 250
 python3 eval/rules_eval.py run --sample 250 --seed 0
 python3 eval/rules_eval.py report --sweep
-python3 eval/compare.py compact --synth 60
+node --experimental-strip-types eval/compact.ts compact --synth 60 --seed 0 --workers 8 --max-inflight 12
 ```
 
-The compaction command is the only way to measure `scripts/compactor.py`.
+The compaction command is the only way to measure the TypeScript compactor.
 It prints re-fetch coverage and planted-constraint survival in one gate and
 exits 2 below either floor, so a wording that keeps paths but drops what the
-user said, or the reverse, cannot pass on one number. `eval/sweep.py` and
-`eval/planted.py` are diagnostics for reading a change, not gates.
+user said, or the reverse, cannot pass on one number. It also fails on any
+failed backend chunk: the compactor is fail-open, so a chunk that never
+answers leaves its blocks unscored, and unscored rows are kept, which raises
+coverage.
 
 `--seed 0 --sample 250` selects the same real edits as the numbers in
 `README.md`; keep it when comparing. A rule-question wording change misses
@@ -197,6 +216,14 @@ The rules eval judges each record at its `sha`, and reads
 `eval/global_CLAUDE.md` in place of `~/.claude/CLAUDE.md`. Change a case's
 sha only when a rule-file change in that repo is the thing being measured.
 
+Second decision models: name them `backend:model` (bare id = System One) in
+`--decision-model` / `--judge-model`; unknown backends raise, and caches key
+on model so providers are interchangeable. The decisions endpoint 503s above
+~24 requests in flight, so pair `--workers 8 --max-inflight 12`. When the
+TypeSafe account is out of credits, pin
+`CLAUDE_PLUGIN_OPTION_PROVIDER=openrouter`: provider order does not fall
+through.
+
 These call `api.typesafe.ai` with real past prompts and cost money. Ask before
 running a full sweep.
 
@@ -208,6 +235,8 @@ running a full sweep.
 - Numbers in `README.md` and `eval/README.md` come from eval runs. Change one
   only with a run behind it, and say which run.
 - Bump `version` in `.claude-plugin/plugin.json` for a behavior change, and
-  add the change under `## [Unreleased]` in `CHANGELOG.md`. Releases go
+  add the change under `## [Unreleased]` in `CHANGELOG.md`. The AFK adapter
+  carries its own version in `adapters/afk/.claude-plugin/plugin.json`,
+  mirrored in its `package.json`, and bumps by the same rule. Releases go
   through `/release` (`.claude/skills/release`), which refuses an empty
   section.

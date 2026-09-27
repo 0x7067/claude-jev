@@ -27,13 +27,13 @@ gotchas when hooks or skills drift.
 - `python3 -m compileall` over `scripts/` and `eval/`
 - Hook stdin contract: empty/malformed events and no-key fail-open exit `0`
   without live classify (silent stdout)
-- `compactor.py rows` bad-input fallback, pin-tail keep (no Jev call), and
+- `src/compactor.ts rows` bad-input fallback, pin-tail keep (no Jev call), and
   no-key multi-row Jev-error fallback (`fallback` when >`PIN_TAIL` rows need
   judging and both `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY` are unset)
 - `jev.py` missing-key exit `2`, `status`, and the pinned-provider key rule
 - Each command hook's on/off toggle (`CLAUDE_PLUGIN_OPTION_<FIELD>=false`): no Jev
   call, for `PROMPTROUTER`, `SUBAGENTROUTER`, and `RULES`. **Not** `COMPACTION` —
-  `compactor.py` has no gate and that toggle lives only in `register.ts`, so it
+  `src/compactor.ts` has no gate and that toggle lives only in `register.ts`, so it
   cannot be proved in-band.
 - `stats.py` on an empty home
 - `comparators.py which` naming the pinned version under the verify home, and a
@@ -105,8 +105,8 @@ control-jev doctor
 ```
 
 Requires: `python3` compiles `scripts/` and `eval/`; empty stdin to
-`prompt_router.py` exits 0 with empty stdout; empty stdin to
-`compactor.py rows` exits 0 with a JSON `fallback`; disposable verify home
+`src/prompt-router.ts` exits 0 with empty stdout; empty stdin to
+`src/compactor.ts rows` exits 0 with a JSON `fallback`; disposable verify home
 exists. Writes `$EVIDENCE_DIR/doctor.txt`. Fail the run if `doctor=fail`.
 
 `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY` may both be unset. Doctor reports
@@ -183,7 +183,7 @@ Override with `JE_VERIFY_EVIDENCE` if needed. Capture:
   matches the feature file (including `fallback-nokey.json` when that path ran).
 - For mutations of disposable state under `$VERIFY_HOME/.claude/`: a second
   read of the file after the action. The three command hooks append decision rows
-  only when Jev answers, so an empty log means no answer — but `compactor.py rows`
+  only when Jev answers, so an empty log means no answer — but `src/compactor.ts rows`
   appends a `"source": "rows"` line to `jev-compact-log.jsonl` on every keep,
   **including the zero-call pin-tail keep**, so that file is not a live-call counter.
 

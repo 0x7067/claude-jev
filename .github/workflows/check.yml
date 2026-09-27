@@ -12,6 +12,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
       - uses: astral-sh/ruff-action@v4.1.0
         with:
           version: "0.16.8"
@@ -20,8 +23,14 @@ jobs:
         with:
           version: "0.16.8"
           args: check
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx oxlint
       - run: python3 -m compileall -q scripts eval
       - run: python3 scripts/check_no_comments.py
       - run: python3 scripts/check_no_stubs.py
       - run: echo '{"prompt":"hi","transcript_path":""}' | CLAUDE_CONFIG_DIR="${{ runner.temp }}" python3 scripts/prompt_router.py
-      - run: echo '' | python3 scripts/compactor.py rows
+      - run: echo '' | node --experimental-strip-types src/compactor.ts rows
+      - run: echo 'not json' | node --experimental-strip-types src/prompt-router.ts
+      - run: echo 'not json' | node --experimental-strip-types src/subagent-router.ts
+      - run: echo 'not json' | node --experimental-strip-types src/rules.ts

@@ -1,3 +1,5 @@
+import type { Json } from "./json.ts";
+
 export interface UserPromptSubmitOutput {
   hookSpecificOutput?: {
     hookEventName: "UserPromptSubmit";
@@ -12,11 +14,16 @@ export interface PreToolUseOutput {
     permissionDecision?: "allow" | "deny";
     permissionDecisionReason?: string;
     additionalContext?: string;
+    updatedInput?: Json;
   };
   systemMessage?: string;
 }
 
 export interface PostToolUseOutput {
+  hookSpecificOutput?: {
+    hookEventName?: "PostToolUse";
+    additionalContext?: string;
+  };
   decision?: "block";
   reason?: string;
   systemMessage?: string;
@@ -34,6 +41,7 @@ export interface StopOutput {
 
 export interface SessionStartOutput {
   hookSpecificOutput?: {
+    hookEventName?: "SessionStart";
     additionalContext?: string;
   };
 }

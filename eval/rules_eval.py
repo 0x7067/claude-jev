@@ -147,10 +147,11 @@ def load_jsonl(path: str) -> list[dict]:
         return []
 
 
-def cached_ask(cache: dict, cache_f):
+def cached_ask(cache: dict, cache_f, judge_model: str | None = None):
     real_ask = jev.ask
 
     def ask(state, questions, model=None, timeout=None):
+        model = model or judge_model
         key = hashlib.sha256(
             json.dumps([model or jev.DEFAULT_MODEL, state, questions], sort_keys=True).encode()
         ).hexdigest()
@@ -226,7 +227,15 @@ def at_commit(cwd: str, sha: str) -> str:
             timeout=120,
         )
         if r.returncode != 0:
-            raise SystemExit(f"cannot check out {top} at {sha[:12]}: {r.stderr.strip()}")
+            raise SystemExit(
+                f"cannot check out {top} at {sha[:12]}: {r.stderr.strip()}\n"
+                f"That commit is gone from {top}. Extraction pins the repo HEAD at extract\n"
+                f"time, so a rewritten or force-pushed history invalidates every record\n"
+                f"pinned to it, and a run cannot reproduce the rule files it measured.\n"
+                f"Re-extract to repin the corpus, or drop the records whose commit no\n"
+                f"longer exists; do not judge them at the live checkout, which measures a\n"
+                f"different thing under the same name."
+            )
     return os.path.normpath(os.path.join(dest, os.path.relpath(cwd, top)))
 
 
@@ -328,7 +337,7 @@ def cmd_run(args) -> int:
         recs += real
     cache = {d["key"]: d["answers"] for d in load_jsonl(CACHE)}
     cache_f = open(CACHE, "a")
-    jev.ask = cached_ask(cache, cache_f)
+    jev.ask = cached_ask(cache, cache_f, args.judge_model)
     rules.jev.ask = jev.ask
     rule_cache: dict = {}
     rules.GLOBAL_RULE_FILES = (GLOBAL,)
@@ -689,6 +698,11 @@ def main() -> int:
     r.add_argument("--sample", type=int, default=0, help="cap on real edits")
     r.add_argument("--seed", type=int, default=0)
     r.add_argument("--workers", type=int, default=4)
+    r.add_argument(
+        "--judge-model",
+        default="",
+        help="decision backend and model the judge calls, e.g. decisions:respan/span-01-lite",
+    )
     r.add_argument(
         "--no-comparators",
         action="store_true",
