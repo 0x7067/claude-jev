@@ -1,0 +1,36 @@
+adapters/afk/package.json
+  s_952e58896f4751::t_5940413a1a0a0a 3
+scripts/prompt_router.py
+  s_952e58896f4751::t_dd686257c3f562 42-43,45,53,55,88,176,178,183,185-193
+CHANGELOG.md
+  s_952e58896f4751::t_5940413a1a0a0a 7-8
+src/prompt-router.ts
+  s_952e58896f4751::t_ca2f7a74943ec2 5
+  s_952e58896f4751::t_dd686257c3f562 61,68,95,186,188-189
+adapters/afk/.claude-plugin/plugin.json
+  s_952e58896f4751::t_5940413a1a0a0a 4
+eval/variants.py
+  s_952e58896f4751::t_5940413a1a0a0a 330
+.claude-plugin/plugin.json
+  s_952e58896f4751::t_5940413a1a0a0a 3
+README.md
+  s_952e58896f4751::t_5940413a1a0a0a 144
+scripts/jev.py
+  s_952e58896f4751::t_5940413a1a0a0a 374-375
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "994afa5b9d98339bc790be397efbae46f2105e92",
+  "prompts": {},
+  "sessions": {
+    "s_952e58896f4751": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f369dfdf-7da4-4f22-9bdb-56019db1727c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
