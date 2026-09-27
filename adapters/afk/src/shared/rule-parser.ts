@@ -69,9 +69,11 @@ const SKIP_DIRS = new Set([
   "Library",
 ]);
 
-function sameFilesystem(parent: string, path: string): boolean {
+function sameFilesystemDir(parent: string, path: string): boolean {
   try {
-    return fs.lstatSync(path).dev === fs.lstatSync(parent).dev;
+    const entry = fs.lstatSync(path);
+
+    return entry.isDirectory() && entry.dev === fs.lstatSync(parent).dev;
   } catch {
     return false;
   }
@@ -544,14 +546,11 @@ function nestedFiles(cwd: string): Array<{ filePath: string; scope: string }> {
       const sub = path.join(dir, entry);
 
       try {
-        if (entry.startsWith(".") || SKIP_DIRS.has(entry) || !sameFilesystem(dir, sub)) {
+        if (entry.startsWith(".") || SKIP_DIRS.has(entry) || !sameFilesystemDir(dir, sub)) {
           continue;
         }
 
-        if (
-          fs.statSync(sub).isDirectory() &&
-          !fs.existsSync(path.join(sub, ".git"))
-        ) {
+        if (!fs.existsSync(path.join(sub, ".git"))) {
           walk(sub, depth + 1);
         }
       } catch {

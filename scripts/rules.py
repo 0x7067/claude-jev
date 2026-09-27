@@ -41,6 +41,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -124,14 +125,16 @@ SKIP_DIRS = {
 }
 
 
-def same_filesystem(parent: str, path: str) -> bool:
-    """Whether `path` is an entry on the same filesystem as `parent`. A mount
+def same_filesystem_dir(parent: str, path: str) -> bool:
+    """Whether `path` is a real directory, not a symlink, on the same
+    filesystem as `parent`. A mount
     point is a different project on a different volume, so a nested
     instruction file there is not this project's, and lstat on the mountpoint
     itself never reaches what is mounted behind it: a volume that is slow or
     unreachable cannot wedge the walk."""
     try:
-        return os.lstat(path).st_dev == os.lstat(parent).st_dev
+        entry = os.lstat(path)
+        return stat.S_ISDIR(entry.st_mode) and entry.st_dev == os.lstat(parent).st_dev
     except OSError:
         return False
 
@@ -506,7 +509,7 @@ def nested_files(cwd: str) -> list[tuple[str, str]]:
             sub = os.path.join(d, e)
             if e in SKIP_DIRS or e.startswith("."):
                 continue
-            if same_filesystem(d, sub) and os.path.isdir(sub):
+            if same_filesystem_dir(d, sub):
                 if not os.path.exists(os.path.join(sub, ".git")):
                     walk(sub, depth + 1)
 

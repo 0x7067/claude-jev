@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { configDir } from "./config.ts";
+import { callerName, configDir, pluginVersion } from "./config.ts";
 
 export type NoulQuestion = {
   type: "noul";
@@ -155,11 +155,15 @@ async function typedAsk(
     // SAFETY: the SystemOne and decisions answers endpoints return { answers } per the API contract.
     const payload = (await res.json()) as { answers?: Answers };
 
-    logCall(providerName, model, Object.keys(questions).length, Date.now() - started, true);
+    if (!payload.answers || Object.keys(payload.answers).length === 0) {
+      throw new Error("backend returned no answers");
+    }
 
-    return payload.answers ?? {};
+    logCall(providerName, model, Object.keys(questions).length, Date.now() - started, null);
+
+    return payload.answers;
   } catch (e) {
-    logCall(providerName, model, Object.keys(questions).length, Date.now() - started, false);
+    logCall(providerName, model, Object.keys(questions).length, Date.now() - started, String(e));
 
     throw e;
   } finally {
@@ -167,7 +171,7 @@ async function typedAsk(
   }
 }
 
-function logCall(provider: string, model: string, n: number, ms: number, ok: boolean): void {
+function logCall(provider: string, model: string, n: number, ms: number, error: string | null): void {
   try {
     const dir = configDir();
 
@@ -175,13 +179,14 @@ function logCall(provider: string, model: string, n: number, ms: number, ok: boo
 
     const rec = {
       ts: new Date().toISOString(),
-      caller: "hook",
+      caller: callerName(),
       n_questions: n,
       provider,
       model,
       ms,
-      ok,
-      v: "0.24.0",
+      ok: error === null,
+      v: pluginVersion(),
+      error: error?.slice(0, 300),
     };
 
     fs.appendFileSync(path.join(dir, "jev-calls.jsonl"), JSON.stringify(rec) + "\n");

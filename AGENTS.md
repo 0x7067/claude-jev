@@ -39,18 +39,19 @@ building it, and cite it when resisting.
   `scripts/comparators.py`, fetched to `~/.claude/jev-bin` by a detached
   process outside the hook's budget, and never required: every comparator
   answers `""` without it, and the judgment proceeds as before.
-- **Standard library only, per host.** `scripts/` and `eval/` are Python 3
-  standard library only: no third-party imports, `urllib.request` is the HTTP
-  client, and the shipped Claude Code plugin carries no dependency file.
-  `hooks/register.ts`, the one non-Python file in that plugin, exists because
-  Claude Code loads function-hook modules as JavaScript; it holds no judgment,
-  only the call into `node --experimental-strip-types src/compactor.ts rows`, the fail-open fallthrough to
-  `next(e)`, and the `/claude-jev` pane. Even its debug-log line is the
-  `summary` string Python sends, and the pane's key source, provider, and last
-  call come from `jev.py status`. Keep it that way. `adapters/afk/` holds the
-  same line in TypeScript: zero runtime dependencies — `typescript` and
-  `@types/node` are devDependencies — and Node's standard modules for HTTP,
-  files, and paths.
+- **Standard library only, per host.** `scripts/` and the Python files in
+  `eval/` are Python 3 standard library only: no third-party imports, and
+  `urllib.request` is the HTTP client.
+- The hooks in `src/`, the shared modules in `adapters/afk/src/shared/`, and
+  `eval/compact.ts` are TypeScript with zero runtime dependencies. They use
+  Node's standard modules only; `typescript`, `oxlint`, and `@types/node` are
+  devDependencies. The shipped plugin runs them as source under node type
+  stripping, with no build step.
+- `hooks/register.ts` holds no judgment. It runs
+  `node --experimental-strip-types src/compactor.ts rows`, falls through to
+  `next(e)` on failure, and draws the `/claude-jev` pane. Its debug-log line
+  is the `summary` string the compactor sends, and the pane's key source,
+  provider, and last call come from `python3 scripts/jev.py status`.
 - **One key variable per provider:** each entry in `PROVIDERS`
   (`scripts/jev.py`) names its URL, key prefix, and variable
   (`TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`). A new provider is a new entry

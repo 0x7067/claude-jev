@@ -17,6 +17,10 @@ export function appendLogLine(fileName: string, json: string): void {
   fs.appendFileSync(path.join(configDir(), fileName), json + "\n");
 }
 
+export function callerName(): string {
+  return path.basename(process.argv[1] ?? "hook").replace(/\.[jt]s$/, "") || "hook";
+}
+
 export function pluginOption(field: string): string {
   return (process.env[`CLAUDE_PLUGIN_OPTION_${field.toUpperCase()}`] ?? "").trim();
 }
@@ -32,12 +36,16 @@ let cachedVersion: string | undefined;
 export function pluginVersion(): string {
   if (cachedVersion !== undefined) return cachedVersion;
   cachedVersion = "unknown";
-  let dir = path.dirname(fileURLToPath(import.meta.url));
+  let dir = path.dirname(process.argv[1] ?? fileURLToPath(import.meta.url));
 
   for (;;) {
     const candidate = path.join(dir, ".claude-plugin", "plugin.json");
 
-    if (fs.existsSync(candidate)) cachedVersion = readVersion(candidate);
+    if (fs.existsSync(candidate)) {
+      cachedVersion = readVersion(candidate);
+      break;
+    }
+
     const parent = path.dirname(dir);
 
     if (parent === dir) break;

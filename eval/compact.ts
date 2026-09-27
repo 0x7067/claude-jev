@@ -34,7 +34,7 @@ import {
 
 const HERE = path.dirname(fileURLToPath2(import.meta.url));
 
-const ROOT = path.resolve(HERE, "..", "..");
+const ROOT = path.resolve(HERE, "..");
 
 const DATA = path.join(ROOT, "eval", "observed");
 
