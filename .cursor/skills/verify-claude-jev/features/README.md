@@ -59,8 +59,7 @@ after all: a live `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` plus `control-jev
 hook` proves the router hint, the subagent route and brief denial, the rule
 block and its per-session budget, `jev noul`, and the populated stats report.
 Only the settings pane and function-hook `/compact` truly need a real session, and
-both were proved that way once (2026-09-25) against the **installed** copy: see the
-toggle A/B in `settings-pane.md` and the two debug lines in `session-compaction.md`.
+both were proved that way against the **installed** copy: the toggle A/B in `settings-pane.md` (2026-09-25), and the two debug lines in `session-compaction.md` (2026-09-25, re-driven 2026-09-27 on 0.27.0 with `claude -p /compact -d`).
 `claude plugin update claude-jev@claude-jev` moves that copy to current, so such a
 run needs no `--plugin-dir` — and after updating, the session must be restarted
 before the new code is the one under test.
@@ -124,7 +123,7 @@ handles, required state, commands, and observable proof.
 ## Features
 
 - [Prompt routing](./prompt-routing.md) covers UserPromptSubmit skip, fail-open, and the on/off toggle.
-- [Subagent routing](./subagent-routing.md) covers PreToolUse model picking, fail-open, and the on/off toggle.
+- [Subagent routing](./subagent-routing.md) covers PreToolUse model picking by cumulative tier risk, the own-model skip, the brief check, fail-open, and the on/off toggle.
 - [Rule enforcement](./rule-enforcement.md) covers PostToolUse / Stop fail-open, event shape, Bash snapshot hunks, and the on/off toggle.
 - [Session compaction](./session-compaction.md) covers the `rows` bridge: bad-input fallback, pin-tail keep, and no-key multi-row Jev-error fallback.
 - [Jev CLI](./jev-cli.md) covers the `scripts/jev.py` CLI: missing key, bad input, `status`, and a pinned provider.
