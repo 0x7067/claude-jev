@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { callerName, configDir, pluginVersion } from "./config.ts";
 
@@ -90,6 +91,28 @@ function pinnedProvider(): Provider | undefined {
   return PROVIDERS.find((p) => p.name === name);
 }
 
+function afkEnvFile(): Map<string, string> {
+  const out = new Map<string, string>();
+
+  if (!process.env["AFK_HOOK_EVENT"]) return out;
+  const home = process.env["AFK_HOME"] || path.join(os.homedir(), ".afk");
+
+  try {
+    for (const line of fs.readFileSync(path.join(home, "config", "afk.env"), "utf8").split("\n")) {
+      const m = /^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*["']?(.*?)["']?\s*$/.exec(line);
+
+      if (m) out.set(m[1]!, m[2]!);
+    }
+  } catch {
+  }
+
+  return out;
+}
+
+function keyVar(name: string): string {
+  return (process.env[name] ?? "").trim() || (afkEnvFile().get(name) ?? "").trim();
+}
+
 function savedKey(): string {
   return (process.env["CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY"] ?? "").trim();
 }
@@ -103,7 +126,7 @@ function resolveKey(): ResolvedKey {
   const pinned = pinnedProvider();
 
   for (const p of pinned ? [pinned] : PROVIDERS) {
-    const k = (process.env[p.keyVar] ?? "").trim();
+    const k = keyVar(p.keyVar);
 
     if (k) return { key: k, provider: pinned ?? providerFor(k) };
   }
@@ -218,7 +241,7 @@ function decisionsBackend(model: string): DecisionBackend {
     name: `decisions:${model}`,
     ask: (state, questions, timeoutMs) => {
       const key =
-        (process.env["OPENROUTER_API_KEY"] ?? "").trim() || savedKey();
+        keyVar("OPENROUTER_API_KEY") || savedKey();
 
       if (!key) throw new Error("decisions backend needs OPENROUTER_API_KEY");
 
