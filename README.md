@@ -10,7 +10,7 @@ Jev judgment hooks for [agent-afk](https://github.com/griffinwork40/agent-afk). 
 |------|-------|----------------|
 | `session-start.ts` | `SessionStart` | Loads rules from instruction files and injects a structured digest into the session's first turn. No API call (pure file I/O). |
 | `prompt-router.ts` | `UserPromptSubmit` | Classifies each prompt as chat / lookup / fix / feature / ops and injects a routing hint when confidence >= 0.75. |
-| `subagent-router.ts` | `PreToolUse` (Agent) | Recommends a model tier for the delegated task. Advisory only (AFK does not support `updatedInput`). |
+| `subagent-router.ts` | `PreToolUse` (`agent`) | Recommends a model tier when the spawn names no `agent_type`, and flags a brief that changes files but leaves out paths, acceptance criteria, verification, or commit policy. Advisory only. |
 | `rules.ts` | `PostToolUse` (edits) | Loads rules from instruction files, classifies them, and judges each edit hunk. **Blocks at >= 0.80** (agent cannot override). Flags 0.50-0.80 as advisory context. |
 | `stop-sweep.ts` | `Stop` | Judges the session's accumulated edits against turn-scope rules (scope creep, cross-file patterns). |
 
@@ -87,7 +87,8 @@ Edits in the 0.50-0.80 range are surfaced as advisory context: the agent sees th
 
 ## Known gaps
 
-- **Advisory-only subagent routing**: AFK does not support `updatedInput`, so model tier recommendations surface as context text, not actual model switches.
+- **Advisory-only subagent routing**: AFK command hooks read only `continue`, `decision`, `reason`, and `hookSpecificOutput.additionalContext` (agent-afk 5.244.0), so a tier recommendation and a missing-brief note surface as context text. The hook cannot switch the model or deny the spawn, as the Claude Code plugin does.
+- **Named agents are not routed**: a spawn with an `agent_type` takes that agent's model defaults, so the hook skips the tier question and only checks the brief.
 - **No transcript access**: Hooks receive only the current event, not the conversation. The prompt router uses the prompt alone (the Python adapter also uses the previous turn).
 - **No compaction hook**: AFK CLI hooks do not expose the transcript access needed for Jev-scored compaction.
 
