@@ -1,0 +1,25 @@
+adapters/afk/src/subagent-router.ts
+  s_952e58896f4751::t_790b20592c184b 6,40
+src/subagent-router.ts
+  s_952e58896f4751::t_790b20592c184b 13,23-26,64-158,243
+CHANGELOG.md
+  s_952e58896f4751::t_19a6a2027901bb 11
+README.md
+  s_952e58896f4751::t_d742544930e9e6 154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4af392a19a109a4e6640cc44bedd221e4fa18160",
+  "prompts": {},
+  "sessions": {
+    "s_952e58896f4751": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f369dfdf-7da4-4f22-9bdb-56019db1727c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
