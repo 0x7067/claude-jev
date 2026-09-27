@@ -325,8 +325,8 @@ VARIANTS = {
         [i for i in INTENTS if i not in ("refactor", "unclear")],
         "chat",
     ),
-    "v8_shipped": Variant(
-        "v8_shipped",
+    "v8_intent_tier": Variant(
+        "v8_intent_tier",
         "intent bundle plus model_tier — does intent still hold?",
         combined_bundle(unclear=False, tier=True),
         state_ctx,

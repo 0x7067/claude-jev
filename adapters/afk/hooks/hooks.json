@@ -24,7 +24,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "/Agent/",
+        "matcher": "/^agent$/",
         "hooks": [
           {
             "type": "command",

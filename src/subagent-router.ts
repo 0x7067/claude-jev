@@ -10,7 +10,7 @@ import {
   asChoice,
   type Answers,
 } from "../adapters/afk/src/shared/jev-client.ts";
-import { subagentBundle, BRIEF_PARTS, TIERS, safeTier } from "../adapters/afk/src/shared/questions.ts";
+import { subagentBundle, BRIEF_PARTS, TIERS, safeTier, routesModel } from "../adapters/afk/src/shared/questions.ts";
 import { appendLogLine, configDir, enabled, ROUTER_LOG } from "../adapters/afk/src/shared/config.ts";
 import { isString, parseJsonObject, type Json } from "../adapters/afk/src/shared/json.ts";
 
@@ -19,8 +19,6 @@ const MIN_CONFIDENCE = 0.75;
 const BRIEF_MISSING = 0.25;
 
 const USER_RULES = "CLAUDE.md";
-
-const INHERITS_PARENT_MODEL = "general-purpose";
 
 interface PreToolUseEvent {
   tool_input?: Json;
@@ -59,8 +57,7 @@ function userTierCriteria() {
   return out;
 }
 
-function buildState(inp: Json): string {
-  const subagentType = isString(inp["subagent_type"]) ? inp["subagent_type"] : "";
+function buildState(inp: Json, subagentType: string): string {
   const description = isString(inp["description"]) ? inp["description"] : "";
   const prompt = isString(inp["prompt"]) ? inp["prompt"] : "";
   const parts = [`Agent type: ${subagentType || "general"}`];
@@ -143,14 +140,14 @@ async function main(): Promise<void> {
   const modelRaw = inp["model"];
   const explicit = isString(modelRaw) && modelRaw ? modelRaw : undefined;
   const promptText = isString(inp["prompt"]) ? inp["prompt"] : "";
-  const subagentType = isString(inp["subagent_type"]) && inp["subagent_type"] ? inp["subagent_type"] : INHERITS_PARENT_MODEL;
-  const routable = !explicit && subagentType === INHERITS_PARENT_MODEL;
+  const subagentType = isString(inp["subagent_type"]) ? inp["subagent_type"] : "";
+  const routable = !explicit && routesModel(subagentType);
 
   if (!promptText.trim()) return;
 
   const answers = await jevAsk(
-    buildState(inp),
-    subagentBundle(routable, userTierCriteria())
+    buildState(inp, subagentType),
+    subagentBundle(routable, routable ? userTierCriteria() : undefined)
   );
 
   const tier = asChoice(answers["model_tier"]);
@@ -162,34 +159,35 @@ async function main(): Promise<void> {
 
   logDecision(event, inp, answers, routed, explicit, missing, denied);
 
-  const out: PreToolUseOutput = { hookSpecificOutput: { hookEventName: "PreToolUse" } };
-  const notes: string[] = [];
+  const listed = missing.map((k) => BRIEF_PARTS.get(k)!);
 
   if (denied) {
-    const listed = missing.map((k) => BRIEF_PARTS.get(k)!).join("; ");
-    out.hookSpecificOutput!.permissionDecision = "deny";
-    out.hookSpecificOutput!.permissionDecisionReason =
-      "This brief changes files but does not state: " +
-      listed +
-      ". The subagent sees none of this conversation. Add the missing parts to the prompt and spawn again.";
-  } else if (missing.length > 0) {
-    notes.push(
-      "[jev router] brief still missing " +
-        missing.map((k) => BRIEF_PARTS.get(k)!).join(", ") +
-        " — spawned anyway (denied once already)"
-    );
+    writeOutput({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason:
+          `This brief changes files but does not state: ${listed.join("; ")}. ` +
+          "The subagent sees none of this conversation. Add the missing parts to the prompt and spawn again.",
+      },
+    });
+
+    return;
   }
 
-  if (routed && !denied) {
-    out.hookSpecificOutput!.updatedInput = { ...inp, model: routed };
-    notes.push(`[jev router] subagent → ${routed} (p=${(tier?.probabilities?.[routed] ?? 0).toFixed(2)})`);
+  const notes: string[] = [];
+
+  if (listed.length > 0) {
+    notes.push(`[jev router] brief still missing ${listed.join(", ")} — spawned anyway (denied once already)`);
   }
 
-  if (notes.length > 0) out.systemMessage = notes.join("\n");
+  if (routed) notes.push(`[jev router] subagent → ${routed} (p=${(tier?.probabilities?.[routed] ?? 0).toFixed(2)})`);
 
-  if (Object.keys(out.hookSpecificOutput!).length > 1 || out.systemMessage) {
-    writeOutput(out);
-  }
+  if (notes.length === 0) return;
+  const out: PreToolUseOutput = { hookSpecificOutput: { hookEventName: "PreToolUse" }, systemMessage: notes.join("\n") };
+
+  if (routed) out.hookSpecificOutput!.updatedInput = { ...inp, model: routed };
+  writeOutput(out);
 }
 
 try {

@@ -3,7 +3,7 @@
 import { readStdinJson } from "./shared/stdin.ts";
 import { writeOutput } from "./shared/stdout.ts";
 import { jevAsk } from "./shared/jev-client.ts";
-import { subagentBundle, BRIEF_PARTS, safeTier } from "./shared/questions.ts";
+import { subagentBundle, BRIEF_PARTS, safeTier, routesModel } from "./shared/questions.ts";
 import { asNoul, asChoice } from "./shared/jev-client.ts";
 import type { PreToolUseOutput } from "./shared/stdout.ts";
 
@@ -37,7 +37,7 @@ async function main(): Promise<void> {
     `Task: ${briefText}`,
   ].join("\n\n");
 
-  const answers = await jevAsk(state, subagentBundle(true));
+  const answers = await jevAsk(state, subagentBundle(routesModel(inp.agent_type)));
 
   const tierChoice = safeTier(asChoice(answers["model_tier"]));
 

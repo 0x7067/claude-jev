@@ -4,6 +4,9 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+- The AFK adapter's subagent hook never fired. `hooks/hooks.json` matched `/Agent/`, but agent-afk names the tool `agent`; the matcher is now `/^agent$/`. The hook also skips the tier question when the spawn names an `agent_type`, as the Claude Code router now does for non-general-purpose spawns (`claude-jev-afk` 0.4.0).
+- The subagent router reads the user's tier text from `CLAUDE.md` only when it asks the tier question.
+
 - The subagent router sets a model only on `general-purpose` spawns, or spawns with no type, since those are the ones that inherit the parent's model. `Explore`, `Plan`, and custom agents keep the model their definition names, and the hook no longer asks Jev for their tier; their briefs are still checked. On the 248 general-purpose spawns in the eval, the rule gets 134 matches, 38 too cheap, and 76 too dear, against 71, 33, and 144 under the 0.24.0 gate.
 
 ## [0.25.0] - 2026-09-27

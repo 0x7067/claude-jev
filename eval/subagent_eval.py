@@ -30,11 +30,12 @@ from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
 import jev
+from rules_eval import load_jsonl as load
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "observed")
 SPAWNS = os.path.join(DATA, "subagent_spawns.jsonl")
-TIERS = ["haiku", "sonnet", "opus", "fable"]
+TIERS = list(jev.TIER_CRITERIA)
 VARIANTS = {
     "shipped": {},
     "judgment": {
@@ -84,8 +85,9 @@ def cmd_extract(_args) -> None:
                 continue
             if d.get("type") != "assistant":
                 continue
-            parent = (d.get("message") or {}).get("model") or ""
-            for b in (d.get("message") or {}).get("content") or []:
+            msg = d.get("message") or {}
+            parent = msg.get("model") or ""
+            for b in msg.get("content") or []:
                 if not isinstance(b, dict) or b.get("type") != "tool_use":
                     continue
                 if b.get("name") not in ("Agent", "Task"):
@@ -122,14 +124,6 @@ def build_state(r: dict) -> str:
     return "\n\n".join(parts)
 
 
-def load(path: str) -> list[dict]:
-    try:
-        with open(path) as f:
-            return [json.loads(ln) for ln in f if ln.strip()]
-    except OSError:
-        return []
-
-
 def cmd_run(args) -> None:
     spawns = load(SPAWNS)
     random.Random(args.seed).shuffle(spawns)
@@ -163,6 +157,14 @@ def gate_top(t: dict, floor: float):
     return t["choice"] if probs.get(t["choice"], 0) >= floor else None
 
 
+def gate_argmax(t: dict, _floor: float):
+    return t["choice"]
+
+
+def gate_never(_t: dict, _floor: float):
+    return None
+
+
 def gate_cumulative(t: dict, risk: float):
     probs = t.get("probabilities") or {}
     above = 1.0
@@ -181,9 +183,12 @@ GATES = [
     ("cumulative risk<=0.10 (shipped)", gate_cumulative, 0.10),
     ("cumulative risk<=0.20", gate_cumulative, 0.20),
     ("cumulative risk<=0.30", gate_cumulative, 0.30),
-    ("argmax", gate_top, 0.0),
-    ("never route", gate_top, 2.0),
+    ("argmax", gate_argmax, 0.0),
+    ("never route", gate_never, 0.0),
 ]
+
+
+ROW = "{:<34}{:>8}{:>8}{:>9}{:>8}"
 
 
 def tier_of(model: str) -> str | None:
@@ -207,7 +212,7 @@ def report_rows(rows: list[dict], parents: dict) -> None:
         f"{len(rows)} answered spawns, labels {dict(collections.Counter(r['model'] for r in rows))}"
     )
     print("every spawn lands on the routed tier, or the parent's when the gate holds back")
-    print(f"{'gate':<34}{'routed':>8}{'match':>8}{'cheaper':>9}{'dearer':>8}")
+    print(ROW.format("gate", "routed", "match", "cheaper", "dearer"))
     for name, gate, x in GATES:
         c = collections.Counter()
         for r in rows:
@@ -218,7 +223,7 @@ def report_rows(rows: list[dict], parents: dict) -> None:
                 pick = parents[r["key"]]
             diff = TIERS.index(pick) - TIERS.index(r["model"])
             c["match" if diff == 0 else "cheaper" if diff < 0 else "dearer"] += 1
-        print(f"{name:<34}{c['routed']:>8}{c['match']:>8}{c['cheaper']:>9}{c['dearer']:>8}")
+        print(ROW.format(name, c["routed"], c["match"], c["cheaper"], c["dearer"]))
     confusion = collections.Counter(
         (r["model"], r["answers"]["model_tier"].get("choice")) for r in rows
     )
