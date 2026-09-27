@@ -1,0 +1,31 @@
+.cursor/skills/verify-claude-jev/features/comparators.md
+  s_d34120743accae::t_c365c014398316 7,22,56-59,78
+.cursor/skills/verify-claude-jev/features/jev-cli.md
+  s_d34120743accae::t_c365c014398316 33,44
+.cursor/skills/verify-claude-jev/features/prompt-routing.md
+  s_d34120743accae::t_c365c014398316 43-44
+.cursor/skills/verify-claude-jev/features/rule-enforcement.md
+  s_d34120743accae::t_c365c014398316 44,55-56
+.cursor/skills/verify-claude-jev/features/subagent-routing.md
+  s_d34120743accae::t_c365c014398316 53
+.cursor/skills/verify-claude-jev/bin/control-jev
+  s_d34120743accae::t_f51755c0c5d4a7 367,369,371
+.cursor/skills/verify-claude-jev/features/stats.md
+  s_d34120743accae::t_c365c014398316 28,37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "14245862d2eba9b8604a0c42d0173d8a6b590334",
+  "prompts": {},
+  "sessions": {
+    "s_d34120743accae": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92f9fe6a-cf39-48aa-a724-46b00940bd06",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
