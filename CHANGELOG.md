@@ -4,6 +4,8 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+- The subagent router sets a model only on `general-purpose` spawns, or spawns with no type, since those are the ones that inherit the parent's model. `Explore`, `Plan`, and custom agents keep the model their definition names, and the hook no longer asks Jev for their tier; their briefs are still checked. On the 248 general-purpose spawns in the eval, the rule gets 134 matches, 38 too cheap, and 76 too dear, against 71, 33, and 144 under the 0.24.0 gate.
+
 ## [0.25.0] - 2026-09-27
 
 - The subagent router routes every spawn it can answer. It picks the cheapest tier where Jev puts at most a 0.10 chance on the task needing a stronger one, instead of requiring 0.75 confidence in one tier. Four tiers split the probability, so that gate held back 190 of 300 spawns, which then inherited an opus or fable parent. On those 300 spawns, labelled with the model the user named, the new rule gets 160 matches, 51 too-cheap picks, and 89 too-dear, against 92, 50, and 158 before (`eval/subagent_eval.py`, new). The AFK adapter's advisory tier uses the same rule. Tier text rewritten toward judgment-heavy work did worse on the same 300 (146, 46, 108), so the shipped text stays.

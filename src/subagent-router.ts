@@ -20,6 +20,8 @@ const BRIEF_MISSING = 0.25;
 
 const USER_RULES = "CLAUDE.md";
 
+const INHERITS_PARENT_MODEL = "general-purpose";
+
 interface PreToolUseEvent {
   tool_input?: Json;
   session_id?: string;
@@ -141,12 +143,14 @@ async function main(): Promise<void> {
   const modelRaw = inp["model"];
   const explicit = isString(modelRaw) && modelRaw ? modelRaw : undefined;
   const promptText = isString(inp["prompt"]) ? inp["prompt"] : "";
+  const subagentType = isString(inp["subagent_type"]) && inp["subagent_type"] ? inp["subagent_type"] : INHERITS_PARENT_MODEL;
+  const routable = !explicit && subagentType === INHERITS_PARENT_MODEL;
 
   if (!promptText.trim()) return;
 
   const answers = await jevAsk(
     buildState(inp),
-    subagentBundle(!explicit, userTierCriteria())
+    subagentBundle(routable, userTierCriteria())
   );
 
   const tier = asChoice(answers["model_tier"]);

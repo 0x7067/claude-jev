@@ -151,7 +151,7 @@ Each prompt costs one API call. It asks for intent, scope, and whether tools are
 
 ### Subagents
 
-For subagent spawns, the hook sets `model` through `updatedInput`, unless the call already names a model. An explicit model always wins.
+For `general-purpose` subagent spawns, the hook sets `model` through `updatedInput`, unless the call already names a model. An explicit model always wins. Other agent types keep the model their definition names; the hook only checks their briefs.
 
 The hook picks the cheapest tier where Jev puts at most a 0.10 chance on the task needing a stronger one. On 300 past spawns where you named the model yourself, that rule matched your pick 160 times, went cheaper 51 times, and went dearer 89 times. The old 0.75 confidence gate routed only 110 of them, and the rest inherited an opus or fable parent: 92 matches, 50 cheaper, 158 dearer. See `eval/README.md`.
 
