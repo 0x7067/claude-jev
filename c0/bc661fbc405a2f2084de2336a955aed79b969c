@@ -1,0 +1,39 @@
+adapters/afk/src/shared/jev-client.ts
+  s_952e58896f4751::t_fc392814a33161 27
+eval/subagent_eval.py
+  s_952e58896f4751::t_5e0a6f682f0971 157,161-164,166,168,170,176-179,182
+  s_952e58896f4751::t_81d6c6d07f573a 1-59,61-76,78-156,158-160,165,167,169,171-175,180-181,183-205
+  s_952e58896f4751::t_4b5909a0821673 60,77
+  s_952e58896f4751::t_050dee34865351 206-209
+CHANGELOG.md
+  s_952e58896f4751::t_bcccf54325834d 8
+adapters/afk/src/shared/questions.ts
+  s_952e58896f4751::t_fc392814a33161 1,103-119
+  s_952e58896f4751::t_cf107d63c21dca 120-121
+README.md
+  s_952e58896f4751::t_bcccf54325834d 156-157
+src/subagent-router.ts
+  s_952e58896f4751::t_fc392814a33161 13,153,181
+adapters/afk/src/subagent-router.ts
+  s_952e58896f4751::t_fc392814a33161 42,50
+  s_952e58896f4751::t_e172498a880328 6
+eval/README.md
+  s_952e58896f4751::t_bcccf54325834d 3-4,10,58-92
+  s_952e58896f4751::t_96f7b4241e2345 93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c0bc661fbc405a2f2084de2336a955aed79b969c",
+  "prompts": {},
+  "sessions": {
+    "s_952e58896f4751": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f369dfdf-7da4-4f22-9bdb-56019db1727c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
