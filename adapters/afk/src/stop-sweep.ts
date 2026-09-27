@@ -103,7 +103,7 @@ async function main(): Promise<void> {
   let rules: Rule[];
 
   try {
-    rules = await loadRules(cwd);
+    rules = await loadRules(cwd, { afkRules: true });
   } catch {
     return;
   }

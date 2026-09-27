@@ -42,7 +42,7 @@ const COMPACT_CACHE = path.join(DATA, "compact_cache.jsonl");
 
 const SUMMARY_CACHE = path.join(DATA, "summary_cache.jsonl");
 
-const COMPACTOR_SRC = path.join(ROOT, "dist", "src", "compactor.js");
+const COMPACTOR_SRC = path.join(ROOT, "src", "compactor.ts");
 
 const PROJECTS = path.join(os.homedir(), ".claude", "projects");
 

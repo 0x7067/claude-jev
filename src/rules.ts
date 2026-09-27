@@ -718,11 +718,35 @@ function scopedRules(rules: Keyed[], phase: string, files: string[]): Keyed[] {
   return out.slice(0, MAX_RULES);
 }
 
-function inputDigest(event: HookEvent): string | null {
+function pythonJson(value: JsonValue | null): string {
+  if (isString(value)) return pyEscape(JSON.stringify(value));
+
+  if (isNumber(value)) return JSON.stringify(value);
+
+  if (isJsonArray(value)) return `[${value.map(pythonJson).join(", ")}]`;
+
+  if (isJsonObject(value)) {
+    const entries = Object.entries(value)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([k, v]) => `${pyEscape(JSON.stringify(k))}: ${pythonJson(v)}`);
+
+    return `{${entries.join(", ")}}`;
+  }
+
+  if (value === null) return "null";
+
+  return value ? "true" : "false";
+}
+
+function pyEscape(s: string): string {
+  return s.replace(/[\u0080-\uFFFF]/g, (ch) => "\\u" + ch.charCodeAt(0).toString(16).padStart(4, "0"));
+}
+
+export function inputDigest(event: HookEvent): string | null {
   try {
     return crypto
       .createHash("sha256")
-      .update(JSON.stringify(event.tool_input ?? null))
+      .update(pythonJson(event.tool_input ?? null))
       .digest("hex")
       .slice(0, 16);
   } catch {

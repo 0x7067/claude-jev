@@ -1,3 +1,7 @@
+import fs from "node:fs";
+import path from "node:path";
+import { configDir } from "./config.ts";
+
 export type NoulQuestion = {
   type: "noul";
   instructions: string;
@@ -121,6 +125,7 @@ const DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
 
 async function typedAsk(
   url: string,
+  providerName: string,
   model: string,
   key: string,
   state: string,
@@ -129,6 +134,7 @@ async function typedAsk(
 ): Promise<Answers> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const started = Date.now();
 
   try {
     const res = await fetch(url, {
@@ -149,9 +155,37 @@ async function typedAsk(
     // SAFETY: the SystemOne and decisions answers endpoints return { answers } per the API contract.
     const payload = (await res.json()) as { answers?: Answers };
 
+    logCall(providerName, model, Object.keys(questions).length, Date.now() - started, true);
+
     return payload.answers ?? {};
+  } catch (e) {
+    logCall(providerName, model, Object.keys(questions).length, Date.now() - started, false);
+
+    throw e;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+function logCall(provider: string, model: string, n: number, ms: number, ok: boolean): void {
+  try {
+    const dir = configDir();
+
+    fs.mkdirSync(dir, { recursive: true });
+
+    const rec = {
+      ts: new Date().toISOString(),
+      caller: "hook",
+      n_questions: n,
+      provider,
+      model,
+      ms,
+      ok,
+      v: "0.24.0",
+    };
+
+    fs.appendFileSync(path.join(dir, "jev-calls.jsonl"), JSON.stringify(rec) + "\n");
+  } catch {
   }
 }
 
@@ -163,6 +197,7 @@ function systemoneBackend(model: string): DecisionBackend {
 
       return typedAsk(
         process.env["JEV_BASE_URL"] ?? provider.url,
+        provider.name,
         model,
         key,
         state,
@@ -182,7 +217,7 @@ function decisionsBackend(model: string): DecisionBackend {
 
       if (!key) throw new Error("decisions backend needs OPENROUTER_API_KEY");
 
-      return typedAsk(DECISIONS_URL, model, key, state, questions, timeoutMs);
+      return typedAsk(DECISIONS_URL, "openrouter", model, key, state, questions, timeoutMs);
     },
   };
 }

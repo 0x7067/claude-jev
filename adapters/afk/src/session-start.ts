@@ -27,7 +27,7 @@ async function main(): Promise<void> {
   const event = await readStdinJson<SessionStartEvent>();
   const cwd = event.cwd || process.cwd();
 
-  const allRules = await loadRules(cwd);
+  const allRules = await loadRules(cwd, { afkRules: true });
 
   // loadRules already filters to instruction rules (not process rules)
   if (allRules.length === 0) return;

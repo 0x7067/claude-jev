@@ -66,7 +66,16 @@ const SKIP_DIRS = new Set([
   ".cache",
   "target",
   ".claude",
+  "Library",
 ]);
+
+function sameFilesystem(parent: string, path: string): boolean {
+  try {
+    return fs.lstatSync(path).dev === fs.lstatSync(parent).dev;
+  } catch {
+    return false;
+  }
+}
 
 const BULLET = /^\s*(?:[-*+]|\d+\.)\s+(.*)/;
 
@@ -85,6 +94,7 @@ const CACHE_PATH = path.join(os.homedir(), ".afk", "jev-rule-cache.json");
 export interface LoadRulesOptions {
   cachePath?: string;
   timeoutMs?: number;
+  afkRules?: boolean;
 }
 
 type CacheData = Record<string, JsonValue>;
@@ -334,6 +344,11 @@ async function classifyChunk(
   }
 
   const answers = await jevAsk(state, questions, timeoutMs);
+
+  if (Object.keys(answers).length === 0) {
+    throw new Error("backend returned no answers");
+  }
+
   const out: Record<number, ClassifiedItem> = {};
 
   for (let i = 0; i < chunk.length; i++) {
@@ -529,10 +544,12 @@ function nestedFiles(cwd: string): Array<{ filePath: string; scope: string }> {
       const sub = path.join(dir, entry);
 
       try {
+        if (entry.startsWith(".") || SKIP_DIRS.has(entry) || !sameFilesystem(dir, sub)) {
+          continue;
+        }
+
         if (
           fs.statSync(sub).isDirectory() &&
-          !SKIP_DIRS.has(entry) &&
-          !entry.startsWith(".") &&
           !fs.existsSync(path.join(sub, ".git"))
         ) {
           walk(sub, depth + 1);
@@ -570,7 +587,7 @@ export async function loadRules(
   const rules: Rule[] = [];
   const cachePath = opts.cachePath ?? CACHE_PATH;
 
-  for (const name of [...RULE_FILES, ...AFK_RULE_FILES]) {
+  for (const name of [...RULE_FILES, ...(opts.afkRules === true ? AFK_RULE_FILES : [])]) {
     const p = path.join(cwd, name);
 
     if (fs.existsSync(p)) {
