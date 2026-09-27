@@ -10,7 +10,7 @@ import {
   asChoice,
   type Answers,
 } from "../adapters/afk/src/shared/jev-client.ts";
-import { subagentBundle, BRIEF_PARTS } from "../adapters/afk/src/shared/questions.ts";
+import { subagentBundle, BRIEF_PARTS, TIERS, safeTier } from "../adapters/afk/src/shared/questions.ts";
 import { appendLogLine, configDir, enabled, ROUTER_LOG } from "../adapters/afk/src/shared/config.ts";
 import { isString, parseJsonObject, type Json } from "../adapters/afk/src/shared/json.ts";
 
@@ -19,8 +19,6 @@ const MIN_CONFIDENCE = 0.75;
 const BRIEF_MISSING = 0.25;
 
 const USER_RULES = "CLAUDE.md";
-
-const TIERS = ["haiku", "sonnet", "opus", "fable"];
 
 interface PreToolUseEvent {
   tool_input?: Json;
@@ -152,13 +150,7 @@ async function main(): Promise<void> {
   );
 
   const tier = asChoice(answers["model_tier"]);
-
-  const routed =
-    tier && TIERS.includes(tier.choice) && tier.confidence >= MIN_CONFIDENCE
-      ? tier.choice
-      : null;
-
-  const tierConf = tier?.confidence ?? 0;
+  const routed = safeTier(tier);
 
   const missing = missingParts(answers);
   const promptHead = promptText.slice(0, 200);
@@ -186,7 +178,7 @@ async function main(): Promise<void> {
 
   if (routed && !denied) {
     out.hookSpecificOutput!.updatedInput = { ...inp, model: routed };
-    notes.push(`[jev router] subagent → ${routed} (conf=${tierConf.toFixed(2)})`);
+    notes.push(`[jev router] subagent → ${routed} (p=${(tier?.probabilities?.[routed] ?? 0).toFixed(2)})`);
   }
 
   if (notes.length > 0) out.systemMessage = notes.join("\n");

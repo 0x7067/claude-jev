@@ -153,6 +153,8 @@ Each prompt costs one API call. It asks for intent, scope, and whether tools are
 
 For subagent spawns, the hook sets `model` through `updatedInput`, unless the call already names a model. An explicit model always wins.
 
+The hook picks the cheapest tier where Jev puts at most a 0.10 chance on the task needing a stronger one. On 300 past spawns where you named the model yourself, that rule matched your pick 160 times, went cheaper 51 times, and went dearer 89 times. The old 0.75 confidence gate routed only 110 of them, and the rest inherited an opus or fable parent: 92 matches, 50 cheaper, 158 dearer. See `eval/README.md`.
+
 The tier question has four options. Its shipped text calls `fable` rare: meant for work where a cheaper tier would likely return a confident wrong answer, and never for implementation. To replace that text, add a `## Delegating to sub-agents` section to `~/.claude/CLAUDE.md` with `- haiku: …`, `- sonnet: …`, `- opus: …`, and `- fable: …` bullets.
 
 The same call reviews the brief. When Jev is confident the task changes files, four yes/no checks ask whether the brief:

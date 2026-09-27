@@ -1,12 +1,13 @@
 # eval
 
-Two things get measured here: the routing hint and the rule hook. They share
-nothing but the Jev client.
+Three things get measured here: the routing hint, the subagent tier, and the
+rule hook. They share nothing but the Jev client.
 
 | Path | What it is | In git |
 |---|---|---|
 | `rules_eval.py` | Judges edits through the same `judge_edit` the hook calls | yes |
 | `variants.py`, `replay.py`, `compare.py` | Router eval | yes |
+| `subagent_eval.py` | Subagent tier against the model you named yourself | yes |
 | `audit_labels.json` | Hand labels for the router eval | yes |
 | `private/` | Cases that need repos not in this repo | no |
 | `data/` | Extracted edits, predictions, caches | no |
@@ -53,6 +54,42 @@ so re-running after an unrelated change costs nothing.
 The calibration table at the end lists every rule's checks, median and max
 probability, and fire count. A rule firing on most edits is too broad; a rule
 that never clears the flag band is not earning its slot.
+
+## The subagent tier
+
+`extract` collects every Agent or Task spawn in `~/.claude/projects` whose
+input names a model. That model is the label: it is what you picked for that
+brief. `run` asks the shipped `subagent_bundle` about a seeded sample.
+`report` lands every spawn on a concrete tier: the routed one, or the parent's
+model when the gate holds back, since an unrouted spawn inherits it. It counts
+matches, too-cheap picks (the costly miss), and too-dear picks.
+
+```bash
+python3 eval/subagent_eval.py extract
+CLAUDE_PLUGIN_OPTION_PROVIDER=openrouter python3 eval/subagent_eval.py run --sample 300 --seed 0
+python3 eval/subagent_eval.py report
+```
+
+The 2026-09-27 run on 300 spawns (labels: 156 sonnet, 96 opus, 25 haiku, 23
+fable; parents: fable or opus):
+
+| Gate | Routed | Match | Too cheap | Too dear |
+|---|---|---|---|---|
+| margin >= 0.75 (0.24.0) | 110 | 92 | 50 | 158 |
+| top probability >= 0.70 | 160 | 114 | 65 | 121 |
+| cumulative risk <= 0.10 (shipped) | 300 | 160 | 51 | 89 |
+| cumulative risk <= 0.20 | 300 | 173 | 70 | 57 |
+| argmax | 300 | 148 | 125 | 27 |
+
+The cumulative rule picks the cheapest tier where the chance that the task
+needs a stronger one is at most 0.10. Jev's argmax leans cheap: it called 47
+of 96 opus-labelled briefs sonnet and 43 of 156 sonnet-labelled briefs haiku.
+The rule offsets that lean; it does not remove it.
+
+Limits: the numbers are in-sample, with no holdout. The labelled spawns are
+the ones the router never touches live, because an explicit model wins. So
+this measures agreement on your own choices as a stand-in for the unlabelled
+spawns the hook actually routes.
 
 ## The router
 
