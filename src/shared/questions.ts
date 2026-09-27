@@ -1,4 +1,4 @@
-import type { Questions, NoulQuestion, ChoiceQuestion } from "./jev-client.ts";
+import type { Questions, NoulQuestion, ChoiceQuestion, ChoiceAnswer } from "./jev-client.ts";
 
 export function intentBundle(): Questions {
   return {
@@ -98,6 +98,25 @@ export function subagentBundle(
   }
 
   return q;
+}
+
+export const TIERS = ["haiku", "sonnet", "opus", "fable"];
+
+export const TIER_RISK = 0.1;
+
+export function safeTier(answer: ChoiceAnswer | undefined): string | null {
+  const probs = answer?.probabilities;
+
+  if (!probs) return null;
+  let above = 1;
+
+  for (const tier of TIERS) {
+    above -= probs[tier] ?? 0;
+
+    if (above <= TIER_RISK) return tier;
+  }
+
+  return null;
 }
 
 export const BRIEF_PARTS = new Map<string, string>([

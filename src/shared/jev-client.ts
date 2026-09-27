@@ -24,7 +24,7 @@ export type Question = NoulQuestion | ChoiceQuestion | ScoreQuestion;
 
 export type NoulAnswer = { noul: number };
 
-export type ChoiceAnswer = { choice: string; confidence: number };
+export type ChoiceAnswer = { choice: string; confidence: number; probabilities?: Record<string, number> };
 
 export type ScoreAnswer = { score: number };
 

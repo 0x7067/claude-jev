@@ -3,7 +3,7 @@
 import { readStdinJson } from "./shared/stdin.ts";
 import { writeOutput } from "./shared/stdout.ts";
 import { jevAsk } from "./shared/jev-client.ts";
-import { subagentBundle, BRIEF_PARTS } from "./shared/questions.ts";
+import { subagentBundle, BRIEF_PARTS, safeTier } from "./shared/questions.ts";
 import { asNoul, asChoice } from "./shared/jev-client.ts";
 import type { PreToolUseOutput } from "./shared/stdout.ts";
 
@@ -39,10 +39,7 @@ async function main(): Promise<void> {
 
   const answers = await jevAsk(state, subagentBundle(true));
 
-  const tierA = asChoice(answers["model_tier"]);
-
-  const tierChoice = tierA?.choice;
-  const tierConf = tierA?.confidence ?? 0;
+  const tierChoice = safeTier(asChoice(answers["model_tier"]));
 
   const briefWrites = asNoul(answers["brief_writes"])?.noul ?? 0;
 
@@ -50,7 +47,7 @@ async function main(): Promise<void> {
     hookSpecificOutput: { hookEventName: "PreToolUse" },
   };
 
-  if (tierChoice && tierConf >= MIN_CONFIDENCE) {
+  if (tierChoice) {
     out.hookSpecificOutput!.additionalContext =
       `[jev] recommended model tier: ${tierChoice} for this delegation`;
   }
