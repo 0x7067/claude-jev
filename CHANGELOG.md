@@ -4,11 +4,14 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-09-27
+
 - The subagent router sets a model unless something else already chose one: the call's `model`, `CLAUDE_CODE_SUBAGENT_MODEL`, a `model:` other than `inherit` in the agent's definition (project `.claude/agents/` up from the working directory, `~/.claude/agents/`, or an installed plugin's `agents/`), or a built-in with a fixed model (`statusline-setup`, `claude-code-guide`). `Explore`, `Plan`, `claude`, and `general-purpose` inherit the parent's model, capped at Opus for `Explore` (code.claude.com/docs/en/sub-agents), so they are routed. An agent whose definition the hook cannot find is left alone. Skipped spawns still get the brief check. On the 279 eval spawns of those inheriting types, the rule gets 145 matches, 45 too cheap, and 89 too dear, against 78, 44, and 157 under the 0.24.0 gate.
 - The AFK adapter's hooks never ran when installed as its README says. `hooks/hooks.json` pointed at `${CLAUDE_PLUGIN_ROOT}/adapters/afk/dist/`, but AFK sets the plugin root to the installed `adapters/afk` directory, so every command failed with `Cannot find module`. Commands now use `${CLAUDE_PLUGIN_ROOT}/dist/`. The README now says AFK needs `"enablePluginHooks": true` and agent-afk 5.257.3 or later, and that AFK passes no API key to hooks. The Jev client now reads `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` from AFK's own `afk.env` when AFK runs the hook (`AFK_HOOK_EVENT` is set) and the variable is not in the environment. Checked in a live agent-afk 5.257.3 session: the subagent hook called Jev with the key from `afk.env`.
 - The AFK adapter's subagent hook never fired. `hooks/hooks.json` matched `/Agent/`, but agent-afk names the tool `agent`; the matcher is now `/^agent$/`. The hook also skips the tier question when the spawn names an `agent_type`, as the Claude Code router now does for non-general-purpose spawns (`claude-jev-afk` 0.4.0).
 - The subagent router reads the user's tier text from `CLAUDE.md` only when it asks the tier question.
 
+[0.26.0]: https://github.com/0x7067/claude-jev/compare/v0.25.0...v0.26.0
 
 ## [0.25.0] - 2026-09-27
 
