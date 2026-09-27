@@ -1,0 +1,24 @@
+adapters/afk/hooks/hooks.json
+  s_952e58896f4751::t_412f27f37d9522 8,19,31,43,54
+adapters/afk/README.md
+  s_952e58896f4751::t_ecc2bb9a46af21 31-33,51-52,94
+  s_952e58896f4751::t_8033732d990ca0 95
+CHANGELOG.md
+  s_952e58896f4751::t_ecc2bb9a46af21 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "28e1a043fc2ff2ca39a9626616821f83b2dad64e",
+  "prompts": {},
+  "sessions": {
+    "s_952e58896f4751": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f369dfdf-7da4-4f22-9bdb-56019db1727c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
