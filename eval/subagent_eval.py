@@ -148,11 +148,11 @@ def gate_cumulative(t: dict, risk: float):
 
 
 GATES = [
-    ("margin>=0.75 (shipped)", gate_margin, 0.75),
+    ("margin>=0.75 (0.24.0)", gate_margin, 0.75),
     ("margin>=0.50", gate_margin, 0.50),
     ("top>=0.60", gate_top, 0.60),
     ("top>=0.70", gate_top, 0.70),
-    ("cumulative risk<=0.10", gate_cumulative, 0.10),
+    ("cumulative risk<=0.10 (shipped)", gate_cumulative, 0.10),
     ("cumulative risk<=0.20", gate_cumulative, 0.20),
     ("cumulative risk<=0.30", gate_cumulative, 0.30),
     ("argmax", gate_top, 0.0),
