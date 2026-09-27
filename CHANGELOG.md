@@ -4,7 +4,11 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-09-27
+
 - The AFK adapter installs from GitHub. Its hooks run the TypeScript source under node type stripping, so it needs no build step, and each release pushes a split of `adapters/afk` to the `afk` branch. Install with `afk plugin install 0x7067/claude-jev claude-jev --ref <afk commit>` and update with `afk plugin update claude-jev --ref afk`. A bare `afk plugin update` checks out the newest version tag, which is the Claude Code plugin.
+
+[0.27.0]: https://github.com/0x7067/claude-jev/compare/v0.26.0...v0.27.0
 
 ## [0.26.0] - 2026-09-27
 
