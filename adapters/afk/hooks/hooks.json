@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/session-start.js",
+            "command": "node --experimental-strip-types ${CLAUDE_PLUGIN_ROOT}/src/session-start.ts",
             "timeout_ms": 5000
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/prompt-router.js",
+            "command": "node --experimental-strip-types ${CLAUDE_PLUGIN_ROOT}/src/prompt-router.ts",
             "timeout_ms": 10000
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/subagent-router.js",
+            "command": "node --experimental-strip-types ${CLAUDE_PLUGIN_ROOT}/src/subagent-router.ts",
             "timeout_ms": 10000
           }
         ]
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/rules.js",
+            "command": "node --experimental-strip-types ${CLAUDE_PLUGIN_ROOT}/src/rules.ts",
             "timeout_ms": 15000
           }
         ]
@@ -51,7 +51,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/stop-sweep.js",
+            "command": "node --experimental-strip-types ${CLAUDE_PLUGIN_ROOT}/src/stop-sweep.ts",
             "timeout_ms": 15000
           }
         ]
