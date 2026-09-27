@@ -302,8 +302,6 @@ def intent_bundle() -> dict:
     `needs_repo` because a hardcoded "yes" beat it by 18 points. `needs_tools`
     is separate from `intent` on purpose — telling the agent to skip work it
     needs is the costliest mistake, so it gets its own near-certain gate.
-    `model_tier` is advisory: the hook can't switch the model, it only tells
-    the user which tier the prompt looks like.
     """
     return {
         "intent": {
@@ -331,18 +329,6 @@ def intent_bundle() -> dict:
             "instructions": "To handle this message, must the assistant use tools "
             "(read files, search, run commands, edit code) rather than "
             "just replying from the conversation?",
-        },
-        "model_tier": {
-            "type": "choice",
-            "instructions": "What is the cheapest Claude model tier that would "
-            "handle this request well?",
-            "criteria": {
-                "haiku": "Mechanical or conversational — chat, quick lookups, "
-                "renames, a single command",
-                "sonnet": "Ordinary coding work — focused edits, standard "
-                "features, debugging with a clear signal",
-                "opus": "Hardest reasoning — ambiguous multi-file work, architecture, subtle bugs",
-            },
         },
     }
 
@@ -385,9 +371,8 @@ BRIEF_CHECKS = {
 
 
 def subagent_bundle(tiers: dict | None = None, ask_tier: bool = True) -> dict:
-    """The questions PreToolUse asks before an Agent/Task spawn. Unlike the
-    prompt-level tier question this one decides the model outright, so the
-    phrasing is about delegated tasks, not user requests. `tiers` replaces
+    """The questions PreToolUse asks before an Agent/Task spawn. The tier
+    answer decides the model outright. `tiers` replaces
     the shipped criteria text with the user's own, read from their
     instruction file; `ask_tier` is off when the caller already set a model
     and only the brief checks apply."""

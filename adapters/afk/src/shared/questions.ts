@@ -31,18 +31,6 @@ export function intentBundle(): Questions {
         "(read files, search, run commands, edit code) rather than " +
         "just replying from the conversation?",
     } satisfies NoulQuestion,
-    model_tier: {
-      type: "choice",
-      instructions:
-        "What is the cheapest Claude model tier that would handle this request well?",
-      criteria: {
-        haiku:
-          "Mechanical or conversational — chat, quick lookups, renames, a single command",
-        sonnet:
-          "Ordinary coding work — focused edits, standard features, debugging with a clear signal",
-        opus: "Hardest reasoning — ambiguous multi-file work, architecture, subtle bugs",
-      },
-    } satisfies ChoiceQuestion,
   };
 }
 

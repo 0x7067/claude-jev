@@ -2,7 +2,7 @@
 
 import fs from "node:fs";
 import { readStdinJson } from "../adapters/afk/src/shared/stdin.ts";
-import { writeOutput, type UserPromptSubmitOutput } from "../adapters/afk/src/shared/stdout.ts";
+import { writeOutput } from "../adapters/afk/src/shared/stdout.ts";
 import {
   jevAsk,
   asChoice,
@@ -34,8 +34,6 @@ const GUIDANCE = new Map<string, string>([
   ["fix", "Small change — locate the code, make a focused edit, run the narrowest verification."],
 ]);
 
-const TIER_ORDER = ["haiku", "sonnet", "opus", "fable"];
-
 interface PromptEvent {
   session_id?: string;
   cwd?: string;
@@ -52,7 +50,6 @@ interface TranscriptEntry {
 interface TailResult {
   prevUser: string;
   prevAssistant: string;
-  model: string | null;
 }
 
 function conversationTail(transcriptPath: string, prompt: string): TailResult {
@@ -61,15 +58,14 @@ function conversationTail(transcriptPath: string, prompt: string): TailResult {
   try {
     lines = fs.readFileSync(transcriptPath, "utf8").split("\n").slice(-CONTEXT_LINES);
   } catch {
-    return { prevUser: "", prevAssistant: "", model: null };
+    return { prevUser: "", prevAssistant: "" };
   }
 
   let prevUser = "";
   let prevAssistant = "";
-  let model: string | null = null;
 
   for (let i = lines.length - 1; i >= 0; i--) {
-    if (prevUser && prevAssistant && model) break;
+    if (prevUser && prevAssistant) break;
     const line = lines[i]!;
 
     if (line.length > 500_000) continue;
@@ -92,17 +88,11 @@ function conversationTail(transcriptPath: string, prompt: string): TailResult {
 
       if (text && text !== prompt && !text.startsWith("<")) prevUser = text;
     } else if (entry.type === "assistant" && isJsonArray(content)) {
-      if (model === null) {
-        const m = entry.message?.["model"];
-
-        if (isString(m)) model = m;
-      }
-
       if (!prevAssistant) prevAssistant = textOf(content).trim();
     }
   }
 
-  return { prevUser, prevAssistant, model };
+  return { prevUser, prevAssistant };
 }
 
 function buildState(prompt: string, prevUser: string, prevAssistant: string): string {
@@ -115,36 +105,6 @@ function buildState(prompt: string, prevUser: string, prevAssistant: string): st
   parts.push(`Current user message: ${prompt}`);
 
   return parts.join("\n\n");
-}
-
-function tierOf(modelName: string | null): string | null {
-  if (!modelName) return null;
-  const low = modelName.toLowerCase();
-
-  for (const tier of TIER_ORDER) if (low.includes(tier)) return tier;
-
-  return null;
-}
-
-function tierHint(answers: Answers, modelNow: string | null): string | null {
-  const tier = asChoice(answers["model_tier"]);
-
-  if (!tier || !TIER_ORDER.includes(tier.choice) || tier.confidence < MIN_CONFIDENCE) {
-    return null;
-  }
-
-  const current = tierOf(modelNow);
-
-  if (current === tier.choice) return null;
-  const line = `[jev router] model=${tier.choice} conf=${tier.confidence.toFixed(2)} — `;
-
-  if (current === null) return `${line}this prompt looks like ${tier.choice} work`;
-
-  if (TIER_ORDER.indexOf(tier.choice) < TIER_ORDER.indexOf(current)) {
-    return `${line}looks like ${tier.choice} work; you're on ${current}`;
-  }
-
-  return `${line}may want ${tier.choice} for this; you're on ${current}`;
 }
 
 function decide(answers: Answers): string | null {
@@ -181,8 +141,6 @@ function logDecision(
   event: PromptEvent,
   answers: Answers,
   hint: string | null,
-  tier: string | null,
-  modelNow: string | null,
   ms: number
 ): void {
   try {
@@ -193,8 +151,6 @@ function logDecision(
       prompt: (event.prompt ?? "").slice(0, 200),
       answers,
       hint,
-      tier_hint: tier,
-      model_now: modelNow,
       ms,
       v: pluginVersion(),
     };
@@ -215,13 +171,11 @@ async function main(): Promise<void> {
 
   let prevUser = "";
   let prevAssistant = "";
-  let modelNow: string | null = null;
 
   if (event.transcript_path) {
     const tail = conversationTail(event.transcript_path, prompt);
     prevUser = tail.prevUser;
     prevAssistant = tail.prevAssistant;
-    modelNow = tail.model;
   }
 
   const started = performance.now();
@@ -229,16 +183,10 @@ async function main(): Promise<void> {
   const ms = Math.round(performance.now() - started);
 
   const ctx = decide(answers);
-  const tier = tierHint(answers, modelNow);
-  logDecision(event, answers, ctx, tier, modelNow, ms);
+  logDecision(event, answers, ctx, ms);
 
-  if (!ctx && !tier) return;
-  const out: UserPromptSubmitOutput = {};
-
-  if (ctx) out.hookSpecificOutput = { hookEventName: "UserPromptSubmit", additionalContext: ctx };
-
-  if (tier) out.systemMessage = tier;
-  writeOutput(out);
+  if (!ctx) return;
+  writeOutput({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: ctx } });
 }
 
 try {

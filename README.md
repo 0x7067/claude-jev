@@ -141,14 +141,13 @@ To see which path ran, start Claude Code with `-d` and read `~/.claude/debug/<se
 
 ### Prompts
 
-Each prompt costs one API call. It asks for intent, scope, whether tools are needed, and a model tier. The call includes the previous turn, because most prompts are follow-ups.
+Each prompt costs one API call. It asks for intent, scope, and whether tools are needed. The call includes the previous turn, because most prompts are follow-ups.
 
 - A `lookup` gets the hint "one search".
 - A `fix` gets "focused edit, narrow verification".
 - `feature` and `ops` get no hint. Live and in replay, those hints were wrong more often than right.
 - Below 0.75 confidence, the router stays silent.
 - The no-tools hint fires only on a near-certain yes/no answer, because skipping needed work is the expensive mistake.
-- The tier answer is advisory. When it confidently disagrees with the recorded model, the hook emits a `systemMessage`, which the agent never sees.
 
 ### Subagents
 

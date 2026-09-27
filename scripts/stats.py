@@ -485,15 +485,6 @@ def main() -> int:
     else:
         print("\nNothing scorable yet — come back after a few more sessions.")
 
-    tiered = [e for e in entries if (e.get("answers") or {}).get("model_tier")]
-    if tiered:
-        dist = collections.Counter(
-            ((e["answers"]["model_tier"] or {}).get("choice") or "?") for e in tiered
-        )
-        shown = sum(1 for e in tiered if e.get("tier_hint"))
-        print("\nModel tier (cheapest tier Jev thinks each prompt needs):")
-        print(f"  predicted: {dict(sorted(dist.items()))}   mismatch hints shown: {shown}")
-
     rule_rows = [
         e for e in entries if e.get("kind") == "rules" and isinstance(e.get("probs"), dict)
     ]

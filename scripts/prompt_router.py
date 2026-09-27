@@ -38,24 +38,21 @@ GUIDANCE = {
     "fix": "Small change — locate the code, make a focused edit, run the narrowest verification.",
 }
 
-TIER_ORDER = ["haiku", "sonnet", "opus", "fable"]
 
+def conversation_tail(transcript_path: str, prompt: str) -> tuple[str, str]:
+    """Last user message and last assistant reply.
 
-def conversation_tail(transcript_path: str, prompt: str) -> tuple[str, str, str | None]:
-    """Last user message, last assistant reply, and the model it ran on.
-
-    Returns empty strings / None for anything unreadable — context is an
+    Returns empty strings for anything unreadable — context is an
     improvement, not a requirement.
     """
     prev_user = prev_assistant = ""
-    model = None
     try:
         with open(transcript_path, errors="replace") as f:
             lines = f.readlines()[-CONTEXT_LINES:]
     except OSError:
-        return "", "", None
+        return "", ""
     for line in reversed(lines):
-        if prev_user and prev_assistant and model:
+        if prev_user and prev_assistant:
             break
         if len(line) > 500_000:
             continue
@@ -80,10 +77,6 @@ def conversation_tail(transcript_path: str, prompt: str) -> tuple[str, str, str 
             if text and text != prompt and not text.startswith("<"):
                 prev_user = text
         elif d.get("type") == "assistant" and isinstance(content, list):
-            if model is None:
-                m = msg.get("model")
-                if isinstance(m, str):
-                    model = m
             if not prev_assistant:
                 text = "\n".join(
                     b.get("text", "")
@@ -92,7 +85,7 @@ def conversation_tail(transcript_path: str, prompt: str) -> tuple[str, str, str 
                 ).strip()
                 if text:
                     prev_assistant = text
-    return prev_user, prev_assistant, model
+    return prev_user, prev_assistant
 
 
 def build_state(prompt: str, prev_user: str, prev_assistant: str) -> str:
@@ -105,34 +98,6 @@ def build_state(prompt: str, prev_user: str, prev_assistant: str) -> str:
         parts.append(f"Assistant's last reply (truncated): {prev_assistant[-600:]}")
     parts.append(f"Current user message: {prompt}")
     return "\n\n".join(parts)
-
-
-def tier_of(model_name: str | None) -> str | None:
-    if not model_name:
-        return None
-    low = model_name.lower()
-    for tier in TIER_ORDER:
-        if tier in low:
-            return tier
-    return None
-
-
-def tier_hint(answers: dict, model_now: str | None) -> str | None:
-    """Advisory only — a hook can't switch the model, so a mismatch is a
-    nudge to the user (systemMessage), not a command to the agent."""
-    t = answers.get("model_tier") or {}
-    choice, conf = t.get("choice"), t.get("confidence", 0.0)
-    if choice not in TIER_ORDER or conf < MIN_CONFIDENCE:
-        return None
-    current = tier_of(model_now)
-    if current == choice:
-        return None
-    line = f"[jev router] model={choice} conf={conf:.2f} — "
-    if current is None:
-        return line + f"this prompt looks like {choice} work"
-    if TIER_ORDER.index(choice) < TIER_ORDER.index(current):
-        return line + f"looks like {choice} work; you're on {current}"
-    return line + f"may want {choice} for this; you're on {current}"
 
 
 def decide(answers: dict) -> tuple[str | None, dict]:
@@ -167,8 +132,6 @@ def log_decision(
     event: dict,
     answers: dict,
     hint: str | None,
-    tier: str | None,
-    model_now: str | None,
     ms: int | None = None,
 ) -> None:
     """Record what was predicted so a later eval can score it against what the
@@ -187,8 +150,6 @@ def log_decision(
                         "prompt": (event.get("prompt") or "")[:200],
                         "answers": answers,
                         "hint": hint,
-                        "tier_hint": tier,
-                        "model_now": model_now,
                         "ms": ms,
                         "v": jev.version(),
                     }
@@ -212,25 +173,24 @@ def main() -> None:
         if observed.is_synthetic(prompt):
             return
         tp = event.get("transcript_path")
-        prev_user, prev_assistant, model_now = "", "", None
+        prev_user, prev_assistant = "", ""
         if tp:
-            prev_user, prev_assistant, model_now = conversation_tail(tp, prompt)
+            prev_user, prev_assistant = conversation_tail(tp, prompt)
         t0 = time.monotonic()
         answers = jev.ask(build_state(prompt, prev_user, prev_assistant), jev.intent_bundle())
         ms = int((time.monotonic() - t0) * 1000)
         ctx, _ = decide(answers)
-        tier = tier_hint(answers, model_now)
-        log_decision(event, answers, ctx, tier, model_now, ms)
-        out = {}
+        log_decision(event, answers, ctx, ms)
         if ctx:
-            out["hookSpecificOutput"] = {
-                "hookEventName": "UserPromptSubmit",
-                "additionalContext": ctx,
-            }
-        if tier:
-            out["systemMessage"] = tier
-        if out:
-            json.dump(out, sys.stdout)
+            json.dump(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "UserPromptSubmit",
+                        "additionalContext": ctx,
+                    }
+                },
+                sys.stdout,
+            )
             sys.stdout.write("\n")
     except Exception:
         return

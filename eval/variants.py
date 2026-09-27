@@ -327,7 +327,7 @@ VARIANTS = {
     ),
     "v8_shipped": Variant(
         "v8_shipped",
-        "shipped bundle with model_tier — does intent still hold?",
+        "intent bundle plus model_tier — does intent still hold?",
         combined_bundle(unclear=False, tier=True),
         state_ctx,
         rule_combined,
