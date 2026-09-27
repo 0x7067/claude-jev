@@ -4,6 +4,8 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+- The AFK adapter installs from GitHub. Its hooks run the TypeScript source under node type stripping, so it needs no build step, and each release pushes a split of `adapters/afk` to the `afk` branch. Install with `afk plugin install 0x7067/claude-jev claude-jev --ref <afk commit>` and update with `afk plugin update claude-jev --ref afk`. A bare `afk plugin update` checks out the newest version tag, which is the Claude Code plugin.
+
 ## [0.26.0] - 2026-09-27
 
 - The subagent router sets a model unless something else already chose one: the call's `model`, `CLAUDE_CODE_SUBAGENT_MODEL`, a `model:` other than `inherit` in the agent's definition (project `.claude/agents/` up from the working directory, `~/.claude/agents/`, or an installed plugin's `agents/`), or a built-in with a fixed model (`statusline-setup`, `claude-code-guide`). `Explore`, `Plan`, `claude`, and `general-purpose` inherit the parent's model, capped at Opus for `Explore` (code.claude.com/docs/en/sub-agents), so they are routed. An agent whose definition the hook cannot find is left alone. Skipped spawns still get the brief check. On the 279 eval spawns of those inheriting types, the rule gets 145 matches, 45 too cheap, and 89 too dear, against 78, 44, and 157 under the 0.24.0 gate.

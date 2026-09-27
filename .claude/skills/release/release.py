@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Cut a release: version files, changelog, commit, tag, push, GitHub release.
 
+After the push, the `afk` branch is reset to a split of `adapters/afk`, so
+AFK installs the adapter from GitHub with `--ref afk`.
+
     python3 .claude/skills/release/release.py 0.16.0            plan only
     python3 .claude/skills/release/release.py 0.16.0 --execute  do it
     --trailer "Key: value"                       appended to the release commit
@@ -30,6 +33,8 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 PLUGIN = os.path.join(ROOT, ".claude-plugin", "plugin.json")
+AFK_PREFIX = "adapters/afk"
+AFK_BRANCH = "afk"
 MARKETPLACE = os.path.join(ROOT, ".claude-plugin", "marketplace.json")
 CHANGELOG = os.path.join(ROOT, "CHANGELOG.md")
 REPO_URL = "https://github.com/0x7067/claude-jev"
@@ -139,6 +144,7 @@ def main() -> int:
     print(f"  bump version -> {version} in plugin.json, marketplace.json")
     print(f"  CHANGELOG.md: [Unreleased] -> [{version}] - {today}, new empty [Unreleased]")
     print(f"  commit '{version}: {title}', tag {tag}, push main and {tag}")
+    print(f"  push a split of {AFK_PREFIX} to the {AFK_BRANCH} branch")
     print(f"  gh-axi release create {tag} with these notes:\n")
     print("\n".join(f"    {line}" for line in notes.splitlines()))
     if not execute:
@@ -153,6 +159,8 @@ def main() -> int:
     sh("git", "commit", "-q", "-m", message)
     sh("git", "tag", "-a", tag, "-m", f"{tag}: {title}")
     sh("git", "push", "origin", "main", tag)
+    split = sh("git", "subtree", "split", f"--prefix={AFK_PREFIX}", "HEAD")
+    sh("git", "push", "origin", f"{split}:refs/heads/{AFK_BRANCH}")
     with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as tf:
         tf.write(notes)
         notes_path = tf.name
