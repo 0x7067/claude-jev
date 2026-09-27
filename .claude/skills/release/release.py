@@ -14,7 +14,7 @@ anything.
 Checks, all run in plan mode too: version is X.Y.Z and not below
 plugin.json; working tree clean; branch is main and not behind origin/main;
 tag vX.Y.Z unused; `compileall` over scripts and eval; `ruff format --check`
-and `ruff check`; `compactor.py rows` falls back on empty input. Needs
+and `ruff check`; `src/compactor.ts rows` falls back on empty input. Needs
 `git` with push rights and `gh-axi` authenticated for the repository.
 """
 
@@ -71,14 +71,14 @@ def preflight(version: str) -> None:
     except FileNotFoundError:
         fail("ruff is not installed")
     smoke = subprocess.run(
-        ["python3", os.path.join(ROOT, "scripts", "compactor.py"), "rows"],
+        ["node", "--experimental-strip-types", os.path.join(ROOT, "src", "compactor.ts"), "rows"],
         input="",
         text=True,
         capture_output=True,
         cwd=ROOT,
     )
     if smoke.returncode or '"fallback"' not in smoke.stdout:
-        fail("compactor.py rows did not fall back cleanly on empty input")
+        fail("compactor.ts rows did not fall back cleanly on empty input")
 
 
 def split_changelog(text: str) -> tuple[str, str, str]:
