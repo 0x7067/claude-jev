@@ -1,0 +1,21 @@
+.claude/skills/release/release.py
+  s_e145aadd0ac504::t_24e2ad2e15b96f 17,74,81
+CHANGELOG.md
+  s_e145aadd0ac504::t_7f6dbbcbb92311 7-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "18c4f04c023b6fb80a33ef247b4e20e4965fc1eb",
+  "prompts": {},
+  "sessions": {
+    "s_e145aadd0ac504": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f81b9f05-64eb-4826-b924-e5515d9cfab5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
