@@ -28,7 +28,9 @@ cp -r adapters/afk ~/.afk/plugins/claude-jev
 ln -s "$(pwd)/adapters/afk" ~/.afk/plugins/claude-jev
 ```
 
-AFK discovers the plugin automatically on next session start. Hooks wire from `hooks/hooks.json`; no manual config needed.
+AFK discovers the plugin on the next session start and wires hooks from `hooks/hooks.json`. AFK runs plugin hooks only when `~/.afk/config/afk.config.json` sets `"enablePluginHooks": true`.
+
+Use agent-afk 5.257.3 or later. On 5.244.0, a session with all five hooks loaded exits right after "Initializing agent..." without calling the model.
 
 ### Manual hook wiring
 
@@ -45,6 +47,8 @@ export OPENROUTER_API_KEY=sk-or-...
 ```
 
 `TYPESAFE_API_KEY` is checked first. The SessionStart hook (rule digest) requires no API key.
+
+AFK starts hook commands with a reduced environment: `PATH`, `HOME`, `SHELL`, `LANG`, `TERM`, `TMPDIR`, `USER`, `LOGNAME`, non-secret `AFK_*` variables, and `CLAUDE_PLUGIN_ROOT`. A key exported in your shell does not reach the hooks, so every keyed hook stays silent under AFK today. See Known gaps.
 
 ### 2. Build
 
@@ -87,7 +91,8 @@ Edits in the 0.50-0.80 range are surfaced as advisory context: the agent sees th
 
 ## Known gaps
 
-- **Advisory-only subagent routing**: AFK command hooks read only `continue`, `decision`, `reason`, and `hookSpecificOutput.additionalContext` (agent-afk 5.244.0), so a tier recommendation and a missing-brief note surface as context text. The hook cannot switch the model or deny the spawn, as the Claude Code plugin does.
+- **No API key inside AFK hooks**: AFK drops `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY` from the hook environment (agent-afk 5.257.3), so the prompt router, subagent router, rule hook, and stop sweep make no Jev call. Only the SessionStart digest runs.
+- **Advisory-only subagent routing**: AFK command hooks read only `continue`, `decision`, `reason`, and `hookSpecificOutput.additionalContext` (agent-afk 5.244.0), so a tier recommendation and a missing-brief note surface as context text. The hook cannot switch the model. AFK does honor `decision: "block"` with a `reason`, so denying a bad brief is possible, but the adapter does not do it yet.
 - **Named agents are not routed**: a spawn with an `agent_type` takes that agent's model defaults, so the hook skips the tier question and only checks the brief.
 - **No transcript access**: Hooks receive only the current event, not the conversation. The prompt router uses the prompt alone (the Python adapter also uses the previous turn).
 - **No compaction hook**: AFK CLI hooks do not expose the transcript access needed for Jev-scored compaction.
