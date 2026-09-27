@@ -1,0 +1,36 @@
+adapters/afk/src/rules.ts
+  s_192292c6e473ef::t_9a7a746b9ec541 140
+eval/compact.ts
+  s_192292c6e473ef::t_cc4f323728ce61 45
+adapters/afk/src/session-start.ts
+  s_192292c6e473ef::t_9a7a746b9ec541 30
+adapters/afk/src/shared/rule-parser.ts
+  s_192292c6e473ef::t_c943346251ef1d 97,347-351,590
+  s_192292c6e473ef::t_0bf1d108c0944c 69,72-73,75-79,547-550
+  s_192292c6e473ef::t_0c5bd63783842b 74
+adapters/afk/src/stop-sweep.ts
+  s_192292c6e473ef::t_9a7a746b9ec541 106
+adapters/afk/src/shared/jev-client.ts
+  s_192292c6e473ef::t_e9184f4e100db1 1-4,128,137,158-159,161-164,170-191,200,220
+src/rules.ts
+  s_192292c6e473ef::t_71f6e37394b567 721-722,724,726-733,736,738,741-744,749
+  s_192292c6e473ef::t_ff6018e0bb6772 723,725
+  s_192292c6e473ef::t_6c048cb2d0e276 745
+  s_192292c6e473ef::t_7dfb643fab4800 734-735,737,739-740
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "225f1e03667d17770072709bdb375992d75310a1",
+  "prompts": {},
+  "sessions": {
+    "s_192292c6e473ef": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0ddf0-d363-721f-baad-16935ace89e7",
+        "model": "glm-5.3-flash"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
