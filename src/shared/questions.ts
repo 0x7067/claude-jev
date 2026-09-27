@@ -1,4 +1,4 @@
-import type { Questions, NoulQuestion, ChoiceQuestion } from "./jev-client.js";
+import type { Questions, NoulQuestion, ChoiceQuestion } from "./jev-client.ts";
 
 export function intentBundle(): Questions {
   return {
@@ -46,7 +46,7 @@ export function intentBundle(): Questions {
   };
 }
 
-const TIER_CRITERIA: Record<string, string> = {
+const TIER_CRITERIA = {
   haiku:
     "Bounded, mechanical work with a clear stop condition and no " +
     "design choices: search, fetch, count, summarize, list callers, " +
@@ -72,9 +72,9 @@ const TIER_CRITERIA: Record<string, string> = {
     "cause is unknown and the evidence conflicts, or a task whose " +
     "acceptance criteria cannot be written down in advance. Rare " +
     "and the most expensive; not for implementation",
-};
+} satisfies Record<string, string>;
 
-const BRIEF_CHECKS: Record<string, string> = {
+const BRIEF_CHECKS = {
   brief_writes:
     "Does this task ask the subagent to create, edit, or " +
     "delete files, as opposed to only reading, searching, " +
@@ -87,31 +87,37 @@ const BRIEF_CHECKS: Record<string, string> = {
     "Does the brief name a command or check the subagent must run to verify its work?",
   brief_commit:
     "Does the brief say whether the subagent may commit, or that it must not?",
-};
+} satisfies Record<string, string>;
 
-export function subagentBundle(askTier: boolean): Questions {
+export function subagentBundle(
+  askTier: boolean,
+  tiers?: Record<string, string>
+): Questions {
   const q: Questions = {};
+
   for (const [k, v] of Object.entries(BRIEF_CHECKS)) {
     q[k] = { type: "noul", instructions: v } satisfies NoulQuestion;
   }
+
   if (askTier) {
     q["model_tier"] = {
       type: "choice",
       instructions:
         "A coding assistant is delegating this task to a subagent. " +
         "What is the cheapest Claude model tier the subagent needs to do it well?",
-      criteria: TIER_CRITERIA,
+      criteria: { ...TIER_CRITERIA, ...tiers },
     } satisfies ChoiceQuestion;
   }
+
   return q;
 }
 
-export const BRIEF_PARTS: Record<string, string> = {
-  brief_paths: "the exact files or paths to work in",
-  brief_acceptance: "acceptance criteria",
-  brief_verify: "the verification command to run",
-  brief_commit: "the commit policy (default: do not commit)",
-};
+export const BRIEF_PARTS = new Map<string, string>([
+  ["brief_paths", "the exact files or paths to work in"],
+  ["brief_acceptance", "acceptance criteria"],
+  ["brief_verify", "the verification command to run"],
+  ["brief_commit", "the commit policy (default: do not commit)"],
+]);
 
 export const INSTRUCTION_Q =
   "Is item [{i}] a rule about the code or files a coding agent writes, " +
@@ -143,12 +149,14 @@ export const TURN_CRITERIA = {
 };
 
 export const POLARITY_Q = "Does item [{i}] forbid something, or require something?";
+
 export const POLARITY_CRITERIA = {
   forbid: "the rule says not to do or add something",
   require: "the rule says something must be present or done a certain way",
 };
 
 export const SUBJECT_Q = "What kind of thing in a code diff does item [{i}] govern?";
+
 export const SUBJECT_CRITERIA = {
   imports_deps: "imports, requires, dependencies, third-party packages",
   comments: "comments, docstrings, explanatory text inside code",
@@ -165,6 +173,7 @@ export const SUBJECT_CRITERIA = {
 
 export function ruleQuestions(count: number): Questions {
   const q: Questions = {};
+
   for (let i = 0; i < count; i++) {
     q[`q${i}`] = {
       type: "noul",
@@ -186,12 +195,18 @@ export function ruleQuestions(count: number): Questions {
       criteria: SUBJECT_CRITERIA,
     } satisfies ChoiceQuestion;
   }
+
   return q;
 }
 
 export const INSTRUCTION_MIN = 0.5;
+
 export const TURN_MIN = 0.5;
+
 export const CHOICE_MIN = 0.5;
+
 export const DEFAULT_SUBJECT = "other";
+
 export const DEFAULT_POLARITY = "forbid";
+
 export const ITEMS_PER_REQUEST = 15;
