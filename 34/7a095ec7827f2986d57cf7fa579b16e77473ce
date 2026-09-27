@@ -1,0 +1,25 @@
+src/subagent-router.ts
+  s_952e58896f4751::t_17f520d936a441 23-24,146-147,153
+.claude-plugin/plugin.json
+  s_952e58896f4751::t_2f7191aaec1fe7 3
+CHANGELOG.md
+  s_952e58896f4751::t_34dabbcc06a816 7-8
+README.md
+  s_952e58896f4751::t_4d04a2f49d5583 154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "347a095ec7827f2986d57cf7fa579b16e77473ce",
+  "prompts": {},
+  "sessions": {
+    "s_952e58896f4751": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f369dfdf-7da4-4f22-9bdb-56019db1727c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
