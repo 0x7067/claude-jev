@@ -88,11 +88,21 @@ The rule offsets that lean; it does not remove it.
 
 `run --variant judgment` asks with tier text rewritten toward the user's own
 delegation rules: judgment-heavy work such as grading, verifying, auditing,
-and analysis is opus even when it edits nothing. On the first 100 spawns of
-seed 0 it fixed much of the lean at argmax: opus-labelled briefs called opus
-went from 13 to 24 of 31. But under the shipped gate it changed nothing that
-100 spawns can resolve: 54 matches, 13 too cheap, 33 too dear, against 55,
-14, and 31 with the shipped text. The shipped text stays.
+and analysis is opus even when it edits nothing. On all 300 spawns it trades
+one lean for the other. Opus-labelled briefs called opus rise from 30 to 57
+of 96, but sonnet-labelled briefs called opus rise from 22 to 59 of 156, and
+fable-labelled briefs called fable fall from 3 to 0 of 23. No gate on the
+rewrite beats the shipped text under the shipped gate (160 matches, 51 too
+cheap, 89 too dear):
+
+| Rewrite, gate | Match | Too cheap | Too dear |
+|---|---|---|---|
+| cumulative risk <= 0.10 | 146 | 46 | 108 |
+| cumulative risk <= 0.20 | 156 | 54 | 90 |
+| argmax | 161 | 76 | 63 |
+
+The first 100 spawns alone showed a tie (54, 13, 33 against 55, 14, 31); the
+full 300 do not. The shipped text stays.
 
 ```bash
 CLAUDE_PLUGIN_OPTION_PROVIDER=openrouter python3 eval/subagent_eval.py run --variant judgment --sample 100 --seed 0
