@@ -104,12 +104,6 @@ export const TIERS = Object.keys(TIER_CRITERIA);
 
 const TIER_RISK = 0.1;
 
-const INHERITS_DEFAULT_MODEL = "general-purpose";
-
-export function routesModel(agentType: string | undefined): boolean {
-  return !agentType || agentType === INHERITS_DEFAULT_MODEL;
-}
-
 export function safeTier(answer: ChoiceAnswer | undefined): string | null {
   const probs = answer?.probabilities;
 
