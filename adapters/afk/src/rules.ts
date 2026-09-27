@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { readStdinJson } from "./shared/stdin.ts";
-import { writeOutput, type PostToolUseOutput } from "./shared/stdout.ts";
+import { writeOutput, type PreToolUseOutput } from "./shared/stdout.ts";
 import { jevAsk } from "./shared/jev-client.ts";
 import { asNoul, type Answers } from "./shared/jev-client.ts";
 import {
@@ -24,7 +24,7 @@ const MAX_BLOCKS = 2;
 
 const MAX_STATE_CHARS = 8000;
 
-interface PostToolUseEvent {
+interface PreToolUseEvent {
   tool_name?: string;
   tool_input?: {
     file_path?: string;
@@ -51,7 +51,7 @@ function appendEdit(sessionId: string, rel: string, hunk: string): void {
   }
 }
 
-function editHunks(inp: PostToolUseEvent["tool_input"] = {}): string {
+function editHunks(inp: PreToolUseEvent["tool_input"] = {}): string {
   if (Array.isArray(inp.edits)) {
     const parts: string[] = [];
 
@@ -120,29 +120,26 @@ function verdict(answer: Answers[string] | undefined): number {
   return p === undefined ? 0 : Math.min(1, Math.max(0, p));
 }
 
-async function main(): Promise<void> {
-  const event = await readStdinJson<PostToolUseEvent>();
-  const inp = event.tool_input ?? {};
-  const cwd = event.cwd ?? process.cwd();
-  const sessionId = event.session_id ?? "unknown";
-  const filePath = inp.file_path ?? "";
-  const rel = path.relative(cwd, filePath) || path.basename(filePath);
+interface Verdict {
+  block?: string;
+  flag?: string;
+}
 
-  const hunk = editHunks(inp).trim();
-
-  if (!hunk) return;
-
-  appendEdit(sessionId, rel, hunk);
-
+async function judge(
+  hunk: string,
+  rel: string,
+  cwd: string,
+  sessionId: string
+): Promise<Verdict> {
   let rules: Rule[];
 
   try {
     rules = await loadRules(cwd, { afkRules: true });
   } catch {
-    return;
+    return {};
   }
 
-  if (rules.length === 0) return;
+  if (rules.length === 0) return {};
 
   const inScope = rules.filter(
     (r) =>
@@ -150,13 +147,13 @@ async function main(): Promise<void> {
       (r.scope.length === 0 || globMatch(rel, r.scope))
   );
 
-  if (inScope.length === 0) return;
+  if (inScope.length === 0) return {};
 
   const relevant = inScope.filter((r) =>
     isSubjectRelevant(hunk, r.subject, rel)
   );
 
-  if (relevant.length === 0) return;
+  if (relevant.length === 0) return {};
 
   const questions: Record<string, import("./shared/jev-client.ts").Question> = {};
   const qkeyMap = new Map<Rule, string>();
@@ -185,7 +182,7 @@ async function main(): Promise<void> {
   try {
     answers = await jevAsk(stateText, questions);
   } catch {
-    return;
+    return {};
   }
 
   interface Hit {
@@ -205,7 +202,7 @@ async function main(): Promise<void> {
     }
   }
 
-  if (hits.length === 0) return;
+  if (hits.length === 0) return {};
 
   const state = loadState(sessionId);
   const acting: Hit[] = [];
@@ -221,11 +218,9 @@ async function main(): Promise<void> {
 
   saveState(sessionId, state);
 
-  const flagged = hits.filter((h) => !acting.includes(h));
-
   if (acting.length > 0) {
     const lines = [
-      "This edit appears to break a rule from this repository's instructions.",
+      "This edit would break a rule from this repository's instructions, so it was not applied.",
     ];
 
     for (const h of acting) {
@@ -242,34 +237,59 @@ async function main(): Promise<void> {
       );
     }
 
-    lines.push(`Repair ${rel} now, then continue with the task.`);
-    writeOutput({
-      decision: "block",
-      reason: lines.join("\n"),
-    });
+    lines.push(`Rewrite the edit to ${rel} so it follows the rule, then continue with the task.`);
+
+    return { block: lines.join("\n") };
+  }
+
+  const lines = [`[jev rules] Uncertain rule match in ${rel}:`];
+
+  for (const h of hits) {
+    let text = h.rule.text.replace(/\s+/g, " ");
+
+    if (text.length > 200) text = text.slice(0, 197) + "...";
+    lines.push(
+      `  - ${h.rule.id} (${h.prob.toFixed(2)}): "${text}"`
+    );
+  }
+
+  lines.push("Check these before marking the task Done.");
+
+  return { flag: lines.join("\n") };
+}
+
+async function main(): Promise<void> {
+  const event = await readStdinJson<PreToolUseEvent>();
+  const sessionId = event.session_id;
+
+  if (!sessionId) return;
+
+  const inp = event.tool_input ?? {};
+  const cwd = event.cwd ?? process.cwd();
+  const filePath = inp.file_path ?? "";
+  const rel = path.relative(cwd, filePath) || path.basename(filePath);
+
+  const hunk = editHunks(inp).trim();
+
+  if (!hunk) return;
+
+  const result = await judge(hunk, rel, cwd, sessionId);
+
+  if (result.block) {
+    const out: PreToolUseOutput = { decision: "block", reason: result.block };
+
+    writeOutput(out);
 
     return;
   }
 
-  // FLAG-band hits: surface as advisory context (non-blocking)
-  if (flagged.length > 0) {
-    const lines = [`[jev rules] Uncertain rule match in ${rel}:`];
+  appendEdit(sessionId, rel, hunk);
 
-    for (const h of flagged) {
-      let text = h.rule.text.replace(/\s+/g, " ");
-
-      if (text.length > 200) text = text.slice(0, 197) + "...";
-      lines.push(
-        `  - ${h.rule.id} (${h.prob.toFixed(2)}): "${text}"`
-      );
-    }
-
-    lines.push("Check these before marking the task Done.");
-
-    const out: PostToolUseOutput = {
+  if (result.flag) {
+    const out: PreToolUseOutput = {
       hookSpecificOutput: {
-        hookEventName: "PostToolUse",
-        additionalContext: lines.join("\n"),
+        hookEventName: "PreToolUse",
+        additionalContext: result.flag,
       },
     };
 

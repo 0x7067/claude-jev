@@ -16,6 +16,8 @@ export interface PreToolUseOutput {
     additionalContext?: string;
     updatedInput?: Json;
   };
+  decision?: "block";
+  reason?: string;
   systemMessage?: string;
 }
 
