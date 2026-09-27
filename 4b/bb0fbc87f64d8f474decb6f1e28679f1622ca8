@@ -1,0 +1,38 @@
+src/compactor.ts
+  s_e145aadd0ac504::t_84d352324d1056 7,737
+adapters/afk/src/shared/json.ts
+  s_e145aadd0ac504::t_a82915652644f1 21-36
+src/session-start.ts
+  s_e145aadd0ac504::t_a82915652644f1 20
+  s_e145aadd0ac504::t_b4b45bfa4f11f4 8
+src/prompt-router.ts
+  s_e145aadd0ac504::t_adb0084f42f982 20
+  s_e145aadd0ac504::t_84d352324d1056 23,202
+adapters/afk/src/shared/config.ts
+  s_e145aadd0ac504::t_a82915652644f1 7-10,16
+  s_e145aadd0ac504::t_84d352324d1056 15,17
+  s_e145aadd0ac504::t_232525579d44a9 18-19
+src/rules.ts
+  s_e145aadd0ac504::t_adb0084f42f982 29
+  s_e145aadd0ac504::t_84d352324d1056 34,802,818
+adapters/afk/src/shared/rule-parser.ts
+  s_e145aadd0ac504::t_bd5bd9db93a1f2 448,451,456,458
+src/subagent-router.ts
+  s_e145aadd0ac504::t_84d352324d1056 14,133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4bbb0fbc87f64d8f474decb6f1e28679f1622ca8",
+  "prompts": {},
+  "sessions": {
+    "s_e145aadd0ac504": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f81b9f05-64eb-4826-b924-e5515d9cfab5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
