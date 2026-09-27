@@ -83,6 +83,13 @@ function runNode($, args, stdin) {
     : $.process.run(argv, { ...base, stdin });
 }
 
+function runPython($, args) {
+  return $.process.run(["python3", `${$.plugin.root}/scripts/${args[0]}`, ...args.slice(1)], {
+    env: pluginEnv(),
+    timeoutMs: HOOK_TIMEOUT_MS,
+  });
+}
+
 async function refreshInfo($) {
   try {
     const run = await runPython($, ["jev.py", "status"]);
