@@ -18,6 +18,22 @@ export function isNumber(value: unknown): value is number {
   return typeof value === "number";
 }
 
+export function textOf(message: Json | undefined): string {
+  const content = message?.["content"];
+
+  if (isString(content)) return content;
+
+  if (!isJsonArray(content)) return "";
+
+  return content
+    .map((block) => {
+      if (!isJsonObject(block) || block["type"] !== "text") return "";
+
+      return isString(block["text"]) ? block["text"] : "";
+    })
+    .join("\n");
+}
+
 export function parseJsonObject(text: string): Json | null {
   let value: unknown;
 

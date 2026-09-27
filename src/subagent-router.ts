@@ -11,14 +11,12 @@ import {
   type Answers,
 } from "../adapters/afk/src/shared/jev-client.ts";
 import { subagentBundle, BRIEF_PARTS } from "../adapters/afk/src/shared/questions.ts";
-import { configDir, enabled } from "../adapters/afk/src/shared/config.ts";
+import { appendLogLine, configDir, enabled, ROUTER_LOG } from "../adapters/afk/src/shared/config.ts";
 import { isString, parseJsonObject, type Json } from "../adapters/afk/src/shared/json.ts";
 
 const MIN_CONFIDENCE = 0.75;
 
 const BRIEF_MISSING = 0.25;
-
-const ROUTER_LOG = "jev-router-log.jsonl";
 
 const USER_RULES = "CLAUDE.md";
 
@@ -132,7 +130,7 @@ function logDecision(
       brief_denied: denied,
     };
 
-    fs.appendFileSync(path.join(configDir(), ROUTER_LOG), JSON.stringify(row) + "\n");
+    appendLogLine(ROUTER_LOG, JSON.stringify(row));
   } catch {
   }
 }

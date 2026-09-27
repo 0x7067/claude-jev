@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
-import path from "node:path";
 import { readStdinJson } from "../adapters/afk/src/shared/stdin.ts";
 import { writeOutput, type UserPromptSubmitOutput } from "../adapters/afk/src/shared/stdout.ts";
 import {
@@ -18,17 +17,16 @@ import {
   isJsonArray,
   isString,
   parseJsonObject,
+  textOf,
   type Json,
 } from "../adapters/afk/src/shared/json.ts";
-import { configDir, enabled, pluginVersion } from "../adapters/afk/src/shared/config.ts";
+import { appendLogLine, enabled, pluginVersion, ROUTER_LOG } from "../adapters/afk/src/shared/config.ts";
 
 const MIN_CONFIDENCE = 0.75;
 
 const MAX_QUIET = 0.1;
 
 const CONTEXT_LINES = 400;
-
-const ROUTER_LOG = "jev-router-log.jsonl";
 
 const GUIDANCE = new Map<string, string>([
   ["chat", "Answer directly from the conversation. No file reads, no commands."],
@@ -55,22 +53,6 @@ interface TailResult {
   prevUser: string;
   prevAssistant: string;
   model: string | null;
-}
-
-function textOf(message: Json | undefined): string {
-  const content = message?.["content"];
-
-  if (isString(content)) return content;
-
-  if (!isJsonArray(content)) return "";
-
-  return content
-    .map((block) => {
-      if (!isJsonObject(block) || block["type"] !== "text") return "";
-
-      return isString(block["text"]) ? block["text"] : "";
-    })
-    .join("\n");
 }
 
 function conversationTail(transcriptPath: string, prompt: string): TailResult {
@@ -217,7 +199,7 @@ function logDecision(
       v: pluginVersion(),
     };
 
-    fs.appendFileSync(path.join(configDir(), ROUTER_LOG), JSON.stringify(row) + "\n");
+    appendLogLine(ROUTER_LOG, JSON.stringify(row));
   } catch {
   }
 }

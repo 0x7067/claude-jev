@@ -26,13 +26,12 @@ import {
   isString,
   isNumber,
   parseJsonObject,
+  textOf,
   type Json,
   type JsonValue,
 } from "../adapters/afk/src/shared/json.ts";
 import { comparator, which as astWhich } from "../adapters/afk/src/shared/comparators.ts";
-import { configDir, enabled } from "../adapters/afk/src/shared/config.ts";
-
-const RULES_CACHE = "jev-ts-rules-cache.json";
+import { appendLogLine, configDir, enabled, ROUTER_LOG, RULES_CACHE } from "../adapters/afk/src/shared/config.ts";
 
 const ACT = 0.8;
 
@@ -82,8 +81,6 @@ const CALIB_NOISY = 0.25;
 
 const STRICT_PREAMBLE =
   "This edit was already judged possibly in breach of this rule. Decide it. ";
-
-const ROUTER_LOG = "jev-router-log.jsonl";
 
 const BLOCK_DIR = path.join(configDir(), "jev-rule-blocks");
 
@@ -216,22 +213,6 @@ interface TranscriptEntry {
   isSidechain?: boolean;
   message?: Json;
   toolUseResult?: unknown;
-}
-
-function textOf(message: Json | undefined): string {
-  const content = message?.["content"];
-
-  if (isString(content)) return content;
-
-  if (!isJsonArray(content)) return "";
-
-  return content
-    .map((block) => {
-      if (!isJsonObject(block) || block["type"] !== "text") return "";
-
-      return isString(block["text"]) ? block["text"] : "";
-    })
-    .join("\n");
 }
 
 function userPrompt(entry: TranscriptEntry): string {
@@ -818,7 +799,7 @@ function logDecision(
       user_answers: opts.userAnswers ?? 0,
     };
 
-    fs.appendFileSync(path.join(configDir(), ROUTER_LOG), JSON.stringify(row) + "\n");
+    appendLogLine(ROUTER_LOG, JSON.stringify(row));
   } catch {
   }
 }
@@ -834,7 +815,7 @@ function logError(error: Error, event: HookEvent): void {
       error: String(error).slice(0, 300),
     };
 
-    fs.appendFileSync(path.join(configDir(), ROUTER_LOG), JSON.stringify(row) + "\n");
+    appendLogLine(ROUTER_LOG, JSON.stringify(row));
   } catch {
   }
 }

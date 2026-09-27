@@ -4,8 +4,17 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isString, parseJsonObject } from "./json.ts";
 
+export const ROUTER_LOG = "jev-router-log.jsonl";
+
+export const RULES_CACHE = "jev-ts-rules-cache.json";
+
 export function configDir(): string {
   return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+}
+
+export function appendLogLine(fileName: string, json: string): void {
+  fs.mkdirSync(configDir(), { recursive: true });
+  fs.appendFileSync(path.join(configDir(), fileName), json + "\n");
 }
 
 export function pluginOption(field: string): string {

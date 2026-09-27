@@ -445,17 +445,17 @@ async function parseRules(
   fileScope?: string[],
   opts: LoadRulesOptions = {}
 ): Promise<Rule[]> {
-  let lines: string[];
+  let content: string;
 
   try {
-    const content = fs.readFileSync(filePath, "utf8");
-    lines = content.split("\n");
+    content = fs.readFileSync(filePath, "utf8");
   } catch {
     return [];
   }
 
+  const lines = content.split("\n");
   const base = baseLabel ?? path.basename(filePath);
-  const fileHash = crypto.createHash("sha256").update(lines.join("\n")).digest("hex").slice(0, 12);
+  const fileHash = crypto.createHash("sha256").update(content).digest("hex").slice(0, 12);
   const scope0 = [...(fileScope ?? []), ...frontmatterPaths(lines)];
 
   const rawItems = markdownItems(lines);

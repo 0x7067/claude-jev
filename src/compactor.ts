@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { readStdinJson } from "../adapters/afk/src/shared/stdin.ts";
 import { DEFAULT_BACKEND, type Answers, type DecisionBackend } from "../adapters/afk/src/shared/jev-client.ts";
-import { configDir } from "../adapters/afk/src/shared/config.ts";
+import { appendLogLine } from "../adapters/afk/src/shared/config.ts";
 import {
   isJsonObject,
   isJsonArray,
@@ -734,8 +734,7 @@ function logStats(sessionId: string | undefined, stats: Stats): void {
       ...stats,
     };
 
-    fs.mkdirSync(path.dirname(path.join(configDir(), STATS_LOG)), { recursive: true });
-    fs.appendFileSync(path.join(configDir(), STATS_LOG), JSON.stringify(row) + "\n");
+    appendLogLine(STATS_LOG, JSON.stringify(row));
   } catch {
   }
 }
