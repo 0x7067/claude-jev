@@ -5,6 +5,7 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 ## [Unreleased]
 
 - The prompt router no longer asks for a model tier or prints a tier `systemMessage`. In the live log, 197 of its 219 hints told an opus or fable session to switch down to haiku or sonnet. Switching mid-session costs the prompt cache and the context, and subagent routing already covers cheaper work. Jev picked `opus` 4 times in 659 prompts and `fable` never. The router log drops `tier_hint` and `model_now`, and the Stats row drops its tier line. The AFK adapter's intent bundle drops the question too (`claude-jev-afk` 0.3.0).
+- A subagent spawn that goes through on its second try with parts still missing, and also gets a routed model, now shows both notes. Before, the routing line replaced the missing-parts warning.
 
 ## [0.24.0] - 2026-09-26
 

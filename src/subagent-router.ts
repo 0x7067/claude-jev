@@ -167,6 +167,7 @@ async function main(): Promise<void> {
   logDecision(event, inp, answers, routed, explicit, missing, denied);
 
   const out: PreToolUseOutput = { hookSpecificOutput: { hookEventName: "PreToolUse" } };
+  const notes: string[] = [];
 
   if (denied) {
     const listed = missing.map((k) => BRIEF_PARTS.get(k)!).join("; ");
@@ -176,16 +177,19 @@ async function main(): Promise<void> {
       listed +
       ". The subagent sees none of this conversation. Add the missing parts to the prompt and spawn again.";
   } else if (missing.length > 0) {
-    out.systemMessage =
+    notes.push(
       "[jev router] brief still missing " +
-      missing.map((k) => BRIEF_PARTS.get(k)!).join(", ") +
-      " — spawned anyway (denied once already)";
+        missing.map((k) => BRIEF_PARTS.get(k)!).join(", ") +
+        " — spawned anyway (denied once already)"
+    );
   }
 
   if (routed && !denied) {
     out.hookSpecificOutput!.updatedInput = { ...inp, model: routed };
-    out.systemMessage = `[jev router] subagent → ${routed} (conf=${tierConf.toFixed(2)})`;
+    notes.push(`[jev router] subagent → ${routed} (conf=${tierConf.toFixed(2)})`);
   }
+
+  if (notes.length > 0) out.systemMessage = notes.join("\n");
 
   if (Object.keys(out.hookSpecificOutput!).length > 1 || out.systemMessage) {
     writeOutput(out);
