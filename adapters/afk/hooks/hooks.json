@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/adapters/afk/dist/session-start.js",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/session-start.js",
             "timeout_ms": 5000
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/adapters/afk/dist/prompt-router.js",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/prompt-router.js",
             "timeout_ms": 10000
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/adapters/afk/dist/subagent-router.js",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/subagent-router.js",
             "timeout_ms": 10000
           }
         ]
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/adapters/afk/dist/rules.js",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/rules.js",
             "timeout_ms": 15000
           }
         ]
@@ -51,7 +51,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/adapters/afk/dist/stop-sweep.js",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/stop-sweep.js",
             "timeout_ms": 15000
           }
         ]
