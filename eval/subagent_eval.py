@@ -172,7 +172,7 @@ def cmd_report(_args) -> None:
         f"{len(rows)} answered spawns, labels {dict(collections.Counter(r['model'] for r in rows))}"
     )
     print("every spawn lands on the routed tier, or the parent's when the gate holds back")
-    print(f"{'gate':<24}{'routed':>8}{'match':>8}{'cheaper':>9}{'dearer':>8}")
+    print(f"{'gate':<34}{'routed':>8}{'match':>8}{'cheaper':>9}{'dearer':>8}")
     for name, gate, x in GATES:
         c = collections.Counter()
         for r in rows:
@@ -183,7 +183,7 @@ def cmd_report(_args) -> None:
                 pick = parents[r["key"]]
             diff = TIERS.index(pick) - TIERS.index(r["model"])
             c["match" if diff == 0 else "cheaper" if diff < 0 else "dearer"] += 1
-        print(f"{name:<24}{c['routed']:>8}{c['match']:>8}{c['cheaper']:>9}{c['dearer']:>8}")
+        print(f"{name:<34}{c['routed']:>8}{c['match']:>8}{c['cheaper']:>9}{c['dearer']:>8}")
     confusion = collections.Counter(
         (r["model"], r["answers"]["model_tier"].get("choice")) for r in rows
     )
