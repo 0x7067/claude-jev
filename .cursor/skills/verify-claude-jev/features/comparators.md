@@ -1,7 +1,7 @@
 # Comparators (ast-grep)
 
-`scripts/comparators.py` is the only place claude-jev reaches for an external
-program. It looks up code the edited block repeats, using a pinned ast-grep
+`scripts/comparators.py` (CLI: `which`, `fetch`) and `adapters/afk/src/shared/comparators.ts` (what the rules hook in `src/rules.ts` calls) are the only places claude-jev reaches for an external
+program. They pin the same version, checksums, and install path. It looks up code the edited block repeats, using a pinned ast-grep
 binary, and the rule judgment is the same with or without it: when the binary is
 absent every comparator answers `""`. The rules hook fetches the pinned build in
 a detached process outside the hook's 10s budget, into the Claude config dir,

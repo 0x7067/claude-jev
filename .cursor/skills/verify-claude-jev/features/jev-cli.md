@@ -1,6 +1,6 @@
 # Jev CLI
 
-`scripts/jev.py` is the API client every hook imports, and it doubles as a CLI
+`scripts/jev.py` is the Python API client. The CLI, the Python eval harness, `stats.py`, and the `/claude-jev` pane's `status` call use it; the production hooks in `src/` call the TypeScript client in `adapters/afk/src/shared/jev-client.ts` instead. Both append the same row shape to `jev-calls.jsonl`, so `status`'s `last_call` can be a hook's call. It doubles as a CLI
 for manual checks (`ask`, `choose`, `noul`, `score`, `intent`, `status` —
 listed by `python3 scripts/jev.py --help`). A state argument may be literal
 text, `@file`, or `-` for stdin. Without `TYPESAFE_API_KEY` or
