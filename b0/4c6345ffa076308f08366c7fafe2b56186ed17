@@ -1,0 +1,14 @@
+agent-afk-handoff.md
+  h_29be57c0addd47 1-150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b04c6345ffa076308f08366c7fafe2b56186ed17",
+  "prompts": {},
+  "humans": {
+    "h_29be57c0addd47": {
+      "author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
