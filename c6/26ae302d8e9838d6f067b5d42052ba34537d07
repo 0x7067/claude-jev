@@ -1,0 +1,19 @@
+adapters/afk/README.md
+  s_eb78ffaf500bff::t_8cb172b4acd352 23,26,29,41,102-104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c626ae302d8e9838d6f067b5d42052ba34537d07",
+  "prompts": {},
+  "sessions": {
+    "s_eb78ffaf500bff": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19db4e5c-f9d4-4dc5-ba70-fd147287a4e8",
+        "model": "unknown"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
