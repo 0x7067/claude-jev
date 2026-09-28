@@ -20,14 +20,13 @@ All five fail open: any error, missing key, or timeout produces no output and ne
 
 ### From GitHub (recommended)
 
-The `afk` branch of `0x7067/claude-jev` holds this directory at its root, refreshed on every release. agent-afk 5.257.3 fails to install a branch by name (`'--detach' cannot be used with '-b'`), so install its current commit, then follow the branch on update:
+The `afk` branch of `0x7067/claude-jev` holds this directory at its root, refreshed on every release. Install that branch:
 
 ```bash
-afk plugin install 0x7067/claude-jev claude-jev --ref "$(git ls-remote https://github.com/0x7067/claude-jev.git refs/heads/afk | cut -f1)" -y
-afk plugin update claude-jev --ref afk
+afk plugin install 0x7067/claude-jev claude-jev --ref afk -y
 ```
 
-Always update with `--ref afk`. A bare `afk plugin update` checks out the newest version tag in the repository, and those tags are the Claude Code plugin, not this one.
+`afk plugin update claude-jev` then follows the `afk` branch. The repository's version tags are the Claude Code plugin, and the update ignores them because `--ref` pins the branch.
 
 ### From a checkout
 
@@ -39,7 +38,7 @@ This symlinks the directory, so it follows whatever the checkout has.
 
 AFK discovers the plugin on the next session start and wires hooks from `hooks/hooks.json`. AFK runs plugin hooks only when `~/.afk/config/afk.config.json` sets `"enablePluginHooks": true`.
 
-Use agent-afk 5.257.3 or later. On 5.244.0, a session with all five hooks loaded exits right after "Initializing agent..." without calling the model.
+Use agent-afk 5.258.2 or later. Earlier versions fail to install a branch by name, move a branch install to the newest tag on update, or send no `tool_input` to the rule hook after an edit.
 
 ### Manual hook wiring
 
@@ -100,8 +99,9 @@ Edits in the 0.50-0.80 range are surfaced as advisory context: the agent sees th
 
 ## Known gaps
 
-- **Hook environment**: AFK passes neither `CLAUDE_CONFIG_DIR` nor `CLAUDE_PLUGIN_OPTION_*` to hooks (agent-afk 5.257.3). Logs go to `~/.claude`, and the provider follows the key's prefix; it cannot be pinned.
-- **Advisory-only subagent routing**: AFK command hooks read only `continue`, `decision`, `reason`, and `hookSpecificOutput.additionalContext` (agent-afk 5.244.0), so a tier recommendation and a missing-brief note surface as context text. The hook cannot switch the model. AFK does honor `decision: "block"` with a `reason`, so denying a bad brief is possible, but the adapter does not do it yet.
+- **Hook environment**: AFK passes neither `CLAUDE_CONFIG_DIR` nor `CLAUDE_PLUGIN_OPTION_*` to hooks (agent-afk 5.265.3, [#2373](https://github.com/griffinwork40/agent-afk/issues/2373)). Logs go to `~/.claude`, and the provider follows the key's prefix; it cannot be pinned.
+- **Key from `afk.env`**: AFK forwards no secrets to hooks, so the hooks read their key from `afk.env` themselves ([#2459](https://github.com/griffinwork40/agent-afk/issues/2459)).
+- **Advisory-only subagent routing**: AFK command hooks read only `continue`, `decision`, `reason`, and `hookSpecificOutput.additionalContext` (agent-afk 5.265.3, [#2371](https://github.com/griffinwork40/agent-afk/issues/2371)), so a tier recommendation and a missing-brief note surface as context text. The hook cannot switch the model. AFK does honor `decision: "block"` with a `reason`, so denying a bad brief is possible, but the adapter does not do it yet.
 - **Named agents are not routed**: a spawn with an `agent_type` takes that agent's model defaults, so the hook skips the tier question and only checks the brief.
 - **No transcript access**: Hooks receive only the current event, not the conversation. The prompt router uses the prompt alone (the Python adapter also uses the previous turn).
 - **No compaction hook**: AFK CLI hooks do not expose the transcript access needed for Jev-scored compaction.
