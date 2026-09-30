@@ -4,7 +4,7 @@
 program. They pin the same version, checksums, and install path. It looks up code the edited block repeats, using a pinned ast-grep
 binary, and the rule judgment is the same with or without it: when the binary is
 absent every comparator answers `""`. The rules hook fetches the pinned build in
-a detached process outside the hook's 10s budget, into the Claude config dir,
+a detached process outside the hook's budget (`HOOK_BUDGET` 9 s inside the 10 s `hooks.json` timeout), into the Claude config dir,
 and never blocks on it.
 
 ## Sub-features
@@ -19,7 +19,7 @@ and never blocks on it.
 
 ## How to get to it (user POV)
 
-- Nothing to run by hand in normal use: the `rules.py` hook consults comparators on
+- Nothing to run by hand in normal use: the `src/rules.ts` hook consults comparators on
   a `PostToolUse` edit and kicks the fetch when the binary is missing.
 - `python3 scripts/comparators.py which` answers what the hook would run, and
   `python3 scripts/comparators.py fetch` downloads the pinned build. `control-jev
@@ -53,9 +53,10 @@ Preconditions:
   A later live judgment shows `"sg": "cached"` in its decision row. Save both `which`
   outputs and the version line as `comparators/fetch.txt`.
 - **Fetch by hand, and its exit code.** `CLAUDE_CONFIG_DIR="$VERIFY_HOME/.claude" python3
-  scripts/comparators.py fetch` exits `0` on success and `1` on failure. It compares
-  the download against the pinned `SHA256` map before keeping it — on a mismatch it
-  deletes the file it wrote and gives up, so a bad download never stays installed.
+  scripts/comparators.py fetch` exits `0` on success and `1` on failure. It checks
+  the downloaded bytes against the pinned `SHA256` map in memory before writing
+  anything. On a mismatch it writes nothing, removes any binary already cached at the
+  pinned path, and stops downloading for the rest of that process.
 - **Isolation.** Run `python3 scripts/comparators.py which` without the `HOME=` prefix.
   On a machine whose real `~/.claude` already holds the binary it resolves under
   `/Users/…/.claude/jev-bin/…`, a different path from the verify home answer.
@@ -74,7 +75,7 @@ Preconditions:
   pair it with `sg` before claiming degradation.
 - The state token is not just installed-vs-not: a system `ast-grep` found on `PATH`
   **wins over the pinned download** and prints `[path]`, at whatever version the host
-  has. So a machine with a global ast-grep cannot show the `[none]` degraded state at
+  has. The decision row's `sg` field then reads `"path"` too. So a machine with a global ast-grep cannot show the `[none]` degraded state at
   all, and its comparator evidence comes from an unpinned binary — record the state
   token with every artifact, and never assume `[none]` means "not installed here" when
   a `brew`/`npm` ast-grep may be on `PATH`.

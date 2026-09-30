@@ -364,11 +364,11 @@ cmd_hook() {
     subagent_router) script="$ROOT/src/subagent-router.ts" ;;
     rules) script="$ROOT/src/rules.ts" ;;
   esac
-  [[ -f "$script" ]] || die "hook script missing (run npm run build): $script"
+  [[ -f "$script" ]] || die "hook script missing: $script"
   if [[ $# -gt 0 ]]; then
-    printf '%s\n' "$1" | with_verify_home node "$script"
+    printf '%s\n' "$1" | with_verify_home node --experimental-strip-types "$script"
   else
-    with_verify_home node "$script"
+    with_verify_home node --experimental-strip-types "$script"
   fi
 }
 
