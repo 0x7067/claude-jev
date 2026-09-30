@@ -103,6 +103,7 @@ building it, and cite it when resisting.
 - The user-facing entry point is the `/claude-jev` pane in `hooks/register.ts`.
   There is no `skills/` or `commands/` directory; do not add one. A new
   setting or report is a row in that pane.
+- `.agents/skills/` is canonical for shared agent skills; symlink them into tool `skills/` dirs, never copy.
 
 ## Verify
 
