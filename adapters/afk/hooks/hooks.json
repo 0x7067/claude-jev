@@ -32,11 +32,9 @@
             "timeout_ms": 10000
           }
         ]
-      }
-    ],
-    "PostToolUse": [
+      },
       {
-        "matcher": "/edit_file|write_file|patch_apply/",
+        "matcher": "/^(edit_file|write_file)$/",
         "hooks": [
           {
             "type": "command",
@@ -52,7 +50,7 @@
           {
             "type": "command",
             "command": "node --experimental-strip-types ${CLAUDE_PLUGIN_ROOT}/src/stop-sweep.ts",
-            "timeout_ms": 15000
+            "timeout_ms": 5000
           }
         ]
       }

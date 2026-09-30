@@ -18,6 +18,8 @@ const FLAG = 0.50;
 
 const MAX_STOP_BLOCKS = 2;
 
+const STOP_TIMEOUT_MS = 4000;
+
 const MAX_TURN_CHARS = 16000;
 
 interface StopEvent {
@@ -57,6 +59,13 @@ function loadEdits(sessionId: string): EditRecord[] {
   }
 }
 
+function consumeEdits(sessionId: string): void {
+  try {
+    fs.rmSync(editsFilePath(sessionId), { force: true });
+  } catch {
+  }
+}
+
 function turnRuleQuestion(rule: Rule): NoulQuestion {
   if (rule.polarity === "require") {
     return {
@@ -93,7 +102,10 @@ function verdict(answer: Answers[string] | undefined): number {
 
 async function main(): Promise<void> {
   const event = await readStdinJson<StopEvent>();
-  const sessionId = event.session_id ?? "unknown";
+  const sessionId = event.session_id;
+
+  if (!sessionId) return;
+
   const cwd = event.cwd ?? process.cwd();
 
   const edits = loadEdits(sessionId);
@@ -116,7 +128,11 @@ async function main(): Promise<void> {
       (r.scope.length === 0 || changedFiles.some((f) => globMatch(f, r.scope)))
   );
 
-  if (turnRules.length === 0) return;
+  if (turnRules.length === 0) {
+    consumeEdits(sessionId);
+
+    return;
+  }
 
   const diff = edits
     .map((e) => `--- ${e.rel}\n${e.hunk}`)
@@ -146,15 +162,21 @@ async function main(): Promise<void> {
     questions[key] = turnRuleQuestion(r);
   }
 
-  if (Object.keys(questions).length === 0) return;
+  if (Object.keys(questions).length === 0) {
+    consumeEdits(sessionId);
+
+    return;
+  }
 
   let answers: Answers;
 
   try {
-    answers = await jevAsk(stateText, questions);
+    answers = await jevAsk(stateText, questions, STOP_TIMEOUT_MS);
   } catch {
     return;
   }
+
+  consumeEdits(sessionId);
 
   interface Hit {
     rule: Rule;
@@ -190,26 +212,12 @@ async function main(): Promise<void> {
   saveState(sessionId, state);
 
   const flagged = hits.filter((h) => !acting.includes(h));
-
-  if (flagged.length > 0) {
-    const listed = flagged
-      .map((h) => `${h.rule.id} ${h.prob.toFixed(2)}`)
-      .join(", ");
-
-    writeOutput({
-      hookSpecificOutput: {
-        hookEventName: "Stop",
-        additionalContext: `[jev rules] uncertain about ${listed} at end of turn`,
-      },
-    });
-
-    return;
-  }
+  const lines: string[] = [];
 
   if (acting.length > 0) {
-    const lines = [
-      "The changes this turn appear to break a rule from this repository's instructions.",
-    ];
+    lines.push(
+      "The changes in the last turn appear to break a rule from this repository's instructions."
+    );
 
     for (const h of acting) {
       let text = h.rule.text.replace(/\s+/g, " ");
@@ -226,19 +234,26 @@ async function main(): Promise<void> {
     }
 
     lines.push(
-      `Repair ${changedFiles.join(", ")} before you finish. Keep the fix to what the rule asks.`
+      `Repair ${changedFiles.join(", ")} unless the user says otherwise. Keep the fix to what the rule asks.`
     );
-
-    const ctx = lines.join("\n");
-    writeOutput({
-      hookSpecificOutput: {
-        hookEventName: "Stop",
-        additionalContext: ctx,
-      },
-      decision: "block",
-      reason: ctx,
-    });
   }
+
+  if (flagged.length > 0) {
+    const listed = flagged
+      .map((h) => `${h.rule.id} ${h.prob.toFixed(2)}`)
+      .join(", ");
+
+    lines.push(`[jev rules] uncertain about ${listed} at end of turn`);
+  }
+
+  if (lines.length === 0) return;
+
+  writeOutput({
+    hookSpecificOutput: {
+      hookEventName: "Stop",
+      additionalContext: lines.join("\n"),
+    },
+  });
 }
 
 try {
