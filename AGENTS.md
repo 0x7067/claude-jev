@@ -241,3 +241,16 @@ running a full sweep.
   mirrored in its `package.json`, and bumps by the same rule. Releases go
   through `/release` (`.claude/skills/release`), which refuses an empty
   section.
+
+## Cursor Cloud specific instructions
+
+`.cursor/environment.json` sets `install` to `npm ci` and omits `start`.
+Hooks are stdin-driven, so there is no long-running process. The public
+environment schema has no Node version field (`image` or a Dockerfile would
+replace the base VM). The cloud image must already provide Node >= 22.18
+for type stripping.
+
+- Put optional API keys in the Cursor saved-environment secrets UI, not in
+  git. There is no `.env.example`. The names are the `PROVIDERS` variables
+  in `scripts/jev.py`: `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY`. Hooks
+  fail open when both are unset.
