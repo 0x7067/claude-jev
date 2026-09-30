@@ -1,0 +1,43 @@
+.agents/skills/entire-search/SKILL.md
+  s_b1134115a829bc::t_cb76a2dd660fe9 1-22
+.claude/settings.json
+  s_b1134115a829bc::t_6baedbeb0d3b7e 1-90
+.claude/skills/entire-search
+  s_b1134115a829bc::t_4c6438954a4476 1
+.claude/skills/entire/SKILL.md
+  s_b1134115a829bc::t_00e910d2d0eee2 1-15
+.codex/agents/entire.toml
+  s_b1134115a829bc::t_455e8ea083e767 1-13
+.codex/hooks.json
+  s_b1134115a829bc::t_13ff164593f131 1-88
+.cursor/hooks.json
+  s_b1134115a829bc::t_dabe10dad4238c 1-40
+.cursor/skills/entire-search
+  s_b1134115a829bc::t_4b6ea433e29b7b 1
+.entire/settings.json
+  s_b1134115a829bc::t_56928b6f42be17 1-9
+.opencode/plugins/entire.ts
+  s_b1134115a829bc::t_7c4c0dd25de18d 1-269
+.opencode/skills/entire-search
+  s_b1134115a829bc::t_fdbd08f3690cb4 1
+.pi/skills/entire-search
+  s_b1134115a829bc::t_f6e9e2f1fa532e 1
+AGENTS.md
+  s_b1134115a829bc::t_83ee22845a9d5f 106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6cf7caa7964e60089273f2ba909724f8d18da2aa",
+  "prompts": {},
+  "sessions": {
+    "s_b1134115a829bc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "405a5bce-9dd3-4994-8874-c471a7e27dfc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Pedro Guimarães <21346846+0x7067@users.noreply.github.com>"
+    }
+  }
+}
