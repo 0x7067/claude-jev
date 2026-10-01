@@ -406,8 +406,6 @@ export function fitKept(kept: Kept[], blocks: Block[], targetChars = TARGET_CHAR
 
 const REF_CHARS = 160;
 
-const READ_CALL = /\[tool_use\s+read\]/i;
-
 const NAMED_RESULT = /^\[tool_result\s+([^\s\]]+)\]/;
 
 function linkedIndex(blocks: Block[], i: number): number | undefined {
@@ -418,8 +416,51 @@ function linkedIndex(blocks: Block[], i: number): number | undefined {
   return undefined;
 }
 
-function readCallIndex(blocks: Block[], i: number): number | undefined {
-  return linkedIndex(blocks, i) ?? (i > 0 ? i - 1 : undefined);
+function unlabeledCallIndex(blocks: Block[], i: number): number | undefined {
+  const linked = linkedIndex(blocks, i);
+
+  if (linked !== undefined) return linked;
+
+  let call = i - 1;
+
+  while (call > 0 && blockKind(blocks[call]!.text) === "tool_result") call -= 1;
+
+  return call >= 0 ? call : undefined;
+}
+
+function toolUseNames(text: string): string[] {
+  const names: string[] = [];
+  const pattern = /\[tool_use\s+([^\s\]]+)\]/gi;
+  let match = pattern.exec(text);
+
+  while (match !== null) {
+    const name = match[1];
+
+    if (name !== undefined) names.push(name);
+    match = pattern.exec(text);
+  }
+
+  return names;
+}
+
+function unlabeledAnswersRead(blocks: Block[], i: number, call: number): boolean {
+  if (call >= i) return false;
+  const names = toolUseNames(blocks[call]!.text);
+
+  if (names.length === 0) return false;
+
+  if (names.length === 1) return names[0]!.toLowerCase() === "read";
+
+  let ordinal = 0;
+
+  for (let j = call + 1; j < i; j++) {
+    if (blockKind(blocks[j]!.text) !== "tool_result") return false;
+    ordinal += 1;
+  }
+
+  const paired = names[ordinal];
+
+  return paired !== undefined && paired.toLowerCase() === "read";
 }
 
 function isReadResult(blocks: Block[], i: number): boolean {
@@ -429,9 +470,9 @@ function isReadResult(blocks: Block[], i: number): boolean {
   const named = NAMED_RESULT.exec(text)?.[1];
 
   if (named !== undefined) return named.toLowerCase() === "read";
-  const call = readCallIndex(blocks, i);
+  const call = unlabeledCallIndex(blocks, i);
 
-  return call !== undefined && READ_CALL.test(blocks[call]!.text);
+  return call !== undefined && unlabeledAnswersRead(blocks, i, call);
 }
 
 export function blockKind(text: string): string {

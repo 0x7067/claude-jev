@@ -325,6 +325,54 @@ test("selectBlocks holds a Pi read whose call starts with other text", async () 
   );
 });
 
+test("selectBlocks does not hold an unlabeled non-read beside a parallel Read", async () => {
+  const bashThenRead: Block[] = [
+    block("assistant", '[tool_use Bash] {"command":"ls"}\n[tool_use Read] {"file_path":"src/a.ts"}'),
+    block("tool", "[tool_result] listing"),
+    block("tool", "[tool_result] export const a = 1"),
+    ...blocks(PIN_TAIL, (i) => block("user", `pinned tail ${i}`)),
+  ];
+
+  const [first] = await selectBlocks(
+    bashThenRead,
+    null,
+    null,
+    answerWith([{}, { constraint: 0.1 }, { constraint: 0.1 }])
+  );
+
+  assert.equal(
+    first.some((k) => k.i === 1),
+    false
+  );
+  assert.equal(
+    first.some((k) => k.i === 2),
+    true
+  );
+
+  const readThenBash: Block[] = [
+    block("assistant", '[tool_use Read] {"file_path":"src/a.ts"}\n[tool_use Bash] {"command":"ls"}'),
+    block("tool", "[tool_result] export const a = 1"),
+    block("tool", "[tool_result] listing"),
+    ...blocks(PIN_TAIL, (i) => block("user", `pinned tail ${i}`)),
+  ];
+
+  const [second] = await selectBlocks(
+    readThenBash,
+    null,
+    null,
+    answerWith([{}, { constraint: 0.1 }, { constraint: 0.1 }])
+  );
+
+  assert.equal(
+    second.some((k) => k.i === 1),
+    true
+  );
+  assert.equal(
+    second.some((k) => k.i === 2),
+    false
+  );
+});
+
 test("selectBlocks pulls in the block a kept result names, by link", async () => {
   const input: Block[] = [
     block("assistant", 'let me look first\n[tool_use read] {"path":"src/a.ts"}'),

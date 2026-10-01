@@ -11,14 +11,14 @@ export const DIGEST_HEADER =
 export const MAX_POINTER_LINES = 40;
 
 // 16_000 is the selected body plus <read-files> pointers only.
-// DIGEST_HEADER and ---[jev:…]--- delimiters are extra overhead on top.
+// DIGEST_HEADER, ---[jev:…]--- delimiters, and <modified-files> are extra.
 export const POINTER_CHARS = 2_000;
 
 export const SELECT_CHARS = 14_000;
 
 const DELIMITER = /^---\[jev:(\d+):([a-z_]+)\]---$/;
 
-const READ_FILES = /\n?<read-files>\n[\s\S]*?\n<\/read-files>\n?/g;
+const FILE_LISTS = /\n?<(read-files|modified-files)>\n[\s\S]*?\n<\/\1>\n?/g;
 
 export interface IndexedBlock extends Block {
   refs?: readonly string[];
@@ -41,14 +41,14 @@ export function renderDigest(blocks: readonly Block[], kept: readonly Kept[], po
   return parts.join("\n\n") + pointers;
 }
 
-export function pointerIndex(
+export function pointerPaths(
   blocks: readonly IndexedBlock[],
   kept: readonly Kept[],
   cwd: string,
   maxLines = MAX_POINTER_LINES,
   budget = POINTER_CHARS
-): string {
-  if (maxLines <= 0 || budget <= 0) return "";
+): string[] {
+  if (maxLines <= 0 || budget <= 0) return [];
   const state = new Map(kept.map((k) => [k.i, k.kind]));
   const lines: string[] = [];
   const seen = new Set<string>();
@@ -72,6 +72,33 @@ export function pointerIndex(
       }
     }
   }
+
+  return lines;
+}
+
+export function mergeReadFiles(native: readonly string[], pointers: readonly string[], cwd: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+
+  for (const path of [...native, ...pointers]) {
+    const key = isAbsolute(path) ? resolve(path) : resolve(cwd, path);
+
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(path);
+  }
+
+  return out;
+}
+
+export function pointerIndex(
+  blocks: readonly IndexedBlock[],
+  kept: readonly Kept[],
+  cwd: string,
+  maxLines = MAX_POINTER_LINES,
+  budget = POINTER_CHARS
+): string {
+  const lines = pointerPaths(blocks, kept, cwd, maxLines, budget);
 
   if (lines.length === 0) return "";
 
@@ -107,7 +134,7 @@ function splitJevDigest(summary: string): Block[] {
 }
 
 export function splitSummary(summary: string): Block[] {
-  const body = summary.replace(READ_FILES, "\n");
+  const body = summary.replace(FILE_LISTS, "\n");
   const fromJev = splitJevDigest(body);
 
   if (fromJev.length > 0) return fromJev;

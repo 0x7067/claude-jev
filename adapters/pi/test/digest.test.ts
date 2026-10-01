@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { FileOperations } from "@earendil-works/pi-coding-agent";
 import type { Block, Kept } from "../../../src/compact/strategy.ts";
 import { DIGEST_HEADER, delimiter, pointerIndex, renderDigest, splitSummary } from "../digest.ts";
+import { compactionSummary } from "../jev.ts";
 
 const blocks: Block[] = [
   { role: "user", text: "keep the fixtures generated" },
@@ -102,6 +104,46 @@ test("splitSummary drops a pointer index instead of judging the paths again", ()
 
   assert.equal(
     back.some((block) => block.text.includes("read-files") || block.text.includes("/repo/src/a.ts")),
+    false
+  );
+});
+
+test("compaction summary keeps one read-files list and the modified files", async () => {
+  const indexed = [
+    { role: "assistant", text: "[tool_use read]", refs: ["src/dropped.ts", "src/pointer-only.ts"] },
+    { role: "assistant", text: "kept whole", refs: ["src/kept.ts"] },
+  ];
+
+  const selection: Kept[] = [{ i: 1, text: "kept whole", kind: "full", keep: 1, full: 1 }];
+
+  const fileOps: FileOperations = {
+    read: new Set(["src/dropped.ts", "src/native.ts", "src/edited.ts"]),
+    written: new Set(["src/edited.ts"]),
+    edited: new Set(),
+  };
+
+  const { summary } = await compactionSummary(indexed, selection, "/repo", fileOps);
+  const readTags = summary.match(/<read-files>/g) ?? [];
+  const modifiedTags = summary.match(/<modified-files>/g) ?? [];
+
+  assert.equal(readTags.length, 1);
+  assert.equal(modifiedTags.length, 1);
+  assert.equal(summary.includes("<modified-files>"), true);
+  assert.ok(summary.includes("src/dropped.ts"));
+  assert.ok(summary.includes("src/native.ts"));
+  assert.ok(summary.includes("/repo/src/pointer-only.ts"));
+  assert.equal(summary.includes("/repo/src/dropped.ts"), false);
+  assert.ok(summary.includes("src/edited.ts"));
+  assert.equal(summary.includes("src/kept.ts"), false);
+
+  const back = splitSummary(summary);
+
+  assert.equal(
+    back.some((block) => block.text.includes("read-files") || block.text.includes("modified-files")),
+    false
+  );
+  assert.equal(
+    back.some((block) => block.text.includes("src/edited.ts") || block.text.includes("src/pointer-only.ts")),
     false
   );
 });

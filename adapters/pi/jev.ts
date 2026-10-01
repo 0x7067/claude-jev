@@ -3,7 +3,8 @@ import type { DecisionBackend } from "../afk/src/shared/jev-client.ts";
 import { DIRECTIVE_CHARS, selectBlocks, type Kept, type Stats } from "../../src/compact/strategy.ts";
 import { blocksFrom } from "./blocks.ts";
 import { ask, resolve, status } from "./client.ts";
-import { pointerIndex, renderDigest, SELECT_CHARS } from "./digest.ts";
+import { mergeReadFiles, pointerPaths, renderDigest, SELECT_CHARS, type IndexedBlock } from "./digest.ts";
+import { computeFileLists, formatFileOperations } from "./file-ops.ts";
 import { appendLine, lastRecord } from "./log.ts";
 import { callLogPath, compactLogPath, dotEnvPath } from "./paths.ts";
 
@@ -17,29 +18,30 @@ function directiveOf(instructions: string | undefined): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
-interface FileLists {
+export interface CompactionSummary {
+  summary: string;
   readFiles: string[];
   modifiedFiles: string[];
+  pointerChars: number;
 }
 
-function fileLists(fileOps: FileOperations): FileLists {
-  const modified = new Set<string>();
+export async function compactionSummary(
+  blocks: readonly IndexedBlock[],
+  kept: readonly Kept[],
+  cwd: string,
+  fileOps: FileOperations
+): Promise<CompactionSummary> {
+  const pointers = pointerPaths(blocks, kept, cwd);
+  const lists = await computeFileLists(fileOps);
+  const reads = mergeReadFiles(lists.readFiles, pointers, cwd);
+  const summary = renderDigest(blocks, kept) + (await formatFileOperations(reads, lists.modifiedFiles));
 
-  for (const path of fileOps.written) modified.add(path);
-
-  for (const path of fileOps.edited) modified.add(path);
-  const readFiles: string[] = [];
-
-  for (const path of fileOps.read) {
-    if (!modified.has(path)) readFiles.push(path);
-  }
-
-  readFiles.sort();
-  const modifiedFiles = [...modified];
-
-  modifiedFiles.sort();
-
-  return { readFiles, modifiedFiles };
+  return {
+    summary,
+    readFiles: lists.readFiles,
+    modifiedFiles: lists.modifiedFiles,
+    pointerChars: pointers.join("\n").length,
+  };
 }
 
 function describeDigest(reason: string, stats: Stats): string {
@@ -65,6 +67,7 @@ export default function jev(pi: ExtensionAPI): void {
     let kept: Kept[];
     let stats: Stats;
     let cwd: string;
+    let summary: CompactionSummary;
 
     try {
       blocks = blocksFrom(
@@ -90,6 +93,7 @@ export default function jev(pi: ExtensionAPI): void {
       cwd = ctx.sessionManager.getCwd();
 
       [kept, stats] = await selectBlocks(blocks, cwd, directiveOf(customInstructions), backend, SELECT_CHARS);
+      summary = await compactionSummary(blocks, kept, cwd, preparation.fileOps);
     } catch (error) {
       const text = error instanceof Error ? error : String(error);
 
@@ -97,10 +101,6 @@ export default function jev(pi: ExtensionAPI): void {
 
       return;
     }
-
-    const pointers = pointerIndex(blocks, kept, cwd);
-    const summary = renderDigest(blocks, kept, pointers);
-    const lists = fileLists(preparation.fileOps);
 
     appendLine(
       COMPACT_LOG_PATH,
@@ -110,7 +110,7 @@ export default function jev(pi: ExtensionAPI): void {
         source: "session_before_compact",
         trigger: reason,
         blocks_in: blocks.length,
-        pointer_chars: pointers.length,
+        pointer_chars: summary.pointerChars,
         judged: stats.judged,
         rescued: stats.rescued,
         pinned: stats.pinned,
@@ -128,13 +128,13 @@ export default function jev(pi: ExtensionAPI): void {
 
     return {
       compaction: {
-        summary,
+        summary: summary.summary,
         firstKeptEntryId: preparation.firstKeptEntryId,
         tokensBefore: preparation.tokensBefore,
-        estimatedTokensAfter: Math.ceil(summary.length / 4),
+        estimatedTokensAfter: Math.ceil(summary.summary.length / 4),
         details: {
-          readFiles: lists.readFiles,
-          modifiedFiles: lists.modifiedFiles,
+          readFiles: summary.readFiles,
+          modifiedFiles: summary.modifiedFiles,
           jev: {
             judged: stats.judged,
             rescued: stats.rescued,
