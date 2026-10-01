@@ -76,12 +76,24 @@ export function pointerPaths(
   return lines;
 }
 
+function canonicalPath(path: string, cwd: string): string {
+  return isAbsolute(path) ? resolve(path) : resolve(cwd, path);
+}
+
+export function withoutModified(pointers: readonly string[], modified: readonly string[], cwd: string): string[] {
+  const skip = new Set<string>();
+
+  for (const path of modified) skip.add(canonicalPath(path, cwd));
+
+  return pointers.filter((path) => !skip.has(canonicalPath(path, cwd)));
+}
+
 export function mergeReadFiles(native: readonly string[], pointers: readonly string[], cwd: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
 
   for (const path of [...native, ...pointers]) {
-    const key = isAbsolute(path) ? resolve(path) : resolve(cwd, path);
+    const key = canonicalPath(path, cwd);
 
     if (seen.has(key)) continue;
     seen.add(key);

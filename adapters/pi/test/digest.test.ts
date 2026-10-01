@@ -110,7 +110,7 @@ test("splitSummary drops a pointer index instead of judging the paths again", ()
 
 test("compaction summary keeps one read-files list and the modified files", async () => {
   const indexed = [
-    { role: "assistant", text: "[tool_use read]", refs: ["src/dropped.ts", "src/pointer-only.ts"] },
+    { role: "assistant", text: "[tool_use read]", refs: ["src/dropped.ts", "src/edited.ts", "src/pointer-only.ts"] },
     { role: "assistant", text: "kept whole", refs: ["src/kept.ts"] },
   ];
 
@@ -122,9 +122,10 @@ test("compaction summary keeps one read-files list and the modified files", asyn
     edited: new Set(),
   };
 
-  const { summary } = await compactionSummary(indexed, selection, "/repo", fileOps);
+  const { summary } = compactionSummary(indexed, selection, "/repo", fileOps);
   const readTags = summary.match(/<read-files>/g) ?? [];
   const modifiedTags = summary.match(/<modified-files>/g) ?? [];
+  const readBody = /<read-files>\n([\s\S]*?)\n<\/read-files>/.exec(summary)?.[1] ?? "";
 
   assert.equal(readTags.length, 1);
   assert.equal(modifiedTags.length, 1);
@@ -133,7 +134,8 @@ test("compaction summary keeps one read-files list and the modified files", asyn
   assert.ok(summary.includes("src/native.ts"));
   assert.ok(summary.includes("/repo/src/pointer-only.ts"));
   assert.equal(summary.includes("/repo/src/dropped.ts"), false);
-  assert.ok(summary.includes("src/edited.ts"));
+  assert.equal(readBody.includes("edited.ts"), false);
+  assert.ok(summary.includes("<modified-files>\nsrc/edited.ts\n</modified-files>"));
   assert.equal(summary.includes("src/kept.ts"), false);
 
   const back = splitSummary(summary);

@@ -3,7 +3,7 @@ import type { DecisionBackend } from "../afk/src/shared/jev-client.ts";
 import { DIRECTIVE_CHARS, selectBlocks, type Kept, type Stats } from "../../src/compact/strategy.ts";
 import { blocksFrom } from "./blocks.ts";
 import { ask, resolve, status } from "./client.ts";
-import { mergeReadFiles, pointerPaths, renderDigest, SELECT_CHARS, type IndexedBlock } from "./digest.ts";
+import { mergeReadFiles, pointerPaths, renderDigest, SELECT_CHARS, withoutModified, type IndexedBlock } from "./digest.ts";
 import { computeFileLists, formatFileOperations } from "./file-ops.ts";
 import { appendLine, lastRecord } from "./log.ts";
 import { callLogPath, compactLogPath, dotEnvPath } from "./paths.ts";
@@ -25,16 +25,16 @@ export interface CompactionSummary {
   pointerChars: number;
 }
 
-export async function compactionSummary(
+export function compactionSummary(
   blocks: readonly IndexedBlock[],
   kept: readonly Kept[],
   cwd: string,
   fileOps: FileOperations
-): Promise<CompactionSummary> {
-  const pointers = pointerPaths(blocks, kept, cwd);
-  const lists = await computeFileLists(fileOps);
+): CompactionSummary {
+  const lists = computeFileLists(fileOps);
+  const pointers = withoutModified(pointerPaths(blocks, kept, cwd), lists.modifiedFiles, cwd);
   const reads = mergeReadFiles(lists.readFiles, pointers, cwd);
-  const summary = renderDigest(blocks, kept) + (await formatFileOperations(reads, lists.modifiedFiles));
+  const summary = renderDigest(blocks, kept) + formatFileOperations(reads, lists.modifiedFiles);
 
   return {
     summary,
@@ -93,7 +93,7 @@ export default function jev(pi: ExtensionAPI): void {
       cwd = ctx.sessionManager.getCwd();
 
       [kept, stats] = await selectBlocks(blocks, cwd, directiveOf(customInstructions), backend, SELECT_CHARS);
-      summary = await compactionSummary(blocks, kept, cwd, preparation.fileOps);
+      summary = compactionSummary(blocks, kept, cwd, preparation.fileOps);
     } catch (error) {
       const text = error instanceof Error ? error : String(error);
 

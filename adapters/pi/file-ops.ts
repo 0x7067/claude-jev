@@ -1,5 +1,3 @@
-import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import type { FileOperations } from "@earendil-works/pi-coding-agent";
 
 interface FileLists {
@@ -7,35 +5,24 @@ interface FileLists {
   modifiedFiles: string[];
 }
 
-interface FileListModule {
-  computeFileLists(fileOps: FileOperations): FileLists;
-  formatFileOperations(readFiles: string[], modifiedFiles: string[]): string;
+export function computeFileLists(fileOps: FileOperations): FileLists {
+  const modified = new Set<string>([...fileOps.edited, ...fileOps.written]);
+  const readFiles = [...fileOps.read].filter((path) => !modified.has(path)).sort();
+  const modifiedFiles = [...modified].sort();
+
+  return { readFiles, modifiedFiles };
 }
 
-let loaded: FileListModule | undefined;
+export function formatFileOperations(readFiles: readonly string[], modifiedFiles: readonly string[]): string {
+  const sections: string[] = [];
 
-async function peerFileLists(): Promise<FileListModule> {
-  if (loaded !== undefined) return loaded;
+  if (readFiles.length > 0) sections.push(`<read-files>\n${readFiles.join("\n")}\n</read-files>`);
 
-  const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
-  const utils = pathToFileURL(join(dirname(fileURLToPath(entry)), "core", "compaction", "utils.js")).href;
+  if (modifiedFiles.length > 0) {
+    sections.push(`<modified-files>\n${modifiedFiles.join("\n")}\n</modified-files>`);
+  }
 
-  // The package entry does not re-export these names. compaction/index does, and this file is that module.
-  const imported: FileListModule = await import(utils);
+  if (sections.length === 0) return "";
 
-  loaded = imported;
-
-  return imported;
-}
-
-export async function computeFileLists(fileOps: FileOperations): Promise<FileLists> {
-  const api = await peerFileLists();
-
-  return api.computeFileLists(fileOps);
-}
-
-export async function formatFileOperations(readFiles: string[], modifiedFiles: string[]): Promise<string> {
-  const api = await peerFileLists();
-
-  return api.formatFileOperations(readFiles, modifiedFiles);
+  return `\n\n${sections.join("\n\n")}`;
 }

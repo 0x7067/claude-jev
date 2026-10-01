@@ -550,13 +550,11 @@ function pairTarget(blocks: Block[], keptText: string, i: number): number | unde
 
   if (linked !== undefined) return linked;
 
-  if (
-    i > 0 &&
-    keptText.startsWith("[tool_result]") &&
-    blocks[i - 1]!.text.startsWith("[tool_use")
-  ) {
-    return i - 1;
-  }
+  if (!keptText.startsWith("[tool_result]")) return undefined;
+
+  const call = unlabeledCallIndex(blocks, i);
+
+  if (call !== undefined && blocks[call]!.text.startsWith("[tool_use")) return call;
 
   return undefined;
 }
