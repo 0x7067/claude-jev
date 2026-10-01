@@ -17,7 +17,3 @@ export function callLogPath(): string {
 export function compactLogPath(): string {
   return join(configDir(), COMPACT_LOG);
 }
-
-export function sessionsDir(): string {
-  return join(configDir(), "sessions");
-}

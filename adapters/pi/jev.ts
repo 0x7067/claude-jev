@@ -120,7 +120,6 @@ export default function jev(pi: ExtensionAPI): void {
         est_tokens_after: stats.est_tokens_after,
         reduction: stats.reduction,
         ms: stats.ms,
-        rows: stats.rows,
       })
     );
     ctx.ui.notify(describeDigest(reason, stats), "info");

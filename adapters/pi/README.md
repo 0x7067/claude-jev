@@ -14,7 +14,7 @@ Pi reads `pi.extensions` in the root `package.json` and loads `adapters/pi/jev.t
 
 `adapters/pi/jev.ts` calls `selectBlocks` from `src/compact/strategy.ts`. The checks, thresholds, windows, and Claude's flat 16,000-character budget stay there. Claude's rows bridge does not pass a budget or a `needs` index, so its fit and its previous-row pairing are unchanged.
 
-A block may set `needs` to the index of the tool call it answers. The Pi adapter sets that from `toolCallId` before the call. When `needs` is absent, selection still pairs a tool result with the previous `[tool_use` row. A truncated block keeps a head and a tail, the same cut `truncateBlock` already uses for Claude. The shared hold for a tool result applies when the preceding tool name is `Read`.
+A block may set `needs` to the index of the tool call it answers. The Pi adapter sets that from `toolCallId` before the call. When `needs` is absent, selection still pairs a tool result with the previous `[tool_use` row. A truncated block keeps a head and a tail, the same cut `truncateBlock` already uses for Claude. A tool result is held when the call it answers, `needs` or else the previous block, contains `[tool_use read]` in any capitalization.
 
 ## What stays here
 

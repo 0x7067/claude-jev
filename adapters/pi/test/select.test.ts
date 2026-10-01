@@ -284,6 +284,47 @@ test("selectBlocks pulls a dropped tool call back in behind its kept result", as
   assert.equal(out.find((k) => k.i === 3)?.kind, "truncated");
 });
 
+test("selectBlocks holds a Pi read whose call starts with other text", async () => {
+  const input: Block[] = [
+    block("assistant", 'let me look first\n[tool_use read] {"path":"src/a.ts"}'),
+    block("tool", "[tool_result] export const a = 1", 0),
+    block("assistant", "chatter only"),
+    block("user", "now make b"),
+    ...blocks(PIN_TAIL, (i) => block("user", `pinned tail ${i}`)),
+  ];
+
+  const [held] = await selectBlocks(input, null, null, answerWith([{}, { constraint: 0.1 }]));
+
+  assert.ok(held.some((k) => k.i === 1));
+
+  const claude = [
+    block("assistant", '[tool_use Read] {"file_path":"src/a.ts"}'),
+    block("tool", "[tool_result] export const a = 1"),
+    block("assistant", "chatter only"),
+    block("user", "now make b"),
+    ...blocks(PIN_TAIL, (i) => block("user", `pinned tail ${i}`)),
+  ];
+
+  const [also] = await selectBlocks(claude, null, null, answerWith([{}, { constraint: 0.1 }]));
+
+  assert.ok(also.some((k) => k.i === 1));
+
+  const other: Block[] = [
+    block("assistant", 'let me run it\n[tool_use bash] {"cmd":"ls"}'),
+    block("tool", "[tool_result] file list", 0),
+    block("assistant", "chatter only"),
+    block("user", "now make b"),
+    ...blocks(PIN_TAIL, (i) => block("user", `pinned tail ${i}`)),
+  ];
+
+  const [dropped] = await selectBlocks(other, null, null, answerWith([{}, { constraint: 0.1 }]));
+
+  assert.equal(
+    dropped.some((k) => k.i === 1),
+    false
+  );
+});
+
 test("selectBlocks pulls in the block a kept result names, by link", async () => {
   const input: Block[] = [
     block("assistant", 'let me look first\n[tool_use read] {"path":"src/a.ts"}'),

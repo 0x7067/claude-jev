@@ -1,8 +1,7 @@
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
 import { judgeable, MAX_BLOCKS, RESCUE_BLOCKS, type Block } from "../../src/compact/strategy.ts";
-import { parseJsonObject } from "../afk/src/shared/json.ts";
 import { splitSummary } from "./digest.ts";
-import { locations } from "./refs.ts";
+import { locations, type ScanValue } from "./refs.ts";
 
 export type AgentMessage = Parameters<typeof convertToLlm>[0][number];
 
@@ -41,13 +40,10 @@ function contentText(content: string | readonly Textish[]): string {
   return parts.join("\n");
 }
 
-function fileRefs(rendered: string): string[] {
-  const parsed = parseJsonObject(rendered);
-
-  if (parsed === null) return [];
+function fileRefs(args: ScanValue): string[] {
   const refs: string[] = [];
 
-  for (const location of locations(parsed)) {
+  for (const location of locations(args)) {
     if (location.kind === "file") refs.push(location.value);
   }
 
@@ -74,7 +70,7 @@ export function blockFrom(message: LlmMessage): PiBlock | undefined {
           const rendered = JSON.stringify(block.arguments);
 
           parts.push(`[tool_use ${block.name}] ${rendered.slice(0, TOOL_INPUT_CHARS)}`);
-          refs.push(...fileRefs(rendered));
+          refs.push(...fileRefs(block.arguments));
         }
       }
 

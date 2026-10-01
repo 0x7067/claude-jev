@@ -4,7 +4,7 @@ import { type Block, type Kept } from "../../src/compact/strategy.ts";
 export const DIGEST_HEADER =
   "This is not a written summary. Jev selected the blocks below out of the " +
   "session transcript, and each one is verbatim text — kept whole, or cut to a " +
-  "head that ends with an elision note. Everything else was dropped. Blocks are " +
+  "head and a tail around an elision note. Everything else was dropped. Blocks are " +
   "oldest first, each introduced by a ---[jev:<n>:<role>]--- line. Continue the " +
   "last task without asking the user to repeat anything.";
 

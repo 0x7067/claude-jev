@@ -1,5 +1,12 @@
-import { basename } from "node:path";
-import { isJsonObject, isString, type JsonValue } from "../afk/src/shared/json.ts";
+import { isJsonObject, isString } from "../afk/src/shared/json.ts";
+
+export type ScanValue =
+  | string
+  | number
+  | boolean
+  | null
+  | readonly ScanValue[]
+  | { readonly [key: string]: ScanValue };
 
 export type LocationKind = "file" | "url" | "pattern";
 
@@ -27,7 +34,7 @@ const MAX_LOCATIONS = 24;
 
 const MAX_FREE_TEXT = 20_000;
 
-function isJsonValueArray(value: JsonValue): value is JsonValue[] {
+function isJsonValueArray(value: ScanValue): value is readonly ScanValue[] {
   return Array.isArray(value);
 }
 
@@ -62,7 +69,7 @@ function fromFreeText(text: string, into: Map<string, Location>): void {
   for (const match of withoutUrls.match(RELATIVE_PATH) ?? []) add(into, "file", match);
 }
 
-function walk(value: JsonValue, key: string | undefined, depth: number, into: Map<string, Location>): void {
+function walk(value: ScanValue, key: string | undefined, depth: number, into: Map<string, Location>): void {
   if (depth > MAX_SCAN_DEPTH || into.size >= MAX_LOCATIONS) return;
 
   if (isString(value)) {
@@ -85,17 +92,10 @@ function walk(value: JsonValue, key: string | undefined, depth: number, into: Ma
   }
 }
 
-export function locations(args: JsonValue): Location[] {
+export function locations(args: ScanValue): Location[] {
   const into = new Map<string, Location>();
 
   walk(args, undefined, 0, into);
 
   return [...into.values()];
-}
-
-export function locationTerms(location: Location): string[] {
-  if (location.kind !== "file") return [location.value];
-  const base = basename(location.value);
-
-  return base === location.value ? [base] : [location.value, base];
 }

@@ -406,12 +406,23 @@ export function fitKept(kept: Kept[], blocks: Block[], targetChars = TARGET_CHAR
 
 const REF_CHARS = 160;
 
+const READ_CALL = /\[tool_use\s+read\]/i;
+
+function readCallIndex(blocks: Block[], i: number): number | undefined {
+  const linked = blocks[i]?.needs;
+
+  if (linked !== undefined && linked >= 0 && linked < blocks.length && linked !== i) return linked;
+
+  if (i > 0) return i - 1;
+
+  return undefined;
+}
+
 function isReadResult(blocks: Block[], i: number): boolean {
-  return (
-    i > 0 &&
-    blockKind(blocks[i]!.text) === "tool_result" &&
-    blockKind(blocks[i - 1]!.text) === "tool_use:Read"
-  );
+  if (blockKind(blocks[i]!.text) !== "tool_result") return false;
+  const call = readCallIndex(blocks, i);
+
+  return call !== undefined && READ_CALL.test(blocks[call]!.text);
 }
 
 export function blockKind(text: string): string {
