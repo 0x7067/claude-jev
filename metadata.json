@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "01M3VYAT22EKCJG898VEXV8XQC",
+  "strategy": "manual-commit",
+  "branch": "feat/afk-marketplace-entry",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "CHANGELOG.md",
+    "adapters/afk/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 58,
+    "cache_creation_tokens": 28973,
+    "cache_read_tokens": 2545084,
+    "output_tokens": 12516,
+    "api_call_count": 29
+  }
+}
