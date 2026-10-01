@@ -44,6 +44,8 @@ Preconditions:
 ## Gotchas
 
 - An explicit `model` skips the tier question but not the brief check.
+- A whitespace-only `tool_input.prompt` returns before any Jev call and writes no log row — it is a skip, not a fail-open signal.
+- The tier-criteria heading also matches a `subagents` spelling (normalized to `sub-agents`), and a `plugin:<path>:<name>` type resolves under `$CLAUDE_CONFIG_DIR/plugins/cache/<marketplace>/<plugin>/<version>/agents/`.
 - An explicit `model` always wins; do not expect `updatedInput` on that path.
 - The **Explicit model** recipe's empty stdout is not evidence that the model was left alone: with no key every input prints empty. It is a no-crash proof only; the deny path still runs on that event, so an explicit model plus an incomplete brief can print a denial.
 - A brief is judged missing only when `brief_writes` clears `MIN_CONFIDENCE` (0.75) and each named part is at or under `BRIEF_MISSING` (0.25). A "confidently missing" part scoring 0.30 lists nothing and prints nothing.
@@ -52,6 +54,6 @@ Preconditions:
 - Tier criteria come from `CLAUDE.md` **in the config dir the run uses**, so under `control-jev` the real `~/.claude/CLAUDE.md` is never read and every live route proof silently runs on shipped defaults unless you plant the file.
 - The toggle count rises by one row per hook run on a fake `sk-or-` key. The hook's client (`adapters/afk/src/shared/jev-client.ts`) makes one attempt and logs one row for an `HTTP 401` or a network error alike; only `scripts/jev.py` retries under `FAST_FAIL`, and no hook uses it.
 - A routable spawn with a live key routes whenever Jev returns tier probabilities, so empty stdout with a key means an own-model spawn, a toggle, or a failed call. It does not mean low confidence. The explicit read-only "grep for a literal, list the files" brief routes to `haiku` at `p=1.00`.
-- The own-model lookup reads definition files on every spawn: project `.claude/agents/` up to 12 directories above the event's `cwd`, then `$CLAUDE_CONFIG_DIR/agents/` (`$VERIFY_HOME/.claude/agents/` under this harness), then `$CLAUDE_CONFIG_DIR/plugins/cache/*/<plugin>/*/agents/` for a `plugin:…` type. A stray definition in any directory above `cwd` changes the result, and the real `~/.claude/agents/` is never read under `control-jev`.
+- The own-model lookup reads definition files on every spawn: project `.claude/agents/` starting at the event's `cwd` and walking up to 11 ancestors (12 candidate dirs total), then `$CLAUDE_CONFIG_DIR/agents/` (`$VERIFY_HOME/.claude/agents/` under this harness), then `$CLAUDE_CONFIG_DIR/plugins/cache/*/<plugin>/*/agents/` for a `plugin:…` type. A stray definition in any directory above `cwd` changes the result, and the real `~/.claude/agents/` is never read under `control-jev`.
 - A brief-check denial is spent per `(session_id, prompt-head)` pair, read back from `jev-router-log.jsonl`. Reusing a `session_id` across live brief probes turns a later denial into `systemMessage` only.
 - Do not mark the live route verified when the key was unset; that path is out-of-band.

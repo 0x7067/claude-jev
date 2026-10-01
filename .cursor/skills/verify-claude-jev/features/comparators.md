@@ -1,6 +1,6 @@
 # Comparators (ast-grep)
 
-`scripts/comparators.py` (CLI: `which`, `fetch`) and `adapters/afk/src/shared/comparators.ts` (what the rules hook in `src/rules.ts` calls) are the only places claude-jev reaches for an external
+`scripts/comparators.py` (CLI: `fetch`, plus a default which-print for any other argv) and `adapters/afk/src/shared/comparators.ts` (what the rules hook in `src/rules.ts` calls) are the only places claude-jev reaches for an external
 program. They pin the same version, checksums, and install path. It looks up code the edited block repeats, using a pinned ast-grep
 binary, and the rule judgment is the same with or without it: when the binary is
 absent every comparator answers `""`. The rules hook fetches the pinned build in
@@ -79,6 +79,8 @@ Preconditions:
   all, and its comparator evidence comes from an unpinned binary — record the state
   token with every artifact, and never assume `[none]` means "not installed here" when
   a `brew`/`npm` ast-grep may be on `PATH`.
+- `which` is not a matched subcommand: any argv[1] other than `fetch` (or none) prints
+  the which line. The recipe string works; the CLI surface is just `fetch` plus the default.
 - `which` never downloads and `fetch` never judges: neither call touches Jev, so both
   are in-band regardless of keys.
 - The pinned version lives in `scripts/comparators.py` as `VERSION` with a sha256. If

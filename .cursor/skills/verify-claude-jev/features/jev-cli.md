@@ -4,12 +4,13 @@
 for manual checks (`ask`, `choose`, `noul`, `score`, `intent`, `status` —
 listed by `python3 scripts/jev.py --help`). A state argument may be literal
 text, `@file`, or `-` for stdin. Without `TYPESAFE_API_KEY` or
-`OPENROUTER_API_KEY` the CLI exits 2 and prints `jev: set TYPESAFE_API_KEY or
-OPENROUTER_API_KEY`; a hook that imports it must continue without blocking.
+`OPENROUTER_API_KEY` the CLI exits 2 and prints `jev: set TYPESAFE_API_KEY`
+(unpinned; a pinned provider names its own variable instead); a hook that
+imports it must continue without blocking.
 
 ## Sub-features
 
-- `jev-missing-key` exits 2 with the set-key message when both env vars are absent.
+- `jev-missing-key` exits 2 with `jev: set TYPESAFE_API_KEY` when both env vars are absent (unpinned).
 - `jev-usage` rejects incomplete `choose` / `score` invocations with exit 2.
 - `jev-noul-live` (out-of-band; live key) returns JSON with a `noul` probability.
 - `jev-status` prints the key source, provider, pinned provider, version, and last call as JSON, never the key.
@@ -28,7 +29,7 @@ Preconditions:
 - Disposable verify home is set by `control-jev launch`.
 - `eval "$(control-jev env)"` if the recipe needs exported run vars.
 
-- **Missing key.** Unset both `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY`. Run `control-jev jev -- noul "Is 2 even?" "2"`. Exit code `2` and stderr contains `jev: set TYPESAFE_API_KEY or OPENROUTER_API_KEY`.
+- **Missing key.** Unset both `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY`. Run `control-jev jev -- noul "Is 2 even?" "2"`. Exit code `2` and stderr is exactly `jev: set TYPESAFE_API_KEY` — **not** the two-name form. `missing_key_message(pinned)` was built to join all provider variables when unpinned, but `ask()` passes the already-defaulted provider, so the join never fires; the unpinned message names only `TYPESAFE_API_KEY` even though `OPENROUTER_API_KEY` would be accepted. Assert on what prints.
 - **Bad choose.** Run `control-jev jev -- choose "pick" "state" --opt only=one`. Exit code `2` (needs at least two `--opt`).
 - **Bad score.** Run `control-jev jev -- score "rate" "state" --level only=one`. Exit code `2` with `jev: score needs at least two --level`. A missing required flag also exits `2`, from argparse rather than the client (`jev score: error: the following arguments are required: --level`).
 - **Live noul (out-of-band).** Needs `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` (Claude Code is not required — `control-jev` drives it). Run `control-jev jev -- noul "Is 2 even?" "2"`. Exit code `0` and stdout is the typed answer, observed as `{"type": "noul", "noul": 0.99}`.

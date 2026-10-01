@@ -17,7 +17,8 @@ feature file as the recipe.
 - Never drive a verify home that was not started by this verification run.
 - `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY` may both be unset. Without them,
   hooks must fail open (exit 0, no stdout) and `jev.py` must exit 2 with
-  `jev: set TYPESAFE_API_KEY or OPENROUTER_API_KEY`. That is the **in-band**
+  `jev: set TYPESAFE_API_KEY` (unpinned; a pinned provider names its own
+  variable). That is the **in-band**
   contract for this skill. `control-jev` passes your environment through, so if
   your shell has real keys, every no-key recipe must start with
   `unset TYPESAFE_API_KEY OPENROUTER_API_KEY CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY`
@@ -119,6 +120,27 @@ user-visible behavior. It then uses exactly four H2 sections in this order.
 
 Keep implementation details out of the map. Name only user paths, stable
 handles, required state, commands, and observable proof.
+
+## Scope
+
+This map covers the **Claude Code plugin** only: `hooks/hooks.json` events,
+`src/*.ts` hooks, the `rows` bridge, `scripts/jev.py`, `scripts/stats.py`, and
+`scripts/comparators.py`. Two sibling surfaces are deliberately out of scope —
+they have different launch models `control-jev` does not drive:
+
+- `adapters/afk/` (the `claude-jev-afk` plugin): its own `hooks/hooks.json`
+  (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `Stop`), its own `src/`
+  copies, and its own contract — `cd adapters/afk && npm ci && npm run build`
+  plus the no-key smoke in AGENTS.md.
+- `adapters/pi/` (the Pi extension, loaded via `pi.extensions` in the root
+  `package.json`): `session_before_compact` and `/jev`; covered by
+  `npm run test:pi` (`node --experimental-strip-types --test adapters/pi/test/`).
+
+The AFK hooks.json resolves `${CLAUDE_PLUGIN_ROOT}/src/…` to `adapters/afk/src/…`,
+so its `SessionStart`/`Stop` entries run `adapters/afk/src/session-start.ts` and
+`adapters/afk/src/stop-sweep.ts`. The Claude Code plugin's own `hooks.json`
+registers no `SessionStart` hook, and the root `src/session-start.ts` has no
+registrant at all (a leftover — flagged to the maintainer, not driven here).
 
 ## Features
 

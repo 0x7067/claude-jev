@@ -38,5 +38,5 @@ Preconditions:
 - `--examples N` lists up to N scored-intent mismatches and nothing else changes; the default 0 omits the block. It is not clamped.
 - The report's header line is the wording the empty-home case does NOT print, and vice versa — assert on the first line to tell them apart.
 - `Failures by caller` counts failed calls, not HTTP status codes, and a failed call still costs a `jev-calls.jsonl` row: a fake-key toggle proof shows up as `HTTP 401` failures in the report of the same home.
-- Rows written by hand-fed test events have no transcript behind them, so rule outcomes report them as `unscorable: no transcript for the session` rather than repaired or ignored.
+- Rows written by hand-fed test events have no transcript behind them, so rule outcomes report them as `unscorable: no transcript for the session, as with a hand-fed test event, or no file path on the edit` rather than repaired or ignored.
 - Stats only reads logs; it never calls Jev.
