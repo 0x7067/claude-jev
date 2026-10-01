@@ -22,6 +22,11 @@
         "compaction",
         "token-savings"
       ]
+    },
+    {
+      "name": "claude-jev-afk",
+      "source": "./adapters/afk",
+      "description": "AFK only: Jev hooks for agent-afk. Not for Claude Code; install claude-jev there."
     }
   ]
 }
