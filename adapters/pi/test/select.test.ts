@@ -373,6 +373,22 @@ test("selectBlocks does not hold an unlabeled non-read beside a parallel Read", 
   );
 });
 
+test("selectBlocks re-links an unlabeled Read whose call starts with other text", async () => {
+  const input: Block[] = [
+    block("assistant", 'I will read it\n[tool_use Read] {"file_path":"src/a.ts"}'),
+    block("tool", "[tool_result] export const a = 1"),
+    ...blocks(PIN_TAIL, (i) => block("user", `pinned tail ${i}`)),
+  ];
+
+  const [out] = await selectBlocks(input, null, null, answerWith([{}, { constraint: 0.1 }]));
+  const indices = out.map((k) => k.i);
+
+  assert.ok(indices.includes(0));
+  assert.ok(indices.includes(1));
+  assert.ok(indices.indexOf(0) < indices.indexOf(1));
+  assert.ok(out.find((k) => k.i === 0)?.text.includes("src/a.ts"));
+});
+
 test("selectBlocks pulls the call behind a held Read that follows another result", async () => {
   const input: Block[] = [
     block("assistant", '[tool_use Bash] {"command":"ls"}\n[tool_use Read] {"file_path":"src/a.ts"}'),

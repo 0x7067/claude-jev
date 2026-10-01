@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { FileOperations } from "@earendil-works/pi-coding-agent";
 import type { Block, Kept } from "../../../src/compact/strategy.ts";
-import { DIGEST_HEADER, delimiter, pointerIndex, renderDigest, splitSummary } from "../digest.ts";
+import { DIGEST_HEADER, delimiter, pointerPaths, renderDigest, splitSummary } from "../digest.ts";
 import { compactionSummary } from "../jev.ts";
 
 const blocks: Block[] = [
@@ -98,6 +98,24 @@ test("splitSummary survives a digest that was itself re-digested", () => {
   ]);
 });
 
+test("splitSummary keeps a file list inside a block and drops only the trailing ones", () => {
+  const quoted = "see\n<read-files>\n/repo/src/kept.ts\n</read-files>\nin the note";
+
+  const digest = renderDigest(
+    [{ role: "assistant", text: quoted }],
+    [{ i: 0, text: quoted, kind: "full", keep: 1, full: 1 }],
+    "\n\n<read-files>\n/repo/src/dropped.ts\n</read-files>\n\n<modified-files>\n/repo/src/edited.ts\n</modified-files>"
+  );
+
+  const back = splitSummary(digest);
+
+  assert.equal(back.length, 1);
+  assert.ok(back[0]?.text.includes("<read-files>"));
+  assert.ok(back[0]?.text.includes("/repo/src/kept.ts"));
+  assert.equal(back[0]?.text.includes("/repo/src/dropped.ts"), false);
+  assert.equal(back[0]?.text.includes("modified-files"), false);
+});
+
 test("splitSummary drops a pointer index instead of judging the paths again", () => {
   const digest = renderDigest(blocks, kept, "\n\n<read-files>\n/repo/src/a.ts\n</read-files>");
   const back = splitSummary(digest);
@@ -150,7 +168,7 @@ test("compaction summary keeps one read-files list and the modified files", asyn
   );
 });
 
-test("pointerIndex lists paths behind dropped and truncated calls only", () => {
+test("pointerPaths lists paths behind dropped and truncated calls only", () => {
   const indexed = [
     { role: "assistant", text: "[tool_use edit]", refs: ["src/a.ts"] },
     { role: "assistant", text: "kept whole", refs: ["src/c.ts"] },
@@ -162,11 +180,9 @@ test("pointerIndex lists paths behind dropped and truncated calls only", () => {
     { i: 2, text: "cut", kind: "truncated", keep: 0.4, full: 0.2 },
   ];
 
-  const index = pointerIndex(indexed, selection, "/repo");
+  const index = pointerPaths(indexed, selection, "/repo");
 
   assert.ok(index.includes("/repo/src/a.ts"));
   assert.ok(index.includes("/repo/src/b.ts"));
   assert.equal(index.includes("src/c.ts"), false);
-  assert.ok(index.startsWith("\n\n<read-files>\n"));
-  assert.ok(index.endsWith("\n</read-files>"));
 });

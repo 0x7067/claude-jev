@@ -18,7 +18,8 @@ export const SELECT_CHARS = 14_000;
 
 const DELIMITER = /^---\[jev:(\d+):([a-z_]+)\]---$/;
 
-const FILE_LISTS = /\n?<(read-files|modified-files)>\n[\s\S]*?\n<\/\1>\n?/g;
+const TRAILING_FILE_LIST =
+  /\n?<(read-files|modified-files)>\n(?:(?!<\/?(?:read-files|modified-files)>)[\s\S])*\n<\/\1>\s*$/;
 
 export interface IndexedBlock extends Block {
   refs?: readonly string[];
@@ -103,18 +104,16 @@ export function mergeReadFiles(native: readonly string[], pointers: readonly str
   return out;
 }
 
-export function pointerIndex(
-  blocks: readonly IndexedBlock[],
-  kept: readonly Kept[],
-  cwd: string,
-  maxLines = MAX_POINTER_LINES,
-  budget = POINTER_CHARS
-): string {
-  const lines = pointerPaths(blocks, kept, cwd, maxLines, budget);
+function stripTrailingFileLists(summary: string): string {
+  let body = summary;
+  let next = body.replace(TRAILING_FILE_LIST, "");
 
-  if (lines.length === 0) return "";
+  while (next !== body) {
+    body = next;
+    next = body.replace(TRAILING_FILE_LIST, "");
+  }
 
-  return `\n\n<read-files>\n${lines.join("\n")}\n</read-files>`;
+  return body;
 }
 
 function splitJevDigest(summary: string): Block[] {
@@ -146,7 +145,7 @@ function splitJevDigest(summary: string): Block[] {
 }
 
 export function splitSummary(summary: string): Block[] {
-  const body = summary.replace(FILE_LISTS, "\n");
+  const body = stripTrailingFileLists(summary);
   const fromJev = splitJevDigest(body);
 
   if (fromJev.length > 0) return fromJev;

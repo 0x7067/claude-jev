@@ -554,7 +554,7 @@ function pairTarget(blocks: Block[], keptText: string, i: number): number | unde
 
   const call = unlabeledCallIndex(blocks, i);
 
-  if (call !== undefined && blocks[call]!.text.startsWith("[tool_use")) return call;
+  if (call !== undefined && toolUseNames(blocks[call]!.text).length > 0) return call;
 
   return undefined;
 }
