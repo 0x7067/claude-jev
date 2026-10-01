@@ -378,14 +378,14 @@ export function truncateBlock(text: string): string {
   return `${head}\n${ELISION(text.length - head.length - tail.length)}\n${tail}`;
 }
 
-export function fitKept(kept: Kept[], blocks: Block[]): Kept[] {
+export function fitKept(kept: Kept[], blocks: Block[], targetChars = TARGET_CHARS): Kept[] {
   let total = kept.reduce((sum, k) => sum + k.text.length, 0);
 
-  if (total <= TARGET_CHARS) return kept;
+  if (total <= targetChars) return kept;
   const movable = kept.filter((k) => !k.pinned);
 
   for (const k of movable.filter((k) => k.kind === "full").sort((a, b) => a.full - b.full)) {
-    if (total <= TARGET_CHARS) break;
+    if (total <= targetChars) break;
     const shorter = truncateBlock(blocks[k.i]!.text);
 
     if (shorter.length >= k.text.length) continue;
@@ -396,7 +396,7 @@ export function fitKept(kept: Kept[], blocks: Block[]): Kept[] {
   }
 
   for (const k of [...movable].sort((a, b) => a.keep - b.keep || a.i - b.i)) {
-    if (total <= TARGET_CHARS) break;
+    if (total <= targetChars) break;
     total -= k.text.length;
     k.kind = "dropped";
   }
@@ -484,11 +484,28 @@ function emptyStats(judged: number): Stats {
   };
 }
 
+function pairTarget(blocks: Block[], keptText: string, i: number): number | undefined {
+  const linked = blocks[i]?.needs;
+
+  if (linked !== undefined && linked >= 0 && linked < blocks.length && linked !== i) return linked;
+
+  if (
+    i > 0 &&
+    keptText.startsWith("[tool_result]") &&
+    blocks[i - 1]!.text.startsWith("[tool_use")
+  ) {
+    return i - 1;
+  }
+
+  return undefined;
+}
+
 export async function selectBlocks(
   blocks: Block[],
   cwd: string | null,
   directive: string | null = null,
-  decisionBackend: DecisionBackend = DEFAULT_BACKEND
+  decisionBackend: DecisionBackend = DEFAULT_BACKEND,
+  targetChars = TARGET_CHARS
 ): Promise<[Kept[], Stats]> {
   if (blocks.length === 0) return [[], emptyStats(0)];
   const window = Math.max(0, blocks.length - MAX_BLOCKS);
@@ -563,27 +580,23 @@ export async function selectBlocks(
 
   for (const k of kept) {
     const i = k.i;
+    const linked = pairTarget(blocks, k.text, i);
 
-    if (
-      k.text.startsWith("[tool_result]") &&
-      i > 0 &&
-      !keptIdx.has(i - 1) &&
-      blocks[i - 1]!.text.startsWith("[tool_use")
-    ) {
+    if (linked !== undefined && !keptIdx.has(linked)) {
       paired.push({
-        i: i - 1,
-        text: cutMarked(blocks[i - 1]!.text, KEEP_CHARS),
+        i: linked,
+        text: cutMarked(blocks[linked]!.text, KEEP_CHARS),
         kind: "full",
         keep: k.keep,
         full: k.full,
       });
-      keptIdx.add(i - 1);
+      keptIdx.add(linked);
     }
 
     paired.push(k);
   }
 
-  const final = fitKept([...rescued, ...paired], blocks);
+  const final = fitKept([...rescued, ...paired], blocks, targetChars);
 
   const charsBefore = blocks.reduce((sum, b) => sum + b.text.length, 0);
   const charsAfter = final.reduce((sum, k) => sum + k.text.length, 0);

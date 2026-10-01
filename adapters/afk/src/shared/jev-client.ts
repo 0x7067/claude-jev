@@ -47,18 +47,18 @@ export function asScore(answer: Answers[string] | undefined): ScoreAnswer | unde
   return answer && "score" in answer ? answer : undefined;
 }
 
-const DEFAULT_MODEL = "jev-latest";
+export const DEFAULT_MODEL = "jev-latest";
 
-const DEFAULT_TIMEOUT_MS = 8000;
+export const DEFAULT_TIMEOUT_MS = 8000;
 
-interface Provider {
+export interface Provider {
   name: string;
   url: string;
   keyPrefix: string;
   keyVar: string;
 }
 
-const PROVIDERS: Provider[] = [
+export const PROVIDERS: Provider[] = [
   {
     name: "typesafe",
     url: "https://api.typesafe.ai/v1/systemone",

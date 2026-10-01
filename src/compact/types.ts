@@ -1,6 +1,7 @@
 export interface Block {
   role: string;
   text: string;
+  needs?: number;
 }
 
 export interface Verdict {

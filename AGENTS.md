@@ -22,6 +22,7 @@ building it, and cite it when resisting.
 | `src/` | The TypeScript hook implementations the plugin runs, executed directly as source under node type stripping (needs node >= 22.18) |
 | `src/compact/strategy.ts` | Shared compaction strategy: checks, thresholds, `selectBlocks`. `src/compactor.ts` is the Claude rows bridge. |
 | `adapters/afk/` | The AFK host adapter: a TypeScript implementation of the same hooks with its own manifest, `hooks.json`, and README. Its known-gaps list is the contract — do not claim parity that table does not state. |
+| `adapters/pi/` | The Pi adapter. `package.json` `pi.extensions` points at `adapters/pi/jev.ts` (`session_before_compact` and `/jev`). Selection imports `src/compact/strategy.ts`. Block shaping, the `<read-files>` index, the 14k+2k split, and Pi logs stay in the adapter. |
 | `scripts/comparators.py` | ast-grep lookups the rule hook adds to a judgment |
 | `scripts/observed.py` | Scores what a past turn actually did |
 | `scripts/stats.py` | The Stats row in `/claude-jev`, or `python3 scripts/stats.py` — scores live decisions from the three logs under `~/.claude`: `jev-router-log.jsonl` (router, subagent, rules), `jev-compact-log.jsonl`, `jev-calls.jsonl` (every API call, written by `jev.ask`) |
