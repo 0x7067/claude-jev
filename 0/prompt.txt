@@ -1,0 +1,14 @@
+<task-notification>
+<task-id>kbsgwlcd6</task-id>
+<status>completed</status>
+<summary>MCP task kbsgwlcd (sh/sh) completed.</summary>
+<result>
+summary: "4 passed, 0 failed, 4 total"
+checks[4]{name,conclusion}:
+  check,pass
+  check,pass
+  cubic · AI code reviewer,pass
+  Devin Review,pass
+
+</result>
+</task-notification>
