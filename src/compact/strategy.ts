@@ -550,7 +550,7 @@ function pairTarget(blocks: Block[], keptText: string, i: number): number | unde
 
   if (linked !== undefined) return linked;
 
-  if (!keptText.startsWith("[tool_result]")) return undefined;
+  if (blockKind(keptText) !== "tool_result") return undefined;
 
   const call = unlabeledCallIndex(blocks, i);
 

@@ -3,7 +3,15 @@ import type { DecisionBackend } from "../afk/src/shared/jev-client.ts";
 import { DIRECTIVE_CHARS, selectBlocks, type Kept, type Stats } from "../../src/compact/strategy.ts";
 import { blocksFrom } from "./blocks.ts";
 import { ask, resolve, status } from "./client.ts";
-import { mergeReadFiles, pointerPaths, renderDigest, SELECT_CHARS, withoutModified, type IndexedBlock } from "./digest.ts";
+import {
+  MAX_POINTER_LINES,
+  mergeReadFiles,
+  POINTER_CHARS,
+  pointerPaths,
+  renderDigest,
+  SELECT_CHARS,
+  type IndexedBlock,
+} from "./digest.ts";
 import { computeFileLists, formatFileOperations } from "./file-ops.ts";
 import { appendLine, lastRecord } from "./log.ts";
 import { callLogPath, compactLogPath, dotEnvPath } from "./paths.ts";
@@ -32,7 +40,7 @@ export function compactionSummary(
   fileOps: FileOperations
 ): CompactionSummary {
   const lists = computeFileLists(fileOps);
-  const pointers = withoutModified(pointerPaths(blocks, kept, cwd), lists.modifiedFiles, cwd);
+  const pointers = pointerPaths(blocks, kept, cwd, MAX_POINTER_LINES, POINTER_CHARS, lists.modifiedFiles);
   const reads = mergeReadFiles(lists.readFiles, pointers, cwd);
   const summary = renderDigest(blocks, kept) + formatFileOperations(reads, lists.modifiedFiles);
 

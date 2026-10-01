@@ -389,6 +389,24 @@ test("selectBlocks re-links an unlabeled Read whose call starts with other text"
   assert.ok(out.find((k) => k.i === 0)?.text.includes("src/a.ts"));
 });
 
+test("selectBlocks re-links a named read that has no needs", async () => {
+  const input: Block[] = [
+    block("assistant", '[tool_use bash] {"cmd":"ls"}\n[tool_use read] {"path":"src/a.ts"}'),
+    block("tool", "[tool_result bash] listing"),
+    block("tool", "[tool_result read] export const a = 1"),
+    ...blocks(PIN_TAIL, (i) => block("user", `pinned tail ${i}`)),
+  ];
+
+  const [out] = await selectBlocks(input, null, null, answerWith([{}, { constraint: 0.1 }, { constraint: 0.1 }]));
+  const indices = out.map((k) => k.i);
+
+  assert.ok(indices.includes(0));
+  assert.ok(indices.includes(2));
+  assert.equal(indices.includes(1), false);
+  assert.ok(indices.indexOf(0) < indices.indexOf(2));
+  assert.ok(out.find((k) => k.i === 0)?.text.includes("src/a.ts"));
+});
+
 test("selectBlocks pulls the call behind a held Read that follows another result", async () => {
   const input: Block[] = [
     block("assistant", '[tool_use Bash] {"command":"ls"}\n[tool_use Read] {"file_path":"src/a.ts"}'),

@@ -10,8 +10,10 @@ export const DIGEST_HEADER =
 
 export const MAX_POINTER_LINES = 40;
 
-// 16_000 is the selected body plus <read-files> pointers only.
-// DIGEST_HEADER, ---[jev:…]--- delimiters, and <modified-files> are extra.
+// 16_000 is the selected body plus the paths pointerPaths keeps.
+// Only those dropped or truncated call paths use the 2_000 reservation.
+// DIGEST_HEADER, ---[jev:…]--- delimiters, Pi's own read paths, and
+// <modified-files> are extra and are not capped by that reservation.
 export const POINTER_CHARS = 2_000;
 
 export const SELECT_CHARS = 14_000;
@@ -47,12 +49,16 @@ export function pointerPaths(
   kept: readonly Kept[],
   cwd: string,
   maxLines = MAX_POINTER_LINES,
-  budget = POINTER_CHARS
+  budget = POINTER_CHARS,
+  skip: readonly string[] = []
 ): string[] {
   if (maxLines <= 0 || budget <= 0) return [];
   const state = new Map(kept.map((k) => [k.i, k.kind]));
   const lines: string[] = [];
   const seen = new Set<string>();
+  const skipped = new Set<string>();
+
+  for (const path of skip) skipped.add(canonicalPath(path, cwd));
 
   for (let i = 0; i < blocks.length && lines.length < maxLines; i++) {
     const kind = state.get(i);
@@ -61,9 +67,9 @@ export function pointerPaths(
     const refs = blocks[i]?.refs ?? [];
 
     for (const ref of refs) {
-      const path = isAbsolute(ref) ? resolve(ref) : resolve(cwd, ref);
+      const path = canonicalPath(ref, cwd);
 
-      if (seen.has(path)) continue;
+      if (seen.has(path) || skipped.has(path)) continue;
       seen.add(path);
       lines.push(path);
 
@@ -79,14 +85,6 @@ export function pointerPaths(
 
 function canonicalPath(path: string, cwd: string): string {
   return isAbsolute(path) ? resolve(path) : resolve(cwd, path);
-}
-
-export function withoutModified(pointers: readonly string[], modified: readonly string[], cwd: string): string[] {
-  const skip = new Set<string>();
-
-  for (const path of modified) skip.add(canonicalPath(path, cwd));
-
-  return pointers.filter((path) => !skip.has(canonicalPath(path, cwd)));
 }
 
 export function mergeReadFiles(native: readonly string[], pointers: readonly string[], cwd: string): string[] {

@@ -186,3 +186,14 @@ test("pointerPaths lists paths behind dropped and truncated calls only", () => {
   assert.ok(index.includes("/repo/src/b.ts"));
   assert.equal(index.includes("src/c.ts"), false);
 });
+
+test("pointerPaths skips a modified path without spending a line", () => {
+  const indexed = [
+    { role: "assistant", text: "dropped", refs: ["src/edited.ts", "src/also.ts"] },
+    { role: "assistant", text: "also dropped", refs: ["src/keep.ts"] },
+  ];
+
+  const index = pointerPaths(indexed, [], "/repo", 1, 2_000, ["src/edited.ts"]);
+
+  assert.deepEqual(index, ["/repo/src/also.ts"]);
+});
