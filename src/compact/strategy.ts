@@ -378,14 +378,14 @@ export function truncateBlock(text: string): string {
   return `${head}\n${ELISION(text.length - head.length - tail.length)}\n${tail}`;
 }
 
-export function fitKept(kept: Kept[], blocks: Block[]): Kept[] {
+export function fitKept(kept: Kept[], blocks: Block[], targetChars = TARGET_CHARS): Kept[] {
   let total = kept.reduce((sum, k) => sum + k.text.length, 0);
 
-  if (total <= TARGET_CHARS) return kept;
+  if (total <= targetChars) return kept;
   const movable = kept.filter((k) => !k.pinned);
 
   for (const k of movable.filter((k) => k.kind === "full").sort((a, b) => a.full - b.full)) {
-    if (total <= TARGET_CHARS) break;
+    if (total <= targetChars) break;
     const shorter = truncateBlock(blocks[k.i]!.text);
 
     if (shorter.length >= k.text.length) continue;
@@ -396,7 +396,7 @@ export function fitKept(kept: Kept[], blocks: Block[]): Kept[] {
   }
 
   for (const k of [...movable].sort((a, b) => a.keep - b.keep || a.i - b.i)) {
-    if (total <= TARGET_CHARS) break;
+    if (total <= targetChars) break;
     total -= k.text.length;
     k.kind = "dropped";
   }
@@ -406,12 +406,73 @@ export function fitKept(kept: Kept[], blocks: Block[]): Kept[] {
 
 const REF_CHARS = 160;
 
+const NAMED_RESULT = /^\[tool_result\s+([^\s\]]+)\]/;
+
+function linkedIndex(blocks: Block[], i: number): number | undefined {
+  const linked = blocks[i]?.needs;
+
+  if (linked !== undefined && linked >= 0 && linked < blocks.length && linked !== i) return linked;
+
+  return undefined;
+}
+
+function unlabeledCallIndex(blocks: Block[], i: number): number | undefined {
+  const linked = linkedIndex(blocks, i);
+
+  if (linked !== undefined) return linked;
+
+  let call = i - 1;
+
+  while (call > 0 && blockKind(blocks[call]!.text) === "tool_result") call -= 1;
+
+  return call >= 0 ? call : undefined;
+}
+
+function toolUseNames(text: string): string[] {
+  const names: string[] = [];
+  const pattern = /\[tool_use\s+([^\s\]]+)\]/gi;
+  let match = pattern.exec(text);
+
+  while (match !== null) {
+    const name = match[1];
+
+    if (name !== undefined) names.push(name);
+    match = pattern.exec(text);
+  }
+
+  return names;
+}
+
+function unlabeledAnswersRead(blocks: Block[], i: number, call: number): boolean {
+  if (call >= i) return false;
+  const names = toolUseNames(blocks[call]!.text);
+
+  if (names.length === 0) return false;
+
+  if (names.length === 1) return names[0]!.toLowerCase() === "read";
+
+  let ordinal = 0;
+
+  for (let j = call + 1; j < i; j++) {
+    if (blockKind(blocks[j]!.text) !== "tool_result") return false;
+    ordinal += 1;
+  }
+
+  const paired = names[ordinal];
+
+  return paired !== undefined && paired.toLowerCase() === "read";
+}
+
 function isReadResult(blocks: Block[], i: number): boolean {
-  return (
-    i > 0 &&
-    blockKind(blocks[i]!.text) === "tool_result" &&
-    blockKind(blocks[i - 1]!.text) === "tool_use:Read"
-  );
+  const text = blocks[i]!.text;
+
+  if (blockKind(text) !== "tool_result") return false;
+  const named = NAMED_RESULT.exec(text)?.[1];
+
+  if (named !== undefined) return named.toLowerCase() === "read";
+  const call = unlabeledCallIndex(blocks, i);
+
+  return call !== undefined && unlabeledAnswersRead(blocks, i, call);
 }
 
 export function blockKind(text: string): string {
@@ -422,7 +483,7 @@ export function blockKind(text: string): string {
     return `tool_use:${name || "?"}`;
   }
 
-  if (text.startsWith("[tool_result]")) return "tool_result";
+  if (text.startsWith("[tool_result]") || text.startsWith("[tool_result ")) return "tool_result";
 
   return "text";
 }
@@ -484,11 +545,26 @@ function emptyStats(judged: number): Stats {
   };
 }
 
+function pairTarget(blocks: Block[], keptText: string, i: number): number | undefined {
+  const linked = linkedIndex(blocks, i);
+
+  if (linked !== undefined) return linked;
+
+  if (blockKind(keptText) !== "tool_result") return undefined;
+
+  const call = unlabeledCallIndex(blocks, i);
+
+  if (call !== undefined && toolUseNames(blocks[call]!.text).length > 0) return call;
+
+  return undefined;
+}
+
 export async function selectBlocks(
   blocks: Block[],
   cwd: string | null,
   directive: string | null = null,
-  decisionBackend: DecisionBackend = DEFAULT_BACKEND
+  decisionBackend: DecisionBackend = DEFAULT_BACKEND,
+  targetChars = TARGET_CHARS
 ): Promise<[Kept[], Stats]> {
   if (blocks.length === 0) return [[], emptyStats(0)];
   const window = Math.max(0, blocks.length - MAX_BLOCKS);
@@ -558,32 +634,32 @@ export async function selectBlocks(
     }
   }
 
-  const keptIdx = new Set(kept.map((k) => k.i));
+  const keptIdx = new Set<number>();
+
+  for (const k of rescued) keptIdx.add(k.i);
+
+  for (const k of kept) keptIdx.add(k.i);
   const paired: Kept[] = [];
 
   for (const k of kept) {
     const i = k.i;
+    const linked = pairTarget(blocks, k.text, i);
 
-    if (
-      k.text.startsWith("[tool_result]") &&
-      i > 0 &&
-      !keptIdx.has(i - 1) &&
-      blocks[i - 1]!.text.startsWith("[tool_use")
-    ) {
+    if (linked !== undefined && !keptIdx.has(linked)) {
       paired.push({
-        i: i - 1,
-        text: cutMarked(blocks[i - 1]!.text, KEEP_CHARS),
+        i: linked,
+        text: cutMarked(blocks[linked]!.text, KEEP_CHARS),
         kind: "full",
         keep: k.keep,
         full: k.full,
       });
-      keptIdx.add(i - 1);
+      keptIdx.add(linked);
     }
 
     paired.push(k);
   }
 
-  const final = fitKept([...rescued, ...paired], blocks);
+  const final = fitKept([...rescued, ...paired], blocks, targetChars);
 
   const charsBefore = blocks.reduce((sum, b) => sum + b.text.length, 0);
   const charsAfter = final.reduce((sum, k) => sum + k.text.length, 0);

@@ -2,10 +2,21 @@
   "name": "claude-jev",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "pi": {
+    "extensions": ["./adapters/pi/jev.ts"]
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "test:pi": "node --experimental-strip-types --test adapters/pi/test/*.test.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
   },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.87.1",
     "@oxlint/plugins": "1.85.0",
     "@types/node": "^26.6.2",
     "oxlint": "1.85.0",

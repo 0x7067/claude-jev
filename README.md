@@ -32,6 +32,16 @@ export CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1
 
 The other hooks work without this flag.
 
+### Pi
+
+```bash
+pi install git:github.com/0x7067/claude-jev
+```
+
+Pi loads `adapters/pi/jev.ts` from the `pi.extensions` field in `package.json`. That file is the `session_before_compact` hook and the `/jev` command. Without `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` the hook returns nothing and Pi writes its own summary. The same two variables are read from the environment first, then from `$PI_CODING_AGENT_DIR/.env` (`~/.pi/agent/.env`). `JEV_PROVIDER` pins `typesafe` or `openrouter`. `JEV_MODEL` defaults to `jev-latest`.
+
+The hook judges with `selectBlocks` in `src/compact/strategy.ts`. Pi-only pieces stay in the adapter: how a Pi message becomes a block, pairing a tool result to its call by `toolCallId`, relabeling bash output and earlier summaries, and the `<read-files>` and `<modified-files>` lists the summary shows the model. The kept blocks are fit to 14,000 characters. Paths from dropped or truncated calls may use 2,000 more. Pi's own read paths and `<modified-files>` sit outside that reservation. Claude's compaction budget is still one flat 16,000. `0x7067/pi-jev` stays up; this repo does not replace that install yet.
+
 ### Keys and providers
 
 - If both variables are set, the plugin reads `TYPESAFE_API_KEY` first.

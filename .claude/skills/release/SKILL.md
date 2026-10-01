@@ -23,7 +23,8 @@ plans by default and writes nothing until `--execute`.
 1. **Version.** Use the one the user named. Otherwise bump automatically:
    take the last tag from `git describe --tags --abbrev=0`, minor for a
    behavior change, patch for docs or fixes. A version already set in
-   `.claude-plugin/plugin.json` by an earlier commit is the one to release.
+   `.claude-plugin/plugin.json` and root `plugin.json` by an earlier commit
+   is the one to release. Those two versions stay the same.
 2. **Notes.** `## [Unreleased]` in `CHANGELOG.md` must hold the user-facing
    changes since the last tag, one `-` bullet each, with numbers where a
    run produced them. Source: `git log --format='%h %s' <last-tag>..HEAD`.

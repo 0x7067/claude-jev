@@ -6,8 +6,9 @@
     "strict": true,
     "rewriteRelativeImportExtensions": true,
     "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "adapters/afk/src/**/*.ts", "eval/**/*.ts"],
+  "include": ["src/**/*.ts", "adapters/afk/src/**/*.ts", "adapters/pi/**/*.ts", "eval/**/*.ts"],
   "exclude": ["node_modules", "dist", "eval/observed"]
 }
