@@ -938,8 +938,10 @@ def save_state(session_id: str, state: dict) -> None:
 
 def update_state(session_id: str, change):
     """Read, change, and write the session state under an exclusive lock, so
-    parallel PostToolUse hooks cannot drop each other's hunks. Returns what
-    `change` returns."""
+    parallel PostToolUse hooks cannot drop each other's hunks. On platforms
+    without fcntl (e.g. Windows), the lock is skipped and concurrent hooks may
+    race; callers on those platforms should serialize writes themselves.
+    Returns what `change` returns."""
     os.makedirs(BLOCK_DIR, exist_ok=True)
     with open(session_path(session_id) + ".lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
