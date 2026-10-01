@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bw12nz9sm</task-id>
+<tool-use-id>toolu_01YHX7Z49mCmASbqCavJCCmB</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-pedro-Development-claude-jev/aff44a89-a9c5-484d-8845-dbaea73657dc/tasks/bw12nz9sm.output</output-file>
+<status>completed</status>
+<summary>Background command "Update PR evidence and wait for checks" completed (exit code 0)</summary>
+</task-notification>

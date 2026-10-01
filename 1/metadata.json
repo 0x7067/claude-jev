@@ -1,0 +1,123 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "01M3VYE2GTD5774Y6K8MQR8K7H",
+  "session_id": "aff44a89-a9c5-484d-8845-dbaea73657dc",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-01T14:38:30.088146Z",
+  "branch": "fix/rules-outside-project",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "src/rules.ts"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5",
+  "turn_id": "a2d37cc2a468",
+  "checkpoint_transcript_start": 529,
+  "transcript_lines_at_start": 529,
+  "compact_transcript_start": 66,
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 4099,
+    "cache_read_tokens": 422260,
+    "output_tokens": 2909,
+    "api_call_count": 4
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "claude-skill-toolu_01FUQwFq2EFvFx1j5bA9SsVT",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "pr"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "680094d50352",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 243,
+        "end": 244,
+        "entry_ids": [
+          "034271c7-5348-40f9-a0a0-2d404d40dbeb"
+        ],
+        "tool_use_id": "toolu_01FUQwFq2EFvFx1j5bA9SsVT"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01FUQwFq2EFvFx1j5bA9SsVT"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: pr",
+        "default_collapsed": true
+      }
+    },
+    {
+      "id": "claude-skill-toolu_01JMqjqVc1oYbPwVqBakdKLT",
+      "event_type": "tool_invocation",
+      "skill": {
+        "name": "release"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "skill_tool_use",
+        "confidence": "explicit"
+      },
+      "turn_id": "5b71189b8e34",
+      "transcript_anchor": {
+        "unit": "line",
+        "start": 311,
+        "end": 312,
+        "entry_ids": [
+          "3e09fa11-6092-4c59-a654-bef84ccc8e56"
+        ],
+        "tool_use_id": "toolu_01JMqjqVc1oYbPwVqBakdKLT"
+      },
+      "native": {
+        "tool_name": "Skill",
+        "tool_use_id": "toolu_01JMqjqVc1oYbPwVqBakdKLT"
+      },
+      "collapse": {
+        "target": "tool_pair",
+        "label": "Skill: release",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-01T14:38:30.059226Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 1,
+    "human_removed": 3,
+    "total_committed": 0,
+    "total_lines_changed": 4,
+    "agent_percentage": 0,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 11873,
+      "user_lines_removed": 4,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".pi/fabric/mcp-cache.json": 11180,
+        ".pi/fabric/mesh/state.json": 690,
+        "src/rules.ts": 3
+      },
+      "user_removed_per_file": {
+        "src/rules.ts": 4
+      }
+    }
+  ]
+}
