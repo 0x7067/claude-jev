@@ -321,10 +321,14 @@ function lastUserPrompt(transcriptPath: string | undefined): [string, string, nu
 }
 
 function realPath(p: string): string {
+  const abs = path.resolve(p);
+
   try {
-    return fs.realpathSync(p);
+    return fs.realpathSync(abs);
   } catch {
-    return path.resolve(p);
+    const parent = path.dirname(abs);
+
+    return parent === abs ? abs : path.join(realPath(parent), path.basename(abs));
   }
 }
 
