@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "01M3VYE2GTD5774Y6K8MQR8K7H",
+  "strategy": "manual-commit",
+  "branch": "fix/rules-outside-project",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "src/rules.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 12467,
+    "cache_read_tokens": 1367186,
+    "output_tokens": 7261,
+    "api_call_count": 11
+  }
+}
