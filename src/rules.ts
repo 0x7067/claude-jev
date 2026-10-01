@@ -320,10 +320,20 @@ function lastUserPrompt(transcriptPath: string | undefined): [string, string, nu
   return ["", "", 0];
 }
 
-function relativeTo(filePath: string, cwd: string): string {
-  const rel = path.relative(cwd, filePath);
+function realPath(p: string): string {
+  const abs = path.resolve(p);
 
-  return rel.startsWith("..") ? filePath : rel;
+  try {
+    return fs.realpathSync(abs);
+  } catch {
+    const parent = path.dirname(abs);
+
+    return parent === abs ? abs : path.join(realPath(parent), path.basename(abs));
+  }
+}
+
+function relativeTo(filePath: string, cwd: string): string {
+  return path.relative(realPath(cwd), path.join(realPath(path.dirname(filePath)), path.basename(filePath)));
 }
 
 function gitSync(cwd: string, args: string[], env?: NodeJS.ProcessEnv, timeoutMs = 4000): string {
@@ -1079,7 +1089,7 @@ async function handleBashAfter(event: HookEvent): Promise<Record<string, never>>
     hunks = [];
 
     for (const name of names) {
-      const rel = relativeTo(path.join(root, name), path.resolve(cwd));
+      const rel = relativeTo(path.join(root, name), cwd);
 
       if (EXCLUDED_RE.test(rel) || isOutside(rel)) continue;
       const hunk = gitSync(root, ["diff", "--no-color", "--no-ext-diff", "-U3", oldTree, newTree, "--", name]);
