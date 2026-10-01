@@ -10,6 +10,8 @@ export const DIGEST_HEADER =
 
 export const MAX_POINTER_LINES = 40;
 
+// 16_000 is the selected body plus <read-files> pointers only.
+// DIGEST_HEADER and ---[jev:…]--- delimiters are extra overhead on top.
 export const POINTER_CHARS = 2_000;
 
 export const SELECT_CHARS = 14_000;

@@ -408,18 +408,27 @@ const REF_CHARS = 160;
 
 const READ_CALL = /\[tool_use\s+read\]/i;
 
-function readCallIndex(blocks: Block[], i: number): number | undefined {
+const NAMED_RESULT = /^\[tool_result\s+([^\s\]]+)\]/;
+
+function linkedIndex(blocks: Block[], i: number): number | undefined {
   const linked = blocks[i]?.needs;
 
   if (linked !== undefined && linked >= 0 && linked < blocks.length && linked !== i) return linked;
 
-  if (i > 0) return i - 1;
-
   return undefined;
 }
 
+function readCallIndex(blocks: Block[], i: number): number | undefined {
+  return linkedIndex(blocks, i) ?? (i > 0 ? i - 1 : undefined);
+}
+
 function isReadResult(blocks: Block[], i: number): boolean {
-  if (blockKind(blocks[i]!.text) !== "tool_result") return false;
+  const text = blocks[i]!.text;
+
+  if (blockKind(text) !== "tool_result") return false;
+  const named = NAMED_RESULT.exec(text)?.[1];
+
+  if (named !== undefined) return named.toLowerCase() === "read";
   const call = readCallIndex(blocks, i);
 
   return call !== undefined && READ_CALL.test(blocks[call]!.text);
@@ -433,7 +442,7 @@ export function blockKind(text: string): string {
     return `tool_use:${name || "?"}`;
   }
 
-  if (text.startsWith("[tool_result]")) return "tool_result";
+  if (text.startsWith("[tool_result]") || text.startsWith("[tool_result ")) return "tool_result";
 
   return "text";
 }
@@ -496,9 +505,9 @@ function emptyStats(judged: number): Stats {
 }
 
 function pairTarget(blocks: Block[], keptText: string, i: number): number | undefined {
-  const linked = blocks[i]?.needs;
+  const linked = linkedIndex(blocks, i);
 
-  if (linked !== undefined && linked >= 0 && linked < blocks.length && linked !== i) return linked;
+  if (linked !== undefined) return linked;
 
   if (
     i > 0 &&
@@ -586,7 +595,11 @@ export async function selectBlocks(
     }
   }
 
-  const keptIdx = new Set(kept.map((k) => k.i));
+  const keptIdx = new Set<number>();
+
+  for (const k of rescued) keptIdx.add(k.i);
+
+  for (const k of kept) keptIdx.add(k.i);
   const paired: Kept[] = [];
 
   for (const k of kept) {

@@ -61,32 +61,34 @@ export default function jev(pi: ExtensionAPI): void {
   pi.on("session_before_compact", async (event, ctx) => {
     if (resolve(FILES).source === "missing") return;
     const { preparation, customInstructions, reason, signal } = event;
-
-    const blocks = blocksFrom(
-      [...preparation.messagesToSummarize, ...preparation.turnPrefixMessages],
-      preparation.previousSummary
-    );
-
-    if (blocks.length === 0) return;
-
-    const backend: DecisionBackend = {
-      name: "pi",
-      ask(state, questions, timeoutMs) {
-        return ask(state, questions, {
-          dotEnv: FILES.dotEnv,
-          callLog: FILES.callLog,
-          timeoutMs,
-          signal,
-          caller: "compaction",
-        });
-      },
-    };
-
-    const cwd = ctx.sessionManager.getCwd();
+    let blocks: ReturnType<typeof blocksFrom>;
     let kept: Kept[];
     let stats: Stats;
+    let cwd: string;
 
     try {
+      blocks = blocksFrom(
+        [...preparation.messagesToSummarize, ...preparation.turnPrefixMessages],
+        preparation.previousSummary
+      );
+
+      if (blocks.length === 0) return;
+
+      const backend: DecisionBackend = {
+        name: "pi",
+        ask(state, questions, timeoutMs) {
+          return ask(state, questions, {
+            dotEnv: FILES.dotEnv,
+            callLog: FILES.callLog,
+            timeoutMs,
+            signal,
+            caller: "compaction",
+          });
+        },
+      };
+
+      cwd = ctx.sessionManager.getCwd();
+
       [kept, stats] = await selectBlocks(blocks, cwd, directiveOf(customInstructions), backend, SELECT_CHARS);
     } catch (error) {
       const text = error instanceof Error ? error : String(error);

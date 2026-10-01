@@ -82,9 +82,12 @@ export function blockFrom(message: LlmMessage): PiBlock | undefined {
     }
 
     case "toolResult": {
+      const name = message.toolName.trim();
+      const marker = name === "" ? "[tool_result]" : `[tool_result ${name}]`;
+
       const text = judgeable(
         "tool",
-        `[tool_result] ${contentText(message.content).slice(0, TOOL_RESULT_CHARS)}`.trim()
+        `${marker} ${contentText(message.content).slice(0, TOOL_RESULT_CHARS)}`.trim()
       );
 
       if (text === null) return undefined;

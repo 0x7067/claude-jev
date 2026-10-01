@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { Answers, DecisionBackend } from "../../afk/src/shared/jev-client.ts";
+import { selectBlocks } from "../../../src/compact/strategy.ts";
 import { BLOCK_BUDGET, blockFrom, blocksFrom, type AgentMessage, type LlmMessage } from "../blocks.ts";
 
 const usage = {
@@ -56,11 +58,11 @@ function toolResult(text: string, toolCallId = "c1"): LlmMessage {
   };
 }
 
-function agentToolResult(text: string, toolCallId = "c1"): AgentMessage {
+function agentToolResult(text: string, toolCallId = "c1", toolName = "bash"): AgentMessage {
   return {
     role: "toolResult",
     toolCallId,
-    toolName: "bash",
+    toolName,
     content: [{ type: "text", text }],
     isError: false,
     timestamp: 0,
@@ -95,7 +97,7 @@ test("blockFrom writes the tool markers the checks are keyed on", () => {
 test("blockFrom gives a tool result the role tool, not user", () => {
   assert.deepEqual(blockFrom(toolResult("export const a = 1")), {
     role: "tool",
-    text: "[tool_result] export const a = 1",
+    text: "[tool_result bash] export const a = 1",
   });
 });
 
@@ -163,7 +165,7 @@ test("blockFrom truncates tool arguments and results where the port says to", ()
   assert.equal(call?.text.length, "[tool_use bash] ".length + 400);
   const result = blockFrom(toolResult("y".repeat(2000)));
 
-  assert.equal(result?.text, `[tool_result] ${"y".repeat(800)}`);
+  assert.equal(result?.text, `[tool_result bash] ${"y".repeat(800)}`);
 });
 
 test("blockFrom drops what carries nothing worth a question", () => {
@@ -188,7 +190,7 @@ test("blocksFrom flattens a span into blocks in order", () => {
 
   for (const block of out) roles.push(block.role);
   assert.deepEqual(roles, ["user", "assistant", "tool"]);
-  assert.equal(out[2]?.text, "[tool_result] contents");
+  assert.equal(out[2]?.text, "[tool_result bash] contents");
 });
 
 test("blocksFrom splits a previous summary back into competing blocks", () => {
@@ -213,4 +215,48 @@ test("blocksFrom keeps the previous summary inside the block budget", () => {
   assert.equal(out.length, BLOCK_BUDGET);
   assert.equal(out[0]?.text, "requirement 0");
   assert.equal(out[out.length - 1]?.text, `message ${BLOCK_BUDGET + 99}`);
+});
+
+test("a multi-tool turn holds the read result and not its sibling", async () => {
+  const built = blocksFrom([
+    agentAssistant([
+      { type: "text", text: "looking and running" },
+      { type: "toolCall", id: "r1", name: "read", arguments: { path: "src/a.ts" } },
+      { type: "toolCall", id: "b1", name: "bash", arguments: { cmd: "ls" } },
+    ]),
+    agentToolResult("file body", "r1", "read"),
+    agentToolResult("listing", "b1", "bash"),
+    agentUser("pin 0"),
+    agentUser("pin 1"),
+    agentUser("pin 2"),
+    agentUser("pin 3"),
+  ]);
+
+  assert.ok(built[0]?.text.includes("[tool_use read]"));
+  assert.ok(built[0]?.text.includes("[tool_use bash]"));
+  assert.equal(built[1]?.needs, built[2]?.needs);
+  assert.ok(built[1]?.text.startsWith("[tool_result read]"));
+  assert.ok(built[2]?.text.startsWith("[tool_result bash]"));
+
+  const backend: DecisionBackend = {
+    name: "low",
+    async ask(_state, questions) {
+      const answers: Answers = {};
+
+      for (const key of Object.keys(questions)) answers[key] = { noul: 0.1 };
+
+      return answers;
+    },
+  };
+
+  const [out] = await selectBlocks(built, null, null, backend);
+
+  assert.equal(
+    out.some((k) => k.text.startsWith("[tool_result read]")),
+    true
+  );
+  assert.equal(
+    out.some((k) => k.text.startsWith("[tool_result bash]")),
+    false
+  );
 });

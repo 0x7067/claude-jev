@@ -14,12 +14,12 @@ Pi reads `pi.extensions` in the root `package.json` and loads `adapters/pi/jev.t
 
 `adapters/pi/jev.ts` calls `selectBlocks` from `src/compact/strategy.ts`. The checks, thresholds, windows, and Claude's flat 16,000-character budget stay there. Claude's rows bridge does not pass a budget or a `needs` index, so its fit and its previous-row pairing are unchanged.
 
-A block may set `needs` to the index of the tool call it answers. The Pi adapter sets that from `toolCallId` before the call. When `needs` is absent, selection still pairs a tool result with the previous `[tool_use` row. A truncated block keeps a head and a tail, the same cut `truncateBlock` already uses for Claude. A tool result is held when the call it answers, `needs` or else the previous block, contains `[tool_use read]` in any capitalization.
+A block may set `needs` to the index of the tool call it answers. The Pi adapter sets that from `toolCallId` before the call. When `needs` is absent, selection still pairs a tool result with the previous `[tool_use` row. A truncated block keeps a head and a tail, the same cut `truncateBlock` already uses for Claude. A Pi tool result names its tool, and only a `read` result is held, including when the same assistant turn also called another tool. A Claude `[tool_result]` is still held when the call it answers contains `[tool_use read]` in any capitalization.
 
 ## What stays here
 
 - Pi messages become blocks in `blocks.ts`, including bash output labeled `bash` and earlier summaries labeled `summary`.
-- `digest.ts` renders `---[jev:<n>:<role>]---` lines and a `<read-files>` index of at most 40 paths and 2,000 characters. `selectBlocks` is asked to fit the body to 14,000 characters so the index has room inside the same 16,000.
+- `digest.ts` renders `---[jev:<n>:<role>]---` lines and a `<read-files>` index of at most 40 paths and 2,000 characters. `selectBlocks` is asked to fit the body to 14,000 characters. Those 16,000 characters are the selected body plus the `<read-files>` pointers only. `DIGEST_HEADER` and the `---[jev:…]---` delimiters are extra overhead on top.
 - Paths and `jev-calls.jsonl` / `jev-compact-log.jsonl` use `PI_CODING_AGENT_DIR`, or `~/.pi/agent`.
 - No key, from the environment or `$PI_CODING_AGENT_DIR/.env`, makes the hook return nothing. Pi's own summary runs. Any other failure is reported and also returns nothing. The hook does not print Claude's `{fallback}` JSON.
 

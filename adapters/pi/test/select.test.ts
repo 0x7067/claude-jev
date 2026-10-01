@@ -356,6 +356,30 @@ test("selectBlocks cuts a block that only just misses the verbatim bar", async (
   assert.equal(out[0]?.text, truncateBlock(long));
 });
 
+test("selectBlocks does not pair a call the rescue window already kept", async () => {
+  const total = MAX_BLOCKS + 2;
+  const input: Block[] = [];
+
+  for (let i = 0; i < total; i++) {
+    if (i === 0) input.push(block("assistant", '[tool_use bash] {"cmd":"ls"}'));
+    else if (i === 2) input.push(block("tool", "[tool_result] listing", 0));
+    else input.push(block("assistant", `step ${i}`));
+  }
+
+  const scores: ScoreRow[] = [];
+
+  for (let i = 0; i < total; i++) {
+    if (i === 0) scores.push({ constraint: 0.95 });
+    else if (i === 2) scores.push({ error: 0.9 });
+    else scores.push({});
+  }
+
+  const [out] = await selectBlocks(input, null, null, answerWith(scores));
+  const copies = out.filter((k) => k.i === 0);
+
+  assert.equal(copies.length, 1);
+});
+
 test("selectBlocks rescues an early constraint the window would otherwise drop", async () => {
   const total = MAX_BLOCKS + 20;
   const input = [block("user", "never touch the generated fixtures"), ...blocks(total - 1, (i) => block("assistant", `step ${i + 1}`))];
