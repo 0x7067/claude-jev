@@ -1,0 +1,5 @@
+coordinate with the other claude session to merge both PRs and release
+
+---
+
+just merge the PRs yourself
