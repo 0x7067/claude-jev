@@ -18,7 +18,9 @@ building it, and cite it when resisting.
 | `scripts/prompt_router.py` | Measurement reference for the routing eval; production runs `src/prompt-router.ts` under node type stripping |
 | `scripts/rules.py` | `PostToolUse` on edits, `PreToolUse`/`PostToolUse` on Bash to record shell writes, and `Stop` — rule enforcement |
 | `hooks/register.ts` | Experimental function-hooks module: `session.compact` -> `node --experimental-strip-types src/compactor.ts rows`, and the `/claude-jev` settings pane. A bridge, not a second implementation. |
+| `plugin.json` | Agent Plugins 1.0.0 identity. Claude Code still loads `.claude-plugin/plugin.json` and `hooks/`. |
 | `src/` | The TypeScript hook implementations the plugin runs, executed directly as source under node type stripping (needs node >= 22.18) |
+| `src/compact/strategy.ts` | Shared compaction strategy: checks, thresholds, `selectBlocks`. `src/compactor.ts` is the Claude rows bridge. |
 | `adapters/afk/` | The AFK host adapter: a TypeScript implementation of the same hooks with its own manifest, `hooks.json`, and README. Its known-gaps list is the contract — do not claim parity that table does not state. |
 | `scripts/comparators.py` | ast-grep lookups the rule hook adds to a judgment |
 | `scripts/observed.py` | Scores what a past turn actually did |
