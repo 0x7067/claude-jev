@@ -1,0 +1,13 @@
+can you review the currently open PRs?
+
+inline comments only, the main thread comment leave it to me
+
+if no findings, approve them
+
+---
+
+do we need to work on https://github.com/0x7067/claude-jev/issues/24
+
+---
+
+he's the afk maintainer, if he asked for claude-jev-afk I'm ok with that and then we can delete the branch
