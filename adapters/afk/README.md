@@ -41,7 +41,7 @@ This symlinks the directory, so it follows whatever the checkout has.
 
 AFK discovers the plugin on the next session start and wires hooks from `hooks/hooks.json`. AFK runs plugin hooks only when `~/.afk/config/afk.config.json` sets `"enablePluginHooks": true`.
 
-Use agent-afk 5.258.2 or later. Earlier versions send no `tool_input` to the rule hook after an edit.
+Use agent-afk 5.271.1 or later. Earlier versions install `claude-jev-afk` from the marketplace but never load its hooks, and load the Claude Code plugin at the repository root instead ([griffinwork40/agent-afk#2456](https://github.com/griffinwork40/agent-afk/pull/2456)).
 
 The rule hook and the Stop sweep keep per-session state, so they need the session id on each hook event. agent-afk sends it from the first release that includes [griffinwork40/agent-afk#2392](https://github.com/griffinwork40/agent-afk/pull/2392). On earlier versions both stay silent rather than share one state file across every session.
 
