@@ -21,7 +21,7 @@ import {
   type Block,
   type Kept,
   type Stats,
-} from "../src/compactor.ts";
+} from "../src/compact/strategy.ts";
 import {
   isJsonObject,
   isJsonArray,
@@ -42,7 +42,10 @@ const COMPACT_CACHE = path.join(DATA, "compact_cache.jsonl");
 
 const SUMMARY_CACHE = path.join(DATA, "summary_cache.jsonl");
 
-const COMPACTOR_SRC = path.join(ROOT, "src", "compactor.ts");
+const STRATEGY_SOURCES = [
+  path.join(ROOT, "src", "compact", "types.ts"),
+  path.join(ROOT, "src", "compact", "strategy.ts"),
+];
 
 const PROJECTS = path.join(os.homedir(), ".claude", "projects");
 
@@ -292,12 +295,13 @@ function boundaries(lines: string[]): Boundary[] {
 }
 
 function selectionSig(decisionBackend: DecisionBackend): string {
-  return crypto
-    .createHash("sha256")
-    .update(fs.readFileSync(COMPACTOR_SRC))
-    .update(decisionBackend.name)
-    .digest("hex")
-    .slice(0, 16);
+  const hash = crypto.createHash("sha256");
+
+  for (const source of STRATEGY_SOURCES) hash.update(fs.readFileSync(source));
+
+  hash.update(decisionBackend.name);
+
+  return hash.digest("hex").slice(0, 16);
 }
 
 interface CacheRow {
