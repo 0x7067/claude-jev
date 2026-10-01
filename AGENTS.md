@@ -238,9 +238,10 @@ running a full sweep.
   commit them or write code that assumes they exist.
 - Numbers in `README.md` and `eval/README.md` come from eval runs. Change one
   only with a run behind it, and say which run.
-- Bump `version` in `.claude-plugin/plugin.json` for a behavior change, and
-  add the change under `## [Unreleased]` in `CHANGELOG.md`. The AFK adapter
-  carries its own version in `adapters/afk/.claude-plugin/plugin.json`,
+- Bump `version` in `.claude-plugin/plugin.json` and root `plugin.json` together
+  for a behavior change, and add the change under `## [Unreleased]` in
+  `CHANGELOG.md`. Those two versions stay the same; `/release` writes both.
+  The AFK adapter carries its own version in `adapters/afk/.claude-plugin/plugin.json`,
   mirrored in its `package.json`, and bumps by the same rule. Releases go
   through `/release` (`.claude/skills/release`), which refuses an empty
   section.

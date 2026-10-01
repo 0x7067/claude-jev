@@ -15,7 +15,8 @@ and date, writes those lines to the GitHub release, and opens a fresh
 anything.
 
 Checks, all run in plan mode too: version is X.Y.Z and not below
-plugin.json; working tree clean; branch is main and not behind origin/main;
+.claude-plugin/plugin.json; root plugin.json matches that version; working
+tree clean; branch is main and not behind origin/main;
 tag vX.Y.Z unused; `compileall` over scripts and eval; `ruff format --check`
 and `ruff check`; `src/compactor.ts rows` falls back on empty input. Needs
 `git` with push rights and `gh-axi` authenticated for the repository.
@@ -33,6 +34,7 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 PLUGIN = os.path.join(ROOT, ".claude-plugin", "plugin.json")
+ROOT_PLUGIN = os.path.join(ROOT, "plugin.json")
 AFK_PREFIX = "adapters/afk"
 AFK_BRANCH = "afk"
 MARKETPLACE = os.path.join(ROOT, ".claude-plugin", "marketplace.json")
@@ -67,6 +69,12 @@ def preflight(version: str) -> None:
     if sh("git", "tag", "-l", f"v{version}"):
         fail(f"tag v{version} already exists")
     current = json.load(open(PLUGIN))["version"]
+    root_version = json.load(open(ROOT_PLUGIN))["version"]
+    if root_version != current:
+        fail(
+            f"plugin.json version {root_version} disagrees with "
+            f".claude-plugin/plugin.json {current}"
+        )
     if tuple(map(int, version.split("."))) < tuple(map(int, current.split("."))):
         fail(f"{version} is below the plugin.json version {current}")
     sh("python3", "-m", "compileall", "-q", "scripts", "eval")
@@ -141,7 +149,9 @@ def main() -> int:
 
     mode = "EXECUTE" if execute else "PLAN"
     print(f"[{mode}] release {tag}" + (f" (previous {prev})" if prev else ""))
-    print(f"  bump version -> {version} in plugin.json, marketplace.json")
+    print(
+        f"  bump version -> {version} in .claude-plugin/plugin.json, plugin.json, marketplace.json"
+    )
     print(f"  CHANGELOG.md: [Unreleased] -> [{version}] - {today}, new empty [Unreleased]")
     print(f"  commit '{version}: {title}', tag {tag}, push main and {tag}")
     print(f"  push a split of {AFK_PREFIX} to the {AFK_BRANCH} branch")
@@ -152,6 +162,7 @@ def main() -> int:
         return 0
 
     files.append(bump_json(PLUGIN, version, True))
+    files.append(bump_json(ROOT_PLUGIN, version, True))
     files.append(bump_json(MARKETPLACE, version, True))
     open(CHANGELOG, "w").write(new_changelog)
     sh("git", "add", *files)
