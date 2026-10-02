@@ -4,8 +4,8 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
-- A rule that has already blocked its file twice, or a turn that has already blocked twice, no longer tells you the next high-confidence hit is uncertain. The notice names the rule and says it was already raised this session. The agent is still not told again. A probability between 0.50 and 0.80 stays the uncertainty notice. On AFK, the Stop sweep uses the same split (`claude-jev-afk` 0.6.1), and that text still rides in the next prompt.
-- Two rules that slug to the same id keep separate probabilities. The question key was already unique. The verdict map was not, so the second rule's score replaced the first and both citations used it.
+- An edit rule that has already blocked its file twice no longer calls the next act-band hit uncertain. The notice says that rule was already raised. A flag-band hit stays an uncertainty notice. A Stop hit held back by the session's two turn blocks, or while the agent is still finishing, says that, and does not claim the rule was cited. On AFK, the Stop sweep says the session already used its two turn blocks (`claude-jev-afk` 0.6.1), and that text still rides in the next prompt.
+- Two rules that slug to the same id keep separate probabilities. Keys are assigned on the full in-scope list and kept for the escalation call, so a second pass cannot write one rule's score onto the other. A rule the subject filter skips cannot inherit the other rule's score.
 
 ## [0.28.0] - 2026-10-01
 

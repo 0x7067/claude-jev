@@ -21,10 +21,11 @@ abstraction with a single caller, total size) judge the session's changes
 together at Stop. Verdicts are banded: at or above ACT the hook blocks and
 the agent sees the cited rule; between FLAG and ACT the uncertainty goes to
 the user as a notice; below stays silent. One rule may block the same file
-at most twice per session, and a turn may block at most twice, because a
-repair that can't land is a loop, not enforcement. A later hit that is still
-at or above ACT is not called uncertain. The notice says it was already
-raised, and the agent is not told again.
+at most twice per session. Stop blocks at most twice per session, because a
+repair that can't land is a loop, not enforcement. A later act-band hit on
+that same rule and file says it was already raised. A Stop hit held back by
+the session cap, or while the agent is still finishing, says that instead of
+claiming the rule was cited.
 
 Always exits 0 and prints nothing on any failure — enforcement must never
 corrupt a session.
@@ -1073,12 +1074,14 @@ def cite(v: dict) -> str:
     return f'- {kind}Rule "{v["rule"]}" from {where}: "{text}" ({v["prob"]:.2f})'
 
 
-def ask_rules(state_text: str, rules: list[dict], strict: bool = False) -> dict:
-    """One batched request, questions keyed by rule id."""
-    if not rules:
-        return {}
-    questions, seen = {}, set()
+def assign_question_keys(rules: list[dict]) -> None:
+    """Give each rule a stable question key. A later call keeps keys already set."""
+    seen = set()
     for r in rules:
+        existing = r.get("_qkey")
+        if existing and existing not in seen:
+            seen.add(existing)
+            continue
         key = r["id"]
         n = 2
         while key in seen:
@@ -1086,7 +1089,14 @@ def ask_rules(state_text: str, rules: list[dict], strict: bool = False) -> dict:
             n += 1
         seen.add(key)
         r["_qkey"] = key
-        questions[key] = rule_question(r, strict)
+
+
+def ask_rules(state_text: str, rules: list[dict], strict: bool = False) -> dict:
+    """One batched request. Question keys stay put across the escalation call."""
+    if not rules:
+        return {}
+    assign_question_keys(rules)
+    questions = {prob_key(r): rule_question(r, strict) for r in rules}
     return jev.ask(state_text, questions, timeout=budget())
 
 
@@ -1106,7 +1116,10 @@ CALIB = load_calib()
 
 def act_for(rule: dict, act: float = ACT, calib: dict | None = None) -> float:
     """The threshold this rule blocks at."""
-    c = (CALIB if calib is None else calib).get(rule["id"])
+    table = CALIB if calib is None else calib
+    c = table.get(prob_key(rule))
+    if not isinstance(c, dict):
+        c = table.get(rule["id"])
     if not isinstance(c, dict) or act != ACT:
         return act
     median, n = c.get("median"), c.get("n", 0)
@@ -1201,6 +1214,7 @@ def judge_edit(
     parts.append(f"The edit:\n{hunk[:MAX_STATE_CHARS]}")
     if context:
         parts.append(f"Surrounding lines after the edit:\n{context}")
+    assign_question_keys(in_scope)
     asked, skipped = split_relevant(in_scope, hunk, rel)
     if siblings and any(r.get("subject") == "imports_deps" for r in asked):
         names = ", ".join(siblings.split(", ")[:SIBLING_CAP])
@@ -1236,9 +1250,14 @@ def judge_edit(
     return hits, probs, answers, skipped, escalated, cmp_chars
 
 
-def withheld_notice(hits: list[dict], acting: list[dict], place: str) -> str | None:
+def withheld_notice(
+    hits: list[dict],
+    acting: list[dict],
+    place: str,
+    held: str = "already raised this session — not sent to the agent",
+) -> str | None:
     """Notice for hits the agent is not told. Flag-band is uncertain.
-    An act-band hit left out of acting was already raised."""
+    `held` describes an act-band hit left out of acting."""
     uncertain = [v for v in hits if v["band"] == "flag" and v not in acting]
     raised = [v for v in hits if v["band"] == "act" and v not in acting]
 
@@ -1249,9 +1268,7 @@ def withheld_notice(hits: list[dict], acting: list[dict], place: str) -> str | N
     if uncertain:
         parts.append(f"uncertain about {listed(uncertain)} {place} — not sent to the agent")
     if raised:
-        parts.append(
-            f"{listed(raised)} {place} already raised this session — not sent to the agent"
-        )
+        parts.append(f"{listed(raised)} {place} {held}")
     if not parts:
         return None
     return "[jev rules] " + ". ".join(parts)
@@ -1456,6 +1473,7 @@ def handle_stop(event: dict) -> dict:
     if task:
         parts.append(f"The user's current request: {task}")
     parts.append(f"The changes:\n{diff[:MAX_TURN_CHARS]}")
+    assign_question_keys(turn_rules)
     asked, skipped = split_relevant(turn_rules, diff, ", ".join(sstate["files"]))
     t0 = time.monotonic()
     answers = ask_rules("\n\n".join(parts), asked)
@@ -1490,7 +1508,12 @@ def handle_stop(event: dict) -> dict:
     )
 
     out = {}
-    notice = withheld_notice(hits, acting, "at end of turn")
+    held = (
+        "not sent again while the agent is still finishing"
+        if already
+        else "omitted because this session already used its two turn blocks — not sent to the agent"
+    )
+    notice = withheld_notice(hits, acting, "at end of turn", held)
     if notice:
         out["systemMessage"] = notice
     if acting:

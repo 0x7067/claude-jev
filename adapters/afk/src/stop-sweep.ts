@@ -247,7 +247,9 @@ async function main(): Promise<void> {
   }
 
   if (raised.length > 0) {
-    lines.push(`[jev rules] ${listed(raised)} at end of turn already raised this session`);
+    lines.push(
+      `[jev rules] ${listed(raised)} at end of turn omitted because this session already used its two turn blocks`
+    );
   }
 
   if (lines.length === 0) return;
