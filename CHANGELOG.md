@@ -4,6 +4,10 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+## [0.29.2] - 2026-10-02
+
+- `package-lock.json` records an `integrity` hash for the five `@earendil-works/*` 0.87.1 packages nested under `pi-coding-agent`. Without a hash, Claude Code's plugin installer skipped them and warned on every install and update.
+
 ## [0.29.1] - 2026-10-02
 
 - `src/rules.ts` no longer drops a Bash-written file when the rewrite lands in the same wall-clock second with the same size. The hook diffs `write-tree` snapshots taken on a copy of the real index; the copy carried a fresh mtime, which cleared git's racily-clean guard, so the new stat was trusted and both snapshots hashed the old content — the snapshot was consumed with `files: []`, `partial: false`, and no error. The copy now keeps the source index's mtime, so the scratch index makes the same racy call the real index would. About one write in ten in a fast edit loop hit this; the file's change was never recorded.
@@ -12,6 +16,7 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 - An edit rule that has already blocked its file twice no longer calls the next act-band hit uncertain. The notice says that rule was already raised. A flag-band hit stays an uncertainty notice. A Stop hit held back by the session's two turn blocks, or while the agent is still finishing, says that, and does not claim the rule was cited. On AFK, the Stop sweep says the session already used its two turn blocks (`claude-jev-afk` 0.6.1), and that text still rides in the next prompt.
 - Two rules that slug to the same id keep separate probabilities. Keys are assigned on the full in-scope list and kept for the escalation call, so a second pass cannot write one rule's score onto the other. A rule the subject filter skips cannot inherit the other rule's score.
 
+[0.29.2]: https://github.com/0x7067/claude-jev/compare/v0.29.1...v0.29.2
 [0.29.1]: https://github.com/0x7067/claude-jev/compare/v0.28.0...v0.29.1
 
 ## [0.28.0] - 2026-10-01
