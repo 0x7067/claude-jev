@@ -21,8 +21,10 @@ abstraction with a single caller, total size) judge the session's changes
 together at Stop. Verdicts are banded: at or above ACT the hook blocks and
 the agent sees the cited rule; between FLAG and ACT the uncertainty goes to
 the user as a notice; below stays silent. One rule may block the same file
-at most twice per session — past that it only flags, because a repair that
-can't land is a loop, not enforcement.
+at most twice per session, and a turn may block at most twice, because a
+repair that can't land is a loop, not enforcement. A later hit that is still
+at or above ACT is not called uncertain. The notice says it was already
+raised, and the agent is not told again.
 
 Always exits 0 and prints nothing on any failure — enforcement must never
 corrupt a session.
@@ -1117,11 +1119,16 @@ def act_for(rule: dict, act: float = ACT, calib: dict | None = None) -> float:
     return act
 
 
+def prob_key(rule: dict) -> str:
+    """Question key for this rule. Unique when two rules share an id."""
+    return rule.get("_qkey") or rule["id"]
+
+
 def hits_from(rules: list[dict], probs: dict, act: float, flag: float) -> list[dict]:
     """Every rule at or above flag, banded against its own act threshold."""
     hits = []
     for r in rules:
-        p = probs.get(r["id"], 0.0)
+        p = probs.get(prob_key(r), 0.0)
         if p >= flag:
             hits.append(
                 {
@@ -1142,7 +1149,7 @@ def collect_verdicts(
     rules: list[dict], answers: dict, act: float, flag: float
 ) -> tuple[list[dict], dict]:
     """(hits at or above flag, every rule's probability for calibration)."""
-    probs = {r["id"]: round(verdict(answers.get(r.get("_qkey") or r["id"])), 3) for r in rules}
+    probs = {prob_key(r): round(verdict(answers.get(prob_key(r))), 3) for r in rules}
     return hits_from(rules, probs, act, flag), probs
 
 
@@ -1209,7 +1216,7 @@ def judge_edit(
     hits, probs = collect_verdicts(in_scope, answers, act, flag)
 
     escalated: list[str] = []
-    undecided = [r for r in asked if flag <= probs.get(r["id"], 0.0) < act_for(r, act)]
+    undecided = [r for r in asked if flag <= probs.get(prob_key(r), 0.0) < act_for(r, act)]
     if ESCALATE and undecided and (budget() is None or budget() >= ESCALATE_MIN):
         extra = list(parts)
         if block:
@@ -1223,10 +1230,29 @@ def judge_edit(
             second = {}
         if second:
             for r in undecided:
-                probs[r["id"]] = round(verdict(second.get(r.get("_qkey") or r["id"])), 3)
+                probs[prob_key(r)] = round(verdict(second.get(prob_key(r))), 3)
                 escalated.append(r["id"])
             hits = hits_from(in_scope, probs, act, flag)
     return hits, probs, answers, skipped, escalated, cmp_chars
+
+
+def withheld_notice(hits: list[dict], acting: list[dict], place: str) -> str | None:
+    """Notice for hits the agent is not told. Flag-band is uncertain.
+    An act-band hit left out of acting was already raised."""
+    uncertain = [v for v in hits if v["band"] == "flag" and v not in acting]
+    raised = [v for v in hits if v["band"] == "act" and v not in acting]
+
+    def listed(rows: list[dict]) -> str:
+        return ", ".join(f"{v['rule']} {v['prob']:.2f}" for v in rows)
+
+    parts = []
+    if uncertain:
+        parts.append(f"uncertain about {listed(uncertain)} {place} — not sent to the agent")
+    if raised:
+        parts.append(f"{listed(raised)} {place} already raised this session — not sent to the agent")
+    if not parts:
+        return None
+    return "[jev rules] " + ". ".join(parts)
 
 
 def handle_edit(event: dict) -> dict:
@@ -1270,7 +1296,6 @@ def handle_edit(event: dict) -> dict:
         return acting
 
     acting = update_state(sid, spend_blocks) if hits else []
-    flagged = [v for v in hits if v not in acting]
     log_decision(
         event,
         answers,
@@ -1292,11 +1317,9 @@ def handle_edit(event: dict) -> dict:
     )
 
     out = {}
-    if flagged:
-        listed = ", ".join(f"{v['rule']} {v['prob']:.2f}" for v in flagged)
-        out["systemMessage"] = (
-            f"[jev rules] uncertain about {listed} on {rel} — not sent to the agent"
-        )
+    notice = withheld_notice(hits, acting, f"on {rel}")
+    if notice:
+        out["systemMessage"] = notice
     if acting:
         lines = ["This edit appears to break a rule from this repository's instructions."]
         lines += [cite(v) for v in acting]
@@ -1448,7 +1471,6 @@ def handle_stop(event: dict) -> dict:
         return acting
 
     acting = update_state(sid, spend_blocks) if hits else []
-    flagged = [v for v in hits if v not in acting]
     log_decision(
         event,
         answers,
@@ -1466,11 +1488,9 @@ def handle_stop(event: dict) -> dict:
     )
 
     out = {}
-    if flagged:
-        listed = ", ".join(f"{v['rule']} {v['prob']:.2f}" for v in flagged)
-        out["systemMessage"] = (
-            f"[jev rules] uncertain about {listed} at end of turn — not sent to the agent"
-        )
+    notice = withheld_notice(hits, acting, "at end of turn")
+    if notice:
+        out["systemMessage"] = notice
     if acting:
         files = ", ".join(sstate["files"])
         lines = [

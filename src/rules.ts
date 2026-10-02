@@ -2,6 +2,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import { readStdinJson } from "../adapters/afk/src/shared/stdin.ts";
@@ -632,11 +633,15 @@ interface Hit {
   band: "act" | "flag";
 }
 
-function hitsFrom(rules: Rule[], probs: Record<string, number>, act: number, flag: number): Hit[] {
+export function probKey(r: Keyed): string {
+  return r._qkey ?? r.id;
+}
+
+function hitsFrom(rules: Keyed[], probs: Record<string, number>, act: number, flag: number): Hit[] {
   const hits: Hit[] = [];
 
   for (const r of rules) {
-    const p = probs[r.id] ?? 0;
+    const p = probs[probKey(r)] ?? 0;
 
     if (p >= flag) {
       hits.push({
@@ -664,7 +669,7 @@ function collectVerdicts(
   const probs: Record<string, number> = {};
 
   for (const r of rules) {
-    probs[r.id] = Math.round(verdictOf(answers[r._qkey ?? r.id]) * 1000) / 1000;
+    probs[probKey(r)] = Math.round(verdictOf(answers[probKey(r)]) * 1000) / 1000;
   }
 
   return [hitsFrom(rules, probs, act, flag), probs];
@@ -753,6 +758,25 @@ function ruleHashes(inScope: Rule[]) {
   }
 
   return out;
+}
+
+export function withheldNotice(hits: Hit[], acting: Hit[], place: string): string | undefined {
+  const uncertain = hits.filter((v) => v.band === "flag" && !acting.includes(v));
+  const raised = hits.filter((v) => v.band === "act" && !acting.includes(v));
+  const parts: string[] = [];
+  const listed = (rows: Hit[]) => rows.map((v) => `${v.rule} ${v.prob.toFixed(2)}`).join(", ");
+
+  if (uncertain.length > 0) {
+    parts.push(`uncertain about ${listed(uncertain)} ${place} — not sent to the agent`);
+  }
+
+  if (raised.length > 0) {
+    parts.push(`${listed(raised)} ${place} already raised this session — not sent to the agent`);
+  }
+
+  if (parts.length === 0) return undefined;
+
+  return `[jev rules] ${parts.join(". ")}`;
 }
 
 function cite(v: Hit): string {
@@ -874,9 +898,11 @@ async function judgeEdit(
 
   const escalated: string[] = [];
 
-  const undecided = asked.filter(
-    (r) => flag <= (probs[r.id] ?? 0) && (probs[r.id] ?? 0) < actFor(r, act)
-  );
+  const undecided = asked.filter((r) => {
+    const p = probs[probKey(r)] ?? 0;
+
+    return flag <= p && p < actFor(r, act);
+  });
 
   const budget = budgetSeconds();
 
@@ -900,7 +926,7 @@ async function judgeEdit(
 
     if (Object.keys(second).length > 0) {
       for (const r of undecided) {
-        probs[r.id] = Math.round(verdictOf(second[r._qkey ?? r.id]) * 1000) / 1000;
+        probs[probKey(r)] = Math.round(verdictOf(second[probKey(r)]) * 1000) / 1000;
         escalated.push(r.id);
       }
 
@@ -989,20 +1015,18 @@ async function handleEdit(event: HookEvent): Promise<PostToolUseOutput | StopOut
 
   if (flagged.length === 0 && acting.length === 0) return {};
 
-  const listed = flagged.map((v) => `${v.rule} ${v.prob.toFixed(2)}`).join(", ");
+  const notice = withheldNotice(hits, acting, `on ${rel}`);
   const lines = ["This edit appears to break a rule from this repository's instructions.", ...acting.map(cite), `Repair ${rel} now, then continue with the task.`];
 
-  if (flagged.length > 0 && acting.length > 0) {
+  if (notice && acting.length > 0) {
     return {
-      systemMessage: `[jev rules] uncertain about ${listed} on ${rel} — not sent to the agent`,
+      systemMessage: notice,
       decision: "block",
       reason: lines.join("\n"),
     };
   }
 
-  if (flagged.length > 0) {
-    return { systemMessage: `[jev rules] uncertain about ${listed} on ${rel} — not sent to the agent` };
-  }
+  if (notice) return { systemMessage: notice };
 
   return { decision: "block", reason: lines.join("\n") };
 }
@@ -1159,8 +1183,6 @@ async function handleStop(event: HookEvent): Promise<StopOutput | Record<string,
         })
       : [];
 
-  const flagged = hits.filter((v) => !acting.includes(v));
-
   logDecision(event, answers, probs, hits, rules.length, rules.length - turnRules.length, "turn", {
     blocked: acting.map((v) => v.rule),
     hashes: ruleHashes(turnRules),
@@ -1171,10 +1193,9 @@ async function handleStop(event: HookEvent): Promise<StopOutput | Record<string,
 
   const out: StopOutput = {};
 
-  if (flagged.length > 0) {
-    const listed = flagged.map((v) => `${v.rule} ${v.prob.toFixed(2)}`).join(", ");
-    out.systemMessage = `[jev rules] uncertain about ${listed} at end of turn — not sent to the agent`;
-  }
+  const notice = withheldNotice(hits, acting, "at end of turn");
+
+  if (notice) out.systemMessage = notice;
 
   if (acting.length > 0) {
     const files = sstate.files.join(", ");
@@ -1214,7 +1235,11 @@ async function main(): Promise<void> {
   }
 }
 
-try {
-  await main();
-} catch {
+const entry = process.argv[1];
+
+if (entry && import.meta.url === pathToFileURL(path.resolve(entry)).href) {
+  try {
+    await main();
+  } catch {
+  }
 }

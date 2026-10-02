@@ -1,6 +1,6 @@
 {
   "name": "@claude-jev/afk-adapter",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "TypeScript AFK host adapter for claude-jev",
   "type": "module",
   "scripts": {
