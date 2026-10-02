@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to claude-jev. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow the plugin manifest. `scripts/release.py` turns the `[Unreleased]` section into the next release.
+All notable changes to claude-jev. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow the plugin manifest. `.claude/skills/release/release.py` turns the `[Unreleased]` section into the next release.
 
 ## [Unreleased]
 
