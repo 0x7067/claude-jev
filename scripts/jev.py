@@ -209,9 +209,9 @@ def ask(
         provider = DECISIONS_PROVIDER
     else:
         source, key, provider = resolve()
-        provider = provider or PROVIDERS[0]
     if source == "missing":
         raise JevError(missing_key_message(provider))
+    provider = provider or PROVIDERS[0]
     body = {
         "state": state,
         "model": model_id,

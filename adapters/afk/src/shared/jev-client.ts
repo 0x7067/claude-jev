@@ -135,7 +135,8 @@ function resolveKey(): ResolvedKey {
 
   if (saved) return { key: saved, provider: pinned ?? providerFor(saved) };
 
-  throw new Error("No Jev API key found. Set TYPESAFE_API_KEY or OPENROUTER_API_KEY.");
+  const names = pinned ? [pinned.keyVar] : PROVIDERS.map((p) => p.keyVar);
+  throw new Error(`No Jev API key found. Set ${names.join(" or ")}.`);
 }
 
 

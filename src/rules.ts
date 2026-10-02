@@ -1058,7 +1058,11 @@ function worktreeTree(cwd: string): [string, string, string] {
   fs.mkdirSync(BLOCK_DIR, { recursive: true });
 
   try {
-    if (fs.existsSync(index)) fs.copyFileSync(index, scratch);
+    if (fs.existsSync(index)) {
+      fs.copyFileSync(index, scratch);
+      const st = fs.statSync(index);
+      fs.utimesSync(scratch, st.atime, st.mtime);
+    }
     const env = { GIT_INDEX_FILE: scratch };
     gitSync(root, ["add", "-A"], env);
     const ignored = gitSync(root, ["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"]);

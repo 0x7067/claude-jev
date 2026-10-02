@@ -17,8 +17,8 @@ feature file as the recipe.
 - Never drive a verify home that was not started by this verification run.
 - `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY` may both be unset. Without them,
   hooks must fail open (exit 0, no stdout) and `jev.py` must exit 2 with
-  `jev: set TYPESAFE_API_KEY` (unpinned; a pinned provider names its own
-  variable). That is the **in-band**
+  `jev: set TYPESAFE_API_KEY or OPENROUTER_API_KEY` (unpinned; a pinned
+  provider names its own variable). That is the **in-band**
   contract for this skill. `control-jev` passes your environment through, so if
   your shell has real keys, every no-key recipe must start with
   `unset TYPESAFE_API_KEY OPENROUTER_API_KEY CLAUDE_PLUGIN_OPTION_TYPESAFEAPIKEY`

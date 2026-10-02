@@ -525,7 +525,7 @@ export function register(on, options) {
     try {
       out = JSON.parse(run.stdout);
     } catch (err) {
-      return fallThrough(`unreadable compactor.py output: ${String(err)}`);
+      return fallThrough(`unreadable compactor.ts output: ${String(err)}`);
     }
 
     if (!out || !Array.isArray(out.messages)) {

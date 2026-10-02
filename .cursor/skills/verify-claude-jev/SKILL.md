@@ -196,7 +196,7 @@ Standards: exercise the real stdin/CLI path Claude Code or the agent uses —
 not internal setters. Capture the action and the resulting state. Mocks only
 at the production boundary already used by the plugin (missing
 `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY` → fail open / `jev: set
-TYPESAFE_API_KEY` unpinned). When proving a no-key path, observe
+TYPESAFE_API_KEY or OPENROUTER_API_KEY` unpinned). When proving a no-key path, observe
 the real surface: hooks stay silent at exit 0; `jev` CLI exits 2 with the
 set-key message; `rows` no-key multi-row fallback exits 0 with JSON
 `{"fallback":…}` (e.g. `jev: Error: every chunk failed`) — not silence or exit 2. A
