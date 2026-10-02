@@ -1216,6 +1216,7 @@ async function handleStop(event: HookEvent): Promise<StopOutput | Record<string,
   const held = already
     ? "not sent again while the agent is still finishing"
     : "omitted because this session already used its two turn blocks — not sent to the agent";
+
   const notice = withheldNotice(hits, acting, "at end of turn", held);
 
   if (notice) out.systemMessage = notice;
