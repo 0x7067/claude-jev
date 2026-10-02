@@ -1249,7 +1249,9 @@ def withheld_notice(hits: list[dict], acting: list[dict], place: str) -> str | N
     if uncertain:
         parts.append(f"uncertain about {listed(uncertain)} {place} — not sent to the agent")
     if raised:
-        parts.append(f"{listed(raised)} {place} already raised this session — not sent to the agent")
+        parts.append(
+            f"{listed(raised)} {place} already raised this session — not sent to the agent"
+        )
     if not parts:
         return None
     return "[jev rules] " + ". ".join(parts)
