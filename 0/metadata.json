@@ -1,0 +1,87 @@
+{
+  "cli_version": "0.11.3",
+  "checkpoint_id": "01M3Y9PRB36HZE6H1KKKMYD67A",
+  "session_id": "01a0f95b-ad12-7696-9720-8775845a7b89",
+  "strategy": "manual-commit",
+  "created_at": "2026-10-02T12:33:57.364517Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".claude-plugin/plugin.json",
+    "CHANGELOG.md",
+    "adapters/afk/.claude-plugin/plugin.json",
+    "adapters/afk/package.json",
+    "adapters/afk/src/shared/jev-client.ts",
+    "hooks/register.ts",
+    "plugin.json",
+    "scripts/jev.py",
+    "src/rules.ts",
+    "src/session-start.ts"
+  ],
+  "agent": "Pi",
+  "model": "swe-2",
+  "turn_id": "7e387d8a5a01",
+  "checkpoint_transcript_start": 216,
+  "transcript_lines_at_start": 216,
+  "compact_transcript_start": 106,
+  "token_usage": {
+    "input_tokens": 124757,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 1273344,
+    "output_tokens": 23001,
+    "api_call_count": 23
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "pi-skill-maintain-verification-skill-2026-10-01T21:25:33.063Z-0",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "maintain-verification-skill"
+      },
+      "source": {
+        "agent": "pi",
+        "signal": "input_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "d8a5c5f87dff",
+      "timestamp": "2026-10-01T21:25:33.063Z",
+      "native": {
+        "command": "/skill:maintain-verification-skill"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/skill:maintain-verification-skill",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-10-02T12:33:57.233097Z",
+    "agent_lines": 16,
+    "agent_removed": 47,
+    "human_added": 10,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 26,
+    "total_lines_changed": 83,
+    "agent_percentage": 75.90361445783132,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 11964,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0,
+      "user_added_per_file": {
+        ".pi/fabric/mcp-cache.json": 11180,
+        ".pi/fabric/mesh/state.json": 784
+      }
+    }
+  ]
+}
