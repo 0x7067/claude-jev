@@ -4,6 +4,10 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+- An AFK rule check that fails while classifying instruction files logs `rules-error`. A failure while reading those files, before Jev is asked, stays `rules-skip` with reason `rules-unreadable`.
+- Two AFK rules that share an id keep separate probabilities, violation ids, and block ids in the log row.
+- `stats.py` counts a later `rules-skip` of a warned file as not rechecked, and takes the score from the next check that asked Jev. AFK rows stay out of Rule outcomes and its flagged-only list. They still join Rule calibration.
+
 ## [0.29.2] - 2026-10-02
 
 - `package-lock.json` records an `integrity` hash for the five `@earendil-works/*` 0.87.1 packages nested under `pi-coding-agent`. Without a hash, Claude Code's plugin installer skipped them and warned on every install and update.

@@ -167,10 +167,13 @@ def rule_outcomes(entries: list[dict]) -> list[dict]:
     means later edits to the file left it alone, which live has been the
     common case: the block lands after the write, so an agent that disagrees
     just says so and moves on. Entries logged before `blocked` existed are
-    skipped, not counted as anything.
+    skipped, not counted as anything. Rows with `host` `afk` are omitted;
+    `print_afk_checks` reports those blocks.
     """
     out = []
     for e in entries:
+        if e.get("host") == "afk":
+            continue
         if e.get("kind") != "rules" or e.get("phase") != "edit":
             continue
         blocked = e.get("blocked")
@@ -319,6 +322,104 @@ def print_calls(days: int | None) -> None:
     )
 
 
+def afk_follow_through(rows: list[dict]) -> collections.Counter:
+    """For each rule the AFK edit hook warned about or blocked, what the next
+    check of the same file in the same session said about that rule.
+
+    The sequence includes a later `rules-skip` for that file. The score comes from the next
+    `rules` row. `cleared` means that row scored the rule below the flag
+    threshold, `still flagged` means it did not, `not rechecked` means that
+    row omitted the rule or every later check skipped the ask, and `no later
+    check` means the file was not checked again. This is observational: there
+    is no unwarned comparison group, so it shows whether warnings are followed
+    by fixes, not that they cause them.
+    """
+    out: collections.Counter = collections.Counter()
+    by_key = collections.defaultdict(list)
+    for e in rows:
+        if e.get("kind") not in ("rules", "rules-skip"):
+            continue
+        if e.get("phase") != "edit" or not e.get("file"):
+            continue
+        by_key[(e.get("session_id"), os.path.normpath(e["file"]))].append(e)
+    for es in by_key.values():
+        es.sort(key=lambda e: e.get("ts", ""))
+        for i, e in enumerate(es):
+            warned = [v.get("rule") for v in e.get("violations") or [] if isinstance(v, dict)]
+            if not warned:
+                continue
+            later = es[i + 1 :]
+            scored = next((n for n in later if n.get("kind") == "rules"), None)
+            for rid in warned:
+                if not later:
+                    out["no later check"] += 1
+                    continue
+                if scored is None:
+                    out["not rechecked"] += 1
+                    continue
+                p = (scored.get("probs") or {}).get(rid)
+                if not isinstance(p, (int, float)):
+                    out["not rechecked"] += 1
+                elif p < 0.5:
+                    out["cleared"] += 1
+                else:
+                    out["still flagged"] += 1
+    return out
+
+
+def print_afk_checks(entries: list[dict]) -> None:
+    """What the AFK adapter's rule hooks did on every check, including the
+    checks that ended before Jev was asked."""
+    rows = [
+        e for e in entries if e.get("host") == "afk" and str(e.get("kind", "")).startswith("rules")
+    ]
+    if not rows:
+        return
+    print(f"\nAFK rule checks ({len(rows)} logged):")
+    print(
+        f"  {'phase':<7}{'checks':>8}{'clean':>7}{'flagged':>9}"
+        f"{'blocked':>9}{'skipped':>9}{'errors':>8}"
+    )
+    judged = [e for e in rows if e.get("kind") == "rules"]
+    for phase in ("edit", "turn"):
+        ps = [e for e in rows if e.get("phase") == phase]
+        if not ps:
+            continue
+        js = [e for e in ps if e.get("kind") == "rules"]
+        blocked = sum(1 for e in js if e.get("blocked"))
+        flagged = sum(1 for e in js if not e.get("blocked") and e.get("violations"))
+        skipped = sum(1 for e in ps if e.get("kind") == "rules-skip")
+        errors = sum(1 for e in ps if e.get("kind") == "rules-error")
+        clean = len(js) - blocked - flagged
+        print(f"  {phase:<7}{len(ps):>8}{clean:>7}{flagged:>9}{blocked:>9}{skipped:>9}{errors:>8}")
+    reasons = collections.Counter(
+        str(e.get("reason")) for e in rows if e.get("kind") == "rules-skip"
+    )
+    if reasons:
+        print(
+            "  ended before asking Jev: " + ", ".join(f"{k} {v}" for k, v in reasons.most_common())
+        )
+    noted: collections.Counter = collections.Counter()
+    stopped: collections.Counter = collections.Counter()
+    for e in judged:
+        for v in e.get("violations") or []:
+            if isinstance(v, dict):
+                noted[str(v.get("rule"))] += 1
+        for rid in e.get("blocked") or []:
+            stopped[str(rid)] += 1
+    if noted:
+        print(f"  {'most-raised rules':<40}{'raised':>7}{'blocked':>9}")
+        for rid, n in noted.most_common(10):
+            print(f"  {rid[:38]:<40}{n:>7}{stopped[rid]:>9}")
+    follow = afk_follow_through(rows)
+    if follow:
+        print(
+            "  after a warning or block, the next check of that file: "
+            + ", ".join(f"{k} {v}" for k, v in follow.most_common())
+        )
+        print("  Observational: no unwarned comparison group, so this is not proof of effect.")
+
+
 def print_rule_outcomes(entries: list[dict]) -> None:
     """Whether a block led to a repair, and how often the same edit came back."""
     outcomes = rule_outcomes(entries)
@@ -355,7 +456,7 @@ def print_rule_outcomes(entries: list[dict]) -> None:
             )
     flagged = collections.Counter()
     for e in entries:
-        if e.get("kind") != "rules":
+        if e.get("host") == "afk" or e.get("kind") != "rules":
             continue
         for v in e.get("violations") or []:
             if isinstance(v, dict) and v.get("band") == "flag":
@@ -532,6 +633,7 @@ def main() -> int:
 
     print_calls(args.days)
     print_rule_outcomes(entries)
+    print_afk_checks(entries)
     print_compaction(args.days)
     return 0
 

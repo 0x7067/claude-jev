@@ -107,6 +107,16 @@ Edits in the 0.50-0.80 range are not blocked. The hook prints them as `additiona
 
 `stop-sweep.ts` judges the edits that went through since its last completed judgment, then clears that record; when the Jev call fails, the edits wait for the next turn's sweep. AFK fires `Stop` only in the interactive REPL, gives each Stop handler 5 s, and shows a Stop block to the user as a notice without passing it to the agent. The sweep therefore reports as `additionalContext`, which AFK prepends to the user's next prompt, and asks the agent to repair the file unless the user says otherwise.
 
+## What it logs
+
+Every rule check appends one row to `~/.claude/jev-router-log.jsonl`, tagged `"host": "afk"`, so `python3 scripts/stats.py` reports AFK sessions next to Claude Code ones:
+
+- `kind: "rules"`: Jev was asked. Same shape as the Claude Code hook's row: `phase` (`edit` or `turn`), `session_id`, `file`, `probs` per rule id, `violations` with their band, `blocked`, and `ms`. `added_head` and `input_hash` stay `null`, so no edited code is written to the log.
+- `kind: "rules-skip"`: the check ended before Jev was asked, with `reason` `no-rules`, `rules-unreadable`, `none-in-scope`, or `none-relevant`. `rules-unreadable` is a failure while reading rule files.
+- `kind: "rules-error"`: a Jev call failed, while classifying the instruction files or while judging the check; `error` holds the first 300 characters.
+
+The `AFK rule checks` section of `stats.py` counts these per phase, lists the rules raised most, and shows what the next check of the same file said about each warned or blocked rule. A later `rules-skip` for that file counts as a check. The score comes from the next row that asked Jev; when that row omits the rule, or every later check skipped the ask, the count is `not rechecked`. That line is observational, not a controlled comparison. Uncertain matches are logged here even though AFK does not deliver them (see below), so this log is the only place they show up. AFK `rules` rows join Rule calibration. Rule outcomes and its flagged-only list skip them.
+
 ## Known gaps
 
 - **Hook environment**: AFK passes neither `CLAUDE_CONFIG_DIR` nor `CLAUDE_PLUGIN_OPTION_*` to hooks (agent-afk 5.265.3, [#2373](https://github.com/griffinwork40/agent-afk/issues/2373)). Logs go to `~/.claude`, and the provider follows the key's prefix; it cannot be pinned.
@@ -136,6 +146,7 @@ adapters/afk/
       rule-parser.ts   # Parse, classify, and cache rules
       utils.ts         # Shared utilities
       state.ts         # Session state helpers
+      check-log.ts     # One log row per rule check
     session-start.ts   # SessionStart: rule digest injection
     prompt-router.ts   # UserPromptSubmit: routing hint
     subagent-router.ts # PreToolUse(Agent): model tier
