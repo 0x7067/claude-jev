@@ -18,7 +18,9 @@ import { loadState, saveState } from "./shared/state.ts";
 import {
   logCheck,
   logCheckError,
+  logRulesLoadFailure,
   logSkip,
+  loggedRuleKeys,
   probsByRule,
   type CheckContext,
   type CheckHit,
@@ -141,11 +143,14 @@ async function judge(
   ctx: CheckContext
 ): Promise<Verdict> {
   let rules: Rule[];
+  const started = performance.now();
 
   try {
     rules = await loadRules(cwd, { afkRules: true });
-  } catch {
-    logSkip(ctx, "rules-unreadable");
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+
+    logRulesLoadFailure(ctx, error, Math.round(performance.now() - started));
 
     return {};
   }
@@ -215,14 +220,16 @@ async function judge(
 
   type Hit = CheckHit;
 
+  const logKeys = loggedRuleKeys(relevant);
   const hits: Hit[] = [];
 
   for (const r of relevant) {
     const key = qkeyMap.get(r) ?? slugify(r.text);
     const prob = verdict(answers[key]);
+    const logKey = logKeys.get(r) ?? r.id;
 
     if (prob >= FLAG) {
-      hits.push({ rule: r, prob, band: prob >= ACT ? "act" : "flag" });
+      hits.push({ rule: r, logKey, prob, band: prob >= ACT ? "act" : "flag" });
     }
   }
 
@@ -254,7 +261,7 @@ async function judge(
   }
 
   saveState(sessionId, state);
-  logCheck(ctx, { ...tally, blocked: acting.map((h) => h.rule.id) });
+  logCheck(ctx, { ...tally, blocked: acting.map((h) => h.logKey) });
 
   if (acting.length > 0) {
     const lines = [

@@ -4,6 +4,10 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+- An AFK rule check that fails while classifying instruction files logs `rules-error`. A failure while reading those files, before Jev is asked, stays `rules-skip` with reason `rules-unreadable`.
+- Two AFK rules that share an id keep separate probabilities, violation ids, and block ids in the log row.
+- `stats.py` counts a later `rules-skip` of a warned file as not rechecked, and takes the score from the next check that asked Jev. AFK rows stay out of Rule outcomes and its flagged-only list. They still join Rule calibration.
+
 ## [0.29.1] - 2026-10-02
 
 - `src/rules.ts` no longer drops a Bash-written file when the rewrite lands in the same wall-clock second with the same size. The hook diffs `write-tree` snapshots taken on a copy of the real index; the copy carried a fresh mtime, which cleared git's racily-clean guard, so the new stat was trusted and both snapshots hashed the old content — the snapshot was consumed with `files: []`, `partial: false`, and no error. The copy now keeps the source index's mtime, so the scratch index makes the same racy call the real index would. About one write in ten in a fast edit loop hit this; the file's change was never recorded.

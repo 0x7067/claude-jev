@@ -112,10 +112,10 @@ Edits in the 0.50-0.80 range are not blocked. The hook prints them as `additiona
 Every rule check appends one row to `~/.claude/jev-router-log.jsonl`, tagged `"host": "afk"`, so `python3 scripts/stats.py` reports AFK sessions next to Claude Code ones:
 
 - `kind: "rules"`: Jev was asked. Same shape as the Claude Code hook's row: `phase` (`edit` or `turn`), `session_id`, `file`, `probs` per rule id, `violations` with their band, `blocked`, and `ms`. `added_head` and `input_hash` stay `null`, so no edited code is written to the log.
-- `kind: "rules-skip"`: the check ended before Jev was asked, with `reason` `no-rules`, `rules-unreadable`, `none-in-scope`, or `none-relevant`.
-- `kind: "rules-error"`: the Jev call failed; `error` holds the first 300 characters.
+- `kind: "rules-skip"`: the check ended before Jev was asked, with `reason` `no-rules`, `rules-unreadable`, `none-in-scope`, or `none-relevant`. `rules-unreadable` is a failure while reading rule files.
+- `kind: "rules-error"`: a Jev call failed, while classifying the instruction files or while judging the check; `error` holds the first 300 characters.
 
-The `AFK rule checks` section of `stats.py` counts these per phase, lists the rules raised most, and shows what the next check of the same file said about each warned or blocked rule. That last line is observational, not a controlled comparison. Uncertain matches are logged here even though AFK does not deliver them (see below), so this log is the only place they show up.
+The `AFK rule checks` section of `stats.py` counts these per phase, lists the rules raised most, and shows what the next check of the same file said about each warned or blocked rule. A later `rules-skip` for that file counts as a check. The score comes from the next row that asked Jev; when that row omits the rule, or every later check skipped the ask, the count is `not rechecked`. That line is observational, not a controlled comparison. Uncertain matches are logged here even though AFK does not deliver them (see below), so this log is the only place they show up. AFK `rules` rows join Rule calibration. Rule outcomes and its flagged-only list skip them.
 
 ## Known gaps
 

@@ -1,5 +1,5 @@
 import { appendLogLine, ROUTER_LOG } from "./config.ts";
-import type { Rule } from "./rule-parser.ts";
+import { RuleClassificationError, type Rule } from "./rule-parser.ts";
 
 export type CheckPhase = "edit" | "turn";
 
@@ -13,6 +13,7 @@ export type RuleProbs = Map<string, number>;
 
 export interface CheckHit {
   rule: Rule;
+  logKey: string;
   prob: number;
   band: "act" | "flag";
 }
@@ -120,7 +121,7 @@ export function logCheck(ctx: CheckContext, result: CheckResult): void {
     ms: result.ms,
     probs: Object.fromEntries(result.probs),
     violations: result.hits.map((h) => ({
-      rule: h.rule.id,
+      rule: h.logKey,
       file: h.rule.file,
       line: h.rule.line,
       prob: round(h.prob),
@@ -140,18 +141,52 @@ export function logCheckError(ctx: CheckContext, message: string, ms: number): v
   write({ ...base(ctx), kind: "rules-error", ms, error: message.slice(0, 300) });
 }
 
+export function logRulesLoadFailure(ctx: CheckContext, error: Error, ms: number): void {
+  if (error instanceof RuleClassificationError) {
+    logCheckError(ctx, error.message, ms);
+
+    return;
+  }
+
+  logSkip(ctx, "rules-unreadable");
+}
+
+export function loggedRuleKeys(rules: Rule[]): Map<Rule, string> {
+  const seen = new Set<string>();
+  const out = new Map<Rule, string>();
+
+  for (const r of rules) {
+    let key = r.id;
+    let n = 2;
+
+    while (seen.has(key)) {
+      key = `${r.id}-${n}`;
+      n++;
+    }
+
+    seen.add(key);
+    out.set(r, key);
+  }
+
+  return out;
+}
+
 export function probsByRule(
   rules: Rule[],
   keyOf: (r: Rule) => string | undefined,
   probOf: (key: string) => number
 ): RuleProbs {
+  const ids = loggedRuleKeys(rules);
   const out: RuleProbs = new Map();
 
   for (const r of rules) {
     const key = keyOf(r);
 
     if (key === undefined) continue;
-    out.set(r.id, round(probOf(key)));
+    const id = ids.get(r);
+
+    if (id === undefined) continue;
+    out.set(id, round(probOf(key)));
   }
 
   return out;

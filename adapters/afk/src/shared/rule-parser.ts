@@ -39,6 +39,13 @@ export interface Rule {
   context: string;
 }
 
+export class RuleClassificationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RuleClassificationError";
+  }
+}
+
 const MIN_ITEM_CHARS = 20;
 
 const MAX_ITEM_CHARS = 600;
@@ -345,35 +352,42 @@ async function classifyChunk(
     return new Map([...result].map(([k2, v2]) => [start + k2, v2]));
   }
 
-  const answers = await jevAsk(state, questions, timeoutMs);
+  try {
+    const answers = await jevAsk(state, questions, timeoutMs);
 
-  if (Object.keys(answers).length === 0) {
-    throw new Error("backend returned no answers");
+    if (Object.keys(answers).length === 0) {
+      throw new RuleClassificationError("backend returned no answers");
+    }
+
+    const out: Record<number, ClassifiedItem> = {};
+
+    for (let i = 0; i < chunk.length; i++) {
+      const q = answers["q" + i];
+      const p = q && "noul" in q ? q.noul : undefined;
+
+      if (!isNumber(p) || p < INSTRUCTION_MIN) continue;
+      const t = answers["t" + i];
+      const tn = t && "noul" in t ? t.noul : undefined;
+      const turn = isNumber(tn) && tn >= TURN_MIN;
+      out[i] = {
+        when: turn ? "turn" : "edit",
+        polarity: choiceOf(answers["p" + i], POLARITY_CRITERIA, DEFAULT_POLARITY),
+        subject: choiceOf(answers["s" + i], SUBJECT_CRITERIA, DEFAULT_SUBJECT),
+      };
+    }
+
+    cache[key] = Object.fromEntries(
+      Object.entries(out).map(([k, v]): [string, Json] => [k, { when: v.when, polarity: v.polarity, subject: v.subject }])
+    );
+    saveCache(cache, cachePath);
+
+    return new Map(Object.entries(out).map(([k, v]) => [start + parseInt(k, 10), v]));
+  } catch (e) {
+    if (e instanceof RuleClassificationError) throw e;
+    const message = e instanceof Error ? e.message : String(e);
+
+    throw new RuleClassificationError(message);
   }
-
-  const out: Record<number, ClassifiedItem> = {};
-
-  for (let i = 0; i < chunk.length; i++) {
-    const q = answers["q" + i];
-    const p = q && "noul" in q ? q.noul : undefined;
-
-    if (!isNumber(p) || p < INSTRUCTION_MIN) continue;
-    const t = answers["t" + i];
-    const tn = t && "noul" in t ? t.noul : undefined;
-    const turn = isNumber(tn) && tn >= TURN_MIN;
-    out[i] = {
-      when: turn ? "turn" : "edit",
-      polarity: choiceOf(answers["p" + i], POLARITY_CRITERIA, DEFAULT_POLARITY),
-      subject: choiceOf(answers["s" + i], SUBJECT_CRITERIA, DEFAULT_SUBJECT),
-    };
-  }
-
-  cache[key] = Object.fromEntries(
-    Object.entries(out).map(([k, v]): [string, Json] => [k, { when: v.when, polarity: v.polarity, subject: v.subject }])
-  );
-  saveCache(cache, cachePath);
-
-  return new Map(Object.entries(out).map(([k, v]) => [start + parseInt(k, 10), v]));
 }
 
 async function classifyItems(

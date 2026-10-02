@@ -14,7 +14,9 @@ import { loadState, saveState } from "./shared/state.ts";
 import {
   logCheck,
   logCheckError,
+  logRulesLoadFailure,
   logSkip,
+  loggedRuleKeys,
   probsByRule,
   type CheckContext,
   type CheckHit,
@@ -122,11 +124,14 @@ async function main(): Promise<void> {
 
   const ctx: CheckContext = { phase: "turn", sessionId, cwd, file: null };
   let rules: Rule[];
+  const started = performance.now();
 
   try {
     rules = await loadRules(cwd, { afkRules: true });
-  } catch {
-    logSkip(ctx, "rules-unreadable");
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+
+    logRulesLoadFailure(ctx, error, Math.round(performance.now() - started));
 
     return;
   }
@@ -198,20 +203,21 @@ async function main(): Promise<void> {
 
   type Hit = CheckHit;
 
+  const asked = turnRules.filter((r) => qkeyMap.has(r));
+  const logKeys = loggedRuleKeys(asked);
   const hits: Hit[] = [];
 
-  for (const r of turnRules) {
+  for (const r of asked) {
     const key = qkeyMap.get(r);
 
     if (!key) continue;
     const prob = verdict(answers[key]);
+    const logKey = logKeys.get(r) ?? r.id;
 
     if (prob >= FLAG) {
-      hits.push({ rule: r, prob, band: prob >= ACT ? "act" : "flag" });
+      hits.push({ rule: r, logKey, prob, band: prob >= ACT ? "act" : "flag" });
     }
   }
-
-  const asked = turnRules.filter((r) => qkeyMap.has(r));
 
   const tally = {
     nRules: rules.length,
@@ -239,7 +245,7 @@ async function main(): Promise<void> {
   }
 
   saveState(sessionId, state);
-  logCheck(ctx, { ...tally, blocked: acting.map((h) => h.rule.id) });
+  logCheck(ctx, { ...tally, blocked: acting.map((h) => h.logKey) });
 
   const flagged = hits.filter((h) => !acting.includes(h));
   const lines: string[] = [];
