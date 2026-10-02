@@ -4,6 +4,9 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+- An edit rule that has already blocked its file twice no longer calls the next act-band hit uncertain. The notice says that rule was already raised. A flag-band hit stays an uncertainty notice. A Stop hit held back by the session's two turn blocks, or while the agent is still finishing, says that, and does not claim the rule was cited. On AFK, the Stop sweep says the session already used its two turn blocks (`claude-jev-afk` 0.6.1), and that text still rides in the next prompt.
+- Two rules that slug to the same id keep separate probabilities. Keys are assigned on the full in-scope list and kept for the escalation call, so a second pass cannot write one rule's score onto the other. A rule the subject filter skips cannot inherit the other rule's score.
+
 ## [0.28.0] - 2026-10-01
 
 - Pi compaction lives in `adapters/pi/`. `pi install git:github.com/0x7067/claude-jev` loads `adapters/pi/jev.ts`, which handles `session_before_compact` and `/jev`. The hook calls `selectBlocks` in `src/compact/strategy.ts`. Block shaping, `toolCallId` pairing, bash and summary role labels, the `<read-files>` index, and logs under `PI_CODING_AGENT_DIR` stay in the adapter. Kept text is fit to 14,000 characters. Paths from dropped or truncated calls may add up to 2,000 characters. Pi's own read paths and `<modified-files>` sit outside that reservation. Claude's compaction budget stays 16,000 characters. A missing key returns nothing, so Pi's own summary runs. `0x7067/pi-jev` is unchanged.

@@ -21,8 +21,11 @@ abstraction with a single caller, total size) judge the session's changes
 together at Stop. Verdicts are banded: at or above ACT the hook blocks and
 the agent sees the cited rule; between FLAG and ACT the uncertainty goes to
 the user as a notice; below stays silent. One rule may block the same file
-at most twice per session — past that it only flags, because a repair that
-can't land is a loop, not enforcement.
+at most twice per session. Stop blocks at most twice per session, because a
+repair that can't land is a loop, not enforcement. A later act-band hit on
+that same rule and file says it was already raised. A Stop hit held back by
+the session cap, or while the agent is still finishing, says that instead of
+claiming the rule was cited.
 
 Always exits 0 and prints nothing on any failure — enforcement must never
 corrupt a session.
@@ -1071,12 +1074,14 @@ def cite(v: dict) -> str:
     return f'- {kind}Rule "{v["rule"]}" from {where}: "{text}" ({v["prob"]:.2f})'
 
 
-def ask_rules(state_text: str, rules: list[dict], strict: bool = False) -> dict:
-    """One batched request, questions keyed by rule id."""
-    if not rules:
-        return {}
-    questions, seen = {}, set()
+def assign_question_keys(rules: list[dict]) -> None:
+    """Give each rule a stable question key. A later call keeps keys already set."""
+    seen = set()
     for r in rules:
+        existing = r.get("_qkey")
+        if existing and existing not in seen:
+            seen.add(existing)
+            continue
         key = r["id"]
         n = 2
         while key in seen:
@@ -1084,7 +1089,14 @@ def ask_rules(state_text: str, rules: list[dict], strict: bool = False) -> dict:
             n += 1
         seen.add(key)
         r["_qkey"] = key
-        questions[key] = rule_question(r, strict)
+
+
+def ask_rules(state_text: str, rules: list[dict], strict: bool = False) -> dict:
+    """One batched request. Question keys stay put across the escalation call."""
+    if not rules:
+        return {}
+    assign_question_keys(rules)
+    questions = {prob_key(r): rule_question(r, strict) for r in rules}
     return jev.ask(state_text, questions, timeout=budget())
 
 
@@ -1104,7 +1116,10 @@ CALIB = load_calib()
 
 def act_for(rule: dict, act: float = ACT, calib: dict | None = None) -> float:
     """The threshold this rule blocks at."""
-    c = (CALIB if calib is None else calib).get(rule["id"])
+    table = CALIB if calib is None else calib
+    c = table.get(prob_key(rule))
+    if not isinstance(c, dict):
+        c = table.get(rule["id"])
     if not isinstance(c, dict) or act != ACT:
         return act
     median, n = c.get("median"), c.get("n", 0)
@@ -1117,11 +1132,16 @@ def act_for(rule: dict, act: float = ACT, calib: dict | None = None) -> float:
     return act
 
 
+def prob_key(rule: dict) -> str:
+    """Question key for this rule. Unique when two rules share an id."""
+    return rule.get("_qkey") or rule["id"]
+
+
 def hits_from(rules: list[dict], probs: dict, act: float, flag: float) -> list[dict]:
     """Every rule at or above flag, banded against its own act threshold."""
     hits = []
     for r in rules:
-        p = probs.get(r["id"], 0.0)
+        p = probs.get(prob_key(r), 0.0)
         if p >= flag:
             hits.append(
                 {
@@ -1142,7 +1162,7 @@ def collect_verdicts(
     rules: list[dict], answers: dict, act: float, flag: float
 ) -> tuple[list[dict], dict]:
     """(hits at or above flag, every rule's probability for calibration)."""
-    probs = {r["id"]: round(verdict(answers.get(r.get("_qkey") or r["id"])), 3) for r in rules}
+    probs = {prob_key(r): round(verdict(answers.get(prob_key(r))), 3) for r in rules}
     return hits_from(rules, probs, act, flag), probs
 
 
@@ -1194,6 +1214,7 @@ def judge_edit(
     parts.append(f"The edit:\n{hunk[:MAX_STATE_CHARS]}")
     if context:
         parts.append(f"Surrounding lines after the edit:\n{context}")
+    assign_question_keys(in_scope)
     asked, skipped = split_relevant(in_scope, hunk, rel)
     if siblings and any(r.get("subject") == "imports_deps" for r in asked):
         names = ", ".join(siblings.split(", ")[:SIBLING_CAP])
@@ -1209,7 +1230,7 @@ def judge_edit(
     hits, probs = collect_verdicts(in_scope, answers, act, flag)
 
     escalated: list[str] = []
-    undecided = [r for r in asked if flag <= probs.get(r["id"], 0.0) < act_for(r, act)]
+    undecided = [r for r in asked if flag <= probs.get(prob_key(r), 0.0) < act_for(r, act)]
     if ESCALATE and undecided and (budget() is None or budget() >= ESCALATE_MIN):
         extra = list(parts)
         if block:
@@ -1223,10 +1244,34 @@ def judge_edit(
             second = {}
         if second:
             for r in undecided:
-                probs[r["id"]] = round(verdict(second.get(r.get("_qkey") or r["id"])), 3)
+                probs[prob_key(r)] = round(verdict(second.get(prob_key(r))), 3)
                 escalated.append(r["id"])
             hits = hits_from(in_scope, probs, act, flag)
     return hits, probs, answers, skipped, escalated, cmp_chars
+
+
+def withheld_notice(
+    hits: list[dict],
+    acting: list[dict],
+    place: str,
+    held: str = "already raised this session — not sent to the agent",
+) -> str | None:
+    """Notice for hits the agent is not told. Flag-band is uncertain.
+    `held` describes an act-band hit left out of acting."""
+    uncertain = [v for v in hits if v["band"] == "flag" and v not in acting]
+    raised = [v for v in hits if v["band"] == "act" and v not in acting]
+
+    def listed(rows: list[dict]) -> str:
+        return ", ".join(f"{v['rule']} {v['prob']:.2f}" for v in rows)
+
+    parts = []
+    if uncertain:
+        parts.append(f"uncertain about {listed(uncertain)} {place} — not sent to the agent")
+    if raised:
+        parts.append(f"{listed(raised)} {place} {held}")
+    if not parts:
+        return None
+    return "[jev rules] " + ". ".join(parts)
 
 
 def handle_edit(event: dict) -> dict:
@@ -1270,7 +1315,6 @@ def handle_edit(event: dict) -> dict:
         return acting
 
     acting = update_state(sid, spend_blocks) if hits else []
-    flagged = [v for v in hits if v not in acting]
     log_decision(
         event,
         answers,
@@ -1292,11 +1336,9 @@ def handle_edit(event: dict) -> dict:
     )
 
     out = {}
-    if flagged:
-        listed = ", ".join(f"{v['rule']} {v['prob']:.2f}" for v in flagged)
-        out["systemMessage"] = (
-            f"[jev rules] uncertain about {listed} on {rel} — not sent to the agent"
-        )
+    notice = withheld_notice(hits, acting, f"on {rel}")
+    if notice:
+        out["systemMessage"] = notice
     if acting:
         lines = ["This edit appears to break a rule from this repository's instructions."]
         lines += [cite(v) for v in acting]
@@ -1431,6 +1473,7 @@ def handle_stop(event: dict) -> dict:
     if task:
         parts.append(f"The user's current request: {task}")
     parts.append(f"The changes:\n{diff[:MAX_TURN_CHARS]}")
+    assign_question_keys(turn_rules)
     asked, skipped = split_relevant(turn_rules, diff, ", ".join(sstate["files"]))
     t0 = time.monotonic()
     answers = ask_rules("\n\n".join(parts), asked)
@@ -1448,7 +1491,6 @@ def handle_stop(event: dict) -> dict:
         return acting
 
     acting = update_state(sid, spend_blocks) if hits else []
-    flagged = [v for v in hits if v not in acting]
     log_decision(
         event,
         answers,
@@ -1466,11 +1508,14 @@ def handle_stop(event: dict) -> dict:
     )
 
     out = {}
-    if flagged:
-        listed = ", ".join(f"{v['rule']} {v['prob']:.2f}" for v in flagged)
-        out["systemMessage"] = (
-            f"[jev rules] uncertain about {listed} at end of turn — not sent to the agent"
-        )
+    held = (
+        "not sent again while the agent is still finishing"
+        if already
+        else "omitted because this session already used its two turn blocks — not sent to the agent"
+    )
+    notice = withheld_notice(hits, acting, "at end of turn", held)
+    if notice:
+        out["systemMessage"] = notice
     if acting:
         files = ", ".join(sstate["files"])
         lines = [

@@ -121,7 +121,7 @@ The ast-grep binary is 51 MB, pinned by sha256, and fetched once in a detached p
 
 ### Limits and whole-turn rules
 
-- A rule blocks the same file at most twice per session and only flags after that, because an unlandable repair would loop.
+- A rule blocks the same file at most twice per session, because an unlandable repair would loop. A later act-band match on that rule and file is a notice that it was already raised. The agent is not told again. A flag-band match stays an uncertainty notice. Calibration can move one rule's act bar off 0.80. Stop blocks at most twice per session, across every turn rule. A hit held back by that cap says the session already used its two turn blocks. It does not claim that rule was cited.
 - Vendored, generated, and out-of-project paths are never judged.
 - Whole-turn rules skip the per-edit check. Examples: minimal changes, no single-caller abstraction, no unrelated refactoring. The `Stop` hook judges them against all of the turn's hunks, where scope creep shows.
 - `Stop` sees only hunks made since the latest user prompt, and skips a turn with none.

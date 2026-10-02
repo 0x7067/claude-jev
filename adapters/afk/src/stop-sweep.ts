@@ -238,12 +238,18 @@ async function main(): Promise<void> {
     );
   }
 
-  if (flagged.length > 0) {
-    const listed = flagged
-      .map((h) => `${h.rule.id} ${h.prob.toFixed(2)}`)
-      .join(", ");
+  const uncertain = flagged.filter((h) => h.band === "flag");
+  const raised = flagged.filter((h) => h.band === "act");
+  const listed = (rows: Hit[]) => rows.map((h) => `${h.rule.id} ${h.prob.toFixed(2)}`).join(", ");
 
-    lines.push(`[jev rules] uncertain about ${listed} at end of turn`);
+  if (uncertain.length > 0) {
+    lines.push(`[jev rules] uncertain about ${listed(uncertain)} at end of turn`);
+  }
+
+  if (raised.length > 0) {
+    lines.push(
+      `[jev rules] ${listed(raised)} at end of turn omitted because this session already used its two turn blocks`
+    );
   }
 
   if (lines.length === 0) return;
