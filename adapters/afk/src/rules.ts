@@ -15,6 +15,14 @@ import {
 } from "./shared/rule-parser.ts";
 import { slugify } from "./shared/utils.ts";
 import { loadState, saveState } from "./shared/state.ts";
+import {
+  logCheck,
+  logCheckError,
+  logSkip,
+  probsByRule,
+  type CheckContext,
+  type CheckHit,
+} from "./shared/check-log.ts";
 
 const ACT = 0.80;
 
@@ -129,17 +137,24 @@ async function judge(
   hunk: string,
   rel: string,
   cwd: string,
-  sessionId: string
+  sessionId: string,
+  ctx: CheckContext
 ): Promise<Verdict> {
   let rules: Rule[];
 
   try {
     rules = await loadRules(cwd, { afkRules: true });
   } catch {
+    logSkip(ctx, "rules-unreadable");
+
     return {};
   }
 
-  if (rules.length === 0) return {};
+  if (rules.length === 0) {
+    logSkip(ctx, "no-rules");
+
+    return {};
+  }
 
   const inScope = rules.filter(
     (r) =>
@@ -147,13 +162,21 @@ async function judge(
       (r.scope.length === 0 || globMatch(rel, r.scope))
   );
 
-  if (inScope.length === 0) return {};
+  if (inScope.length === 0) {
+    logSkip(ctx, "none-in-scope", rules.length);
+
+    return {};
+  }
 
   const relevant = inScope.filter((r) =>
     isSubjectRelevant(hunk, r.subject, rel)
   );
 
-  if (relevant.length === 0) return {};
+  if (relevant.length === 0) {
+    logSkip(ctx, "none-relevant", rules.length);
+
+    return {};
+  }
 
   const questions: Record<string, import("./shared/jev-client.ts").Question> = {};
   const qkeyMap = new Map<Rule, string>();
@@ -178,18 +201,19 @@ async function judge(
   ].join("\n\n");
 
   let answers: Answers;
+  const t0 = performance.now();
 
   try {
     answers = await jevAsk(stateText, questions);
-  } catch {
+  } catch (e) {
+    logCheckError(ctx, String(e), Math.round(performance.now() - t0));
+
     return {};
   }
 
-  interface Hit {
-    rule: Rule;
-    prob: number;
-    band: "act" | "flag";
-  }
+  const ms = Math.round(performance.now() - t0);
+
+  type Hit = CheckHit;
 
   const hits: Hit[] = [];
 
@@ -202,7 +226,20 @@ async function judge(
     }
   }
 
-  if (hits.length === 0) return {};
+  const tally = {
+    nRules: rules.length,
+    nScopedOut: rules.length - inScope.length,
+    nIrrelevant: inScope.length - relevant.length,
+    probs: probsByRule(relevant, (r) => qkeyMap.get(r), (k) => verdict(answers[k])),
+    hits,
+    ms,
+  };
+
+  if (hits.length === 0) {
+    logCheck(ctx, { ...tally, blocked: [] });
+
+    return {};
+  }
 
   const state = loadState(sessionId);
   const acting: Hit[] = [];
@@ -217,6 +254,7 @@ async function judge(
   }
 
   saveState(sessionId, state);
+  logCheck(ctx, { ...tally, blocked: acting.map((h) => h.rule.id) });
 
   if (acting.length > 0) {
     const lines = [
@@ -273,7 +311,8 @@ async function main(): Promise<void> {
 
   if (!hunk) return;
 
-  const result = await judge(hunk, rel, cwd, sessionId);
+  const ctx: CheckContext = { phase: "edit", sessionId, cwd, file: filePath || null };
+  const result = await judge(hunk, rel, cwd, sessionId, ctx);
 
   if (result.block) {
     const out: PreToolUseOutput = { decision: "block", reason: result.block };

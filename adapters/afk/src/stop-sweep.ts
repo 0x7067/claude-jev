@@ -11,6 +11,14 @@ import { isString, parseJsonObject } from "./shared/json.ts";
 import { loadRules, globMatch, isSubjectRelevant, type Rule } from "./shared/rule-parser.ts";
 import { slugify } from "./shared/utils.ts";
 import { loadState, saveState } from "./shared/state.ts";
+import {
+  logCheck,
+  logCheckError,
+  logSkip,
+  probsByRule,
+  type CheckContext,
+  type CheckHit,
+} from "./shared/check-log.ts";
 
 const ACT = 0.80;
 
@@ -112,11 +120,14 @@ async function main(): Promise<void> {
 
   if (edits.length === 0) return;
 
+  const ctx: CheckContext = { phase: "turn", sessionId, cwd, file: null };
   let rules: Rule[];
 
   try {
     rules = await loadRules(cwd, { afkRules: true });
   } catch {
+    logSkip(ctx, "rules-unreadable");
+
     return;
   }
 
@@ -129,6 +140,7 @@ async function main(): Promise<void> {
   );
 
   if (turnRules.length === 0) {
+    logSkip(ctx, rules.length === 0 ? "no-rules" : "none-in-scope", rules.length);
     consumeEdits(sessionId);
 
     return;
@@ -163,26 +175,28 @@ async function main(): Promise<void> {
   }
 
   if (Object.keys(questions).length === 0) {
+    logSkip(ctx, "none-relevant", rules.length);
     consumeEdits(sessionId);
 
     return;
   }
 
   let answers: Answers;
+  const t0 = performance.now();
 
   try {
     answers = await jevAsk(stateText, questions, STOP_TIMEOUT_MS);
-  } catch {
+  } catch (e) {
+    logCheckError(ctx, String(e), Math.round(performance.now() - t0));
+
     return;
   }
 
+  const ms = Math.round(performance.now() - t0);
+
   consumeEdits(sessionId);
 
-  interface Hit {
-    rule: Rule;
-    prob: number;
-    band: "act" | "flag";
-  }
+  type Hit = CheckHit;
 
   const hits: Hit[] = [];
 
@@ -197,7 +211,22 @@ async function main(): Promise<void> {
     }
   }
 
-  if (hits.length === 0) return;
+  const asked = turnRules.filter((r) => qkeyMap.has(r));
+
+  const tally = {
+    nRules: rules.length,
+    nScopedOut: rules.length - turnRules.length,
+    nIrrelevant: turnRules.length - asked.length,
+    probs: probsByRule(asked, (r) => qkeyMap.get(r), (k) => verdict(answers[k])),
+    hits,
+    ms,
+  };
+
+  if (hits.length === 0) {
+    logCheck(ctx, { ...tally, blocked: [] });
+
+    return;
+  }
 
   const state = loadState(sessionId);
   const acting: Hit[] = [];
@@ -210,6 +239,7 @@ async function main(): Promise<void> {
   }
 
   saveState(sessionId, state);
+  logCheck(ctx, { ...tally, blocked: acting.map((h) => h.rule.id) });
 
   const flagged = hits.filter((h) => !acting.includes(h));
   const lines: string[] = [];
