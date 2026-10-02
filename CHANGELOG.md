@@ -1,12 +1,16 @@
 # Changelog
 
-All notable changes to claude-jev. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow the plugin manifest. `scripts/release.py` turns the `[Unreleased]` section into the next release.
+All notable changes to claude-jev. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow the plugin manifest. `.claude/skills/release/release.py` turns the `[Unreleased]` section into the next release.
 
 ## [Unreleased]
 
 - An AFK rule check that fails while classifying instruction files logs `rules-error`. A failure while reading those files, before Jev is asked, stays `rules-skip` with reason `rules-unreadable`.
 - Two AFK rules that share an id keep separate probabilities, violation ids, and block ids in the log row.
 - `stats.py` counts a later `rules-skip` of a warned file as not rechecked, and takes the score from the next check that asked Jev. AFK rows stay out of Rule outcomes and its flagged-only list. They still join Rule calibration.
+
+## [0.29.2] - 2026-10-02
+
+- `package-lock.json` records an `integrity` hash for the five `@earendil-works/*` 0.87.1 packages nested under `pi-coding-agent`. Without a hash, Claude Code's plugin installer skipped them and warned on every install and update.
 
 ## [0.29.1] - 2026-10-02
 
@@ -16,6 +20,7 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 - An edit rule that has already blocked its file twice no longer calls the next act-band hit uncertain. The notice says that rule was already raised. A flag-band hit stays an uncertainty notice. A Stop hit held back by the session's two turn blocks, or while the agent is still finishing, says that, and does not claim the rule was cited. On AFK, the Stop sweep says the session already used its two turn blocks (`claude-jev-afk` 0.6.1), and that text still rides in the next prompt.
 - Two rules that slug to the same id keep separate probabilities. Keys are assigned on the full in-scope list and kept for the escalation call, so a second pass cannot write one rule's score onto the other. A rule the subject filter skips cannot inherit the other rule's score.
 
+[0.29.2]: https://github.com/0x7067/claude-jev/compare/v0.29.1...v0.29.2
 [0.29.1]: https://github.com/0x7067/claude-jev/compare/v0.28.0...v0.29.1
 
 ## [0.28.0] - 2026-10-01
