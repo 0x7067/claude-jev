@@ -1063,6 +1063,7 @@ function worktreeTree(cwd: string): [string, string, string] {
       const st = fs.statSync(index);
       fs.utimesSync(scratch, st.atime, st.mtime);
     }
+
     const env = { GIT_INDEX_FILE: scratch };
     gitSync(root, ["add", "-A"], env);
     const ignored = gitSync(root, ["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"]);
