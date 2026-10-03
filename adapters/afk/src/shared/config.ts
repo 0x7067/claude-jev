@@ -25,8 +25,10 @@ export function pluginOption(field: string): string {
   return (process.env[`CLAUDE_PLUGIN_OPTION_${field.toUpperCase()}`] ?? "").trim();
 }
 
-export function enabled(field: string): boolean {
+export function enabled(field: string, whenUnset = true): boolean {
   const value = pluginOption(field).toLowerCase();
+
+  if (!value) return whenUnset;
 
   return value !== "false" && value !== "0";
 }
