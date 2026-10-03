@@ -4,6 +4,8 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+- `adapters/afk/README.md`: updated Known-gaps and Setup sections against agent-afk 5.286.1 source. Blocking `additionalContext` on `PreToolUse` now reaches the model (agent-afk 5.121.0); non-blocking `additionalContext` is still dropped (#2778). `transcript_path` is now sent in hook stdin (agent-afk 5.276.14, #2647); null on daemon/chat/web. `PreCompact` hook event exists and can block compaction but cannot select which blocks to keep (agent-afk 5.10.0). `PreToolUse` hooks fire inside subagent forks (agent-afk 5.121.0); `SessionStart` injectContext does not. `pluginHookEnv` (agent-afk 5.276.21, #2700) is now documented as the supported route for forwarding `TYPESAFE_API_KEY` / `OPENROUTER_API_KEY`. `CLAUDE_PLUGIN_OPTION_*` and `CLAUDE_CONFIG_DIR` gaps updated for #2373 landing in 5.286.1. Issue links added for #2816 (per-hook disable) and #2817 (UserPromptSubmit/Stop REPL-only).
+
 - An AFK rule check that fails while classifying instruction files logs `rules-error`. A failure while reading those files, before Jev is asked, stays `rules-skip` with reason `rules-unreadable`.
 - Two AFK rules that share an id keep separate probabilities, violation ids, and block ids in the log row.
 - `stats.py` counts a later `rules-skip` of a warned file as not rechecked, and takes the score from the next check that asked Jev. AFK rows stay out of Rule outcomes and its flagged-only list. They still join Rule calibration.
