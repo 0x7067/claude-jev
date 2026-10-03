@@ -28,7 +28,7 @@ const FLAG = 0.50;
 
 const MAX_STOP_BLOCKS = 2;
 
-const STOP_TIMEOUT_MS = 4000;
+const SWEEP_BUDGET_MS = 4500;
 
 const MAX_TURN_CHARS = 16000;
 
@@ -124,10 +124,11 @@ async function main(): Promise<void> {
 
   const ctx: CheckContext = { phase: "turn", sessionId, cwd, file: null };
   let rules: Rule[];
+  const deadline = performance.now() + SWEEP_BUDGET_MS;
   const started = performance.now();
 
   try {
-    rules = await loadRules(cwd, { afkRules: true });
+    rules = await loadRules(cwd, { afkRules: true, timeoutMs: Math.max(1, Math.round(deadline - performance.now())) });
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
 
@@ -188,9 +189,10 @@ async function main(): Promise<void> {
 
   let answers: Answers;
   const t0 = performance.now();
+  const jevMs = Math.max(1, Math.round(deadline - t0));
 
   try {
-    answers = await jevAsk(stateText, questions, STOP_TIMEOUT_MS);
+    answers = await jevAsk(stateText, questions, jevMs);
   } catch (e) {
     logCheckError(ctx, String(e), Math.round(performance.now() - t0));
 
