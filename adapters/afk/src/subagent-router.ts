@@ -6,6 +6,7 @@ import { jevAsk } from "./shared/jev-client.ts";
 import { subagentBundle, BRIEF_PARTS, safeTier } from "./shared/questions.ts";
 import { asNoul, asChoice } from "./shared/jev-client.ts";
 import type { PreToolUseOutput } from "./shared/stdout.ts";
+import { enabled } from "./shared/config.ts";
 
 const MIN_CONFIDENCE = 0.75;
 
@@ -24,6 +25,9 @@ interface PreToolUseEvent {
 
 async function main(): Promise<void> {
   const event = await readStdinJson<PreToolUseEvent>();
+
+  if (!enabled("subagentRouter", false)) return;
+
   const inp = event.tool_input ?? {};
 
   if (inp.model) return;

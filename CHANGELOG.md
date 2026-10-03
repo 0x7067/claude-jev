@@ -4,6 +4,7 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+- The AFK prompt router and subagent router are off unless their `promptRouter` or `subagentRouter` option is `true`; both stay registered and exit before calling Jev. Each cost one Jev call per prompt or spawn, AFK drops the subagent router's advice (griffinwork40/agent-afk#2778), and the prompt router does not log on AFK, so neither was measured there. `adapters/afk/.claude-plugin/plugin.json` declares both options with `default: false`, and `enabled()` takes the value to use when an option is unset; the Claude Code hooks still treat unset as on.
 - An AFK rule check that fails while classifying instruction files logs `rules-error`. A failure while reading those files, before Jev is asked, stays `rules-skip` with reason `rules-unreadable`.
 - Two AFK rules that share an id keep separate probabilities, violation ids, and block ids in the log row.
 - `stats.py` counts a later `rules-skip` of a warned file as not rechecked, and takes the score from the next check that asked Jev. AFK rows stay out of Rule outcomes and its flagged-only list. They still join Rule calibration.
