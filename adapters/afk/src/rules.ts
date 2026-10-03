@@ -5,8 +5,14 @@ import path from "node:path";
 import os from "node:os";
 import { readStdinJson } from "./shared/stdin.ts";
 import { writeOutput, type PreToolUseOutput } from "./shared/stdout.ts";
-import { jevAsk } from "./shared/jev-client.ts";
-import { asNoul, type Answers } from "./shared/jev-client.ts";
+import {
+  asNoul,
+  DEFAULT_TIMEOUT_MS,
+  jevAsk,
+  type Answers,
+  type NoulQuestion,
+  type Questions,
+} from "./shared/jev-client.ts";
 import {
   loadRules,
   globMatch,
@@ -24,7 +30,9 @@ import {
   probsByRule,
   type CheckContext,
   type CheckHit,
+  type CheckResult,
 } from "./shared/check-log.ts";
+import { editTargets, type EditTarget, type EditToolInput } from "./shared/edit-targets.ts";
 
 const ACT = 0.80;
 
@@ -34,15 +42,15 @@ const MAX_BLOCKS = 2;
 
 const MAX_STATE_CHARS = 8000;
 
+const BUDGET_MS = 12000;
+
+const MAX_PARALLEL = 8;
+
+const MIN_CALL_MS = 500;
+
 interface PreToolUseEvent {
   tool_name?: string;
-  tool_input?: {
-    file_path?: string;
-    old_string?: string;
-    new_string?: string;
-    content?: string;
-    edits?: Array<{ old_string?: string; new_string?: string }>;
-  };
+  tool_input?: EditToolInput;
   session_id?: string;
   cwd?: string;
 }
@@ -53,45 +61,18 @@ function editsFilePath(sessionId: string): string {
   return path.join(os.tmpdir(), `jev-afk-${safe}-edits.jsonl`);
 }
 
-function appendEdit(sessionId: string, rel: string, hunk: string): void {
+function appendEdits(sessionId: string, targets: EditTarget[]): void {
   try {
-    const line = JSON.stringify({ rel, hunk: hunk.slice(0, 2000) }) + "\n";
-    fs.appendFileSync(editsFilePath(sessionId), line);
+    const lines = targets
+      .map((t) => JSON.stringify({ rel: t.rel, hunk: t.hunk.slice(0, 2000) }) + "\n")
+      .join("");
+
+    fs.appendFileSync(editsFilePath(sessionId), lines);
   } catch {
   }
 }
 
-function editHunks(inp: PreToolUseEvent["tool_input"] = {}): string {
-  if (Array.isArray(inp.edits)) {
-    const parts: string[] = [];
-
-    for (const e of inp.edits) {
-      let hunk = "";
-
-      if (e.old_string) hunk += `REMOVED:\n${e.old_string}\n`;
-
-      if (e.new_string) hunk += `ADDED:\n${e.new_string}`;
-
-      if (hunk) parts.push(hunk);
-    }
-
-    return parts.join("\n\n");
-  }
-
-  if (inp.old_string != null || inp.new_string != null) {
-    let hunk = "";
-
-    if (inp.old_string) hunk += `REMOVED:\n${inp.old_string}\n`;
-
-    if (inp.new_string) hunk += `ADDED:\n${inp.new_string}`;
-
-    return hunk;
-  }
-
-  return inp.content ?? "";
-}
-
-function ruleQuestion(rule: Rule): import("./shared/jev-client.ts").NoulQuestion {
+function ruleQuestion(rule: Rule): NoulQuestion {
   if (rule.polarity === "require") {
     return {
       type: "noul",
@@ -130,60 +111,24 @@ function verdict(answer: Answers[string] | undefined): number {
   return p === undefined ? 0 : Math.min(1, Math.max(0, p));
 }
 
+interface Assessment {
+  target: EditTarget;
+  ctx: CheckContext;
+  hits: CheckHit[];
+  tally: Omit<CheckResult, "blocked">;
+}
+
+interface Acting {
+  target: EditTarget;
+  hits: CheckHit[];
+}
+
 interface Verdict {
   block?: string;
   flag?: string;
 }
 
-async function judge(
-  hunk: string,
-  rel: string,
-  cwd: string,
-  sessionId: string,
-  ctx: CheckContext
-): Promise<Verdict> {
-  let rules: Rule[];
-  const started = performance.now();
-
-  try {
-    rules = await loadRules(cwd, { afkRules: true });
-  } catch (e) {
-    const error = e instanceof Error ? e : new Error(String(e));
-
-    logRulesLoadFailure(ctx, error, Math.round(performance.now() - started));
-
-    return {};
-  }
-
-  if (rules.length === 0) {
-    logSkip(ctx, "no-rules");
-
-    return {};
-  }
-
-  const inScope = rules.filter(
-    (r) =>
-      r.when === "edit" &&
-      (r.scope.length === 0 || globMatch(rel, r.scope))
-  );
-
-  if (inScope.length === 0) {
-    logSkip(ctx, "none-in-scope", rules.length);
-
-    return {};
-  }
-
-  const relevant = inScope.filter((r) =>
-    isSubjectRelevant(hunk, r.subject, rel)
-  );
-
-  if (relevant.length === 0) {
-    logSkip(ctx, "none-relevant", rules.length);
-
-    return {};
-  }
-
-  const questions: Record<string, import("./shared/jev-client.ts").Question> = {};
+function ruleKeys(relevant: Rule[]): Map<Rule, string> {
   const qkeyMap = new Map<Rule, string>();
   const seen = new Set<string>();
 
@@ -197,7 +142,46 @@ async function judge(
 
     seen.add(key);
     qkeyMap.set(r, key);
-    questions[key] = ruleQuestion(r);
+  }
+
+  return qkeyMap;
+}
+
+async function assess(
+  target: EditTarget,
+  rules: Rule[],
+  ctx: CheckContext,
+  deadline: number
+): Promise<Assessment | null> {
+  const { hunk, rel } = target;
+
+  const inScope = rules.filter(
+    (r) =>
+      r.when === "edit" &&
+      (r.scope.length === 0 || globMatch(rel, r.scope))
+  );
+
+  if (inScope.length === 0) {
+    logSkip(ctx, "none-in-scope", rules.length);
+
+    return null;
+  }
+
+  const relevant = inScope.filter((r) =>
+    isSubjectRelevant(hunk, r.subject, rel)
+  );
+
+  if (relevant.length === 0) {
+    logSkip(ctx, "none-relevant", rules.length);
+
+    return null;
+  }
+
+  const qkeyMap = ruleKeys(relevant);
+  const questions: Questions = {};
+
+  for (const r of relevant) {
+    questions[qkeyMap.get(r) ?? slugify(r.text)] = ruleQuestion(r);
   }
 
   const stateText = [
@@ -205,23 +189,28 @@ async function judge(
     `The edit:\n${hunk.slice(0, MAX_STATE_CHARS)}`,
   ].join("\n\n");
 
+  const timeoutMs = Math.min(DEFAULT_TIMEOUT_MS, deadline - performance.now());
+
+  if (timeoutMs < MIN_CALL_MS) {
+    logCheckError(ctx, "hook budget spent before this file was judged", 0);
+
+    return null;
+  }
+
   let answers: Answers;
   const t0 = performance.now();
 
   try {
-    answers = await jevAsk(stateText, questions);
+    answers = await jevAsk(stateText, questions, timeoutMs);
   } catch (e) {
     logCheckError(ctx, String(e), Math.round(performance.now() - t0));
 
-    return {};
+    return null;
   }
 
   const ms = Math.round(performance.now() - t0);
-
-  type Hit = CheckHit;
-
   const logKeys = loggedRuleKeys(relevant);
-  const hits: Hit[] = [];
+  const hits: CheckHit[] = [];
 
   for (const r of relevant) {
     const key = qkeyMap.get(r) ?? slugify(r.text);
@@ -242,84 +231,187 @@ async function judge(
     ms,
   };
 
-  if (hits.length === 0) {
-    logCheck(ctx, { ...tally, blocked: [] });
+  return { target, ctx, hits, tally };
+}
+
+async function assessAll(
+  targets: EditTarget[],
+  rules: Rule[],
+  ctxFor: (t: EditTarget) => CheckContext,
+  deadline: number
+): Promise<Assessment[]> {
+  const out: Assessment[] = [];
+
+  for (let i = 0; i < targets.length; i += MAX_PARALLEL) {
+    const wave = targets.slice(i, i + MAX_PARALLEL);
+
+    const settled = await Promise.allSettled(
+      wave.map((t) => assess(t, rules, ctxFor(t), deadline))
+    );
+
+    for (const r of settled) {
+      if (r.status === "fulfilled" && r.value !== null) out.push(r.value);
+    }
+  }
+
+  return out;
+}
+
+function ruleLine(h: CheckHit): string {
+  let text = h.rule.text.replace(/\s+/g, " ");
+
+  if (text.length > 220) text = text.slice(0, 217) + "...";
+
+  const where = h.rule.line
+    ? `${h.rule.file} line ${h.rule.line}`
+    : h.rule.file;
+
+  return `- [${h.rule.polarity}/${h.rule.subject}] Rule "${h.rule.id}" from ${where}: "${text}" (${h.prob.toFixed(2)})`;
+}
+
+function blockMessage(acting: Acting[], patch: boolean): string {
+  if (!patch) {
+    const only = acting[0]!;
+
+    const lines = [
+      "This edit would break a rule from this repository's instructions, so it was not applied.",
+      ...only.hits.map(ruleLine),
+      `Rewrite the edit to ${only.target.rel} so it follows the rule, then continue with the task.`,
+    ];
+
+    return lines.join("\n");
+  }
+
+  const lines = [
+    "This patch_apply call would break a rule from this repository's instructions, so none of its files were written.",
+  ];
+
+  for (const a of acting) {
+    lines.push(`In ${a.target.rel}:`);
+    lines.push(...a.hits.map(ruleLine));
+  }
+
+  const files = acting.map((a) => a.target.rel).join(", ");
+
+  lines.push(`Rewrite the change to ${files} so it follows the rule, then reapply the whole patch.`);
+
+  return lines.join("\n");
+}
+
+function flagMessage(assessments: Assessment[]): string | undefined {
+  const lines: string[] = [];
+
+  for (const a of assessments) {
+    if (a.hits.length === 0) continue;
+
+    lines.push(`[jev rules] Uncertain rule match in ${a.target.rel}:`);
+
+    for (const h of a.hits) {
+      let text = h.rule.text.replace(/\s+/g, " ");
+
+      if (text.length > 200) text = text.slice(0, 197) + "...";
+      lines.push(
+        `  - ${h.rule.id} (${h.prob.toFixed(2)}): "${text}"`
+      );
+    }
+  }
+
+  if (lines.length === 0) return undefined;
+
+  lines.push("Check these before marking the task Done.");
+
+  return lines.join("\n");
+}
+
+async function judge(
+  targets: EditTarget[],
+  patch: boolean,
+  cwd: string,
+  sessionId: string,
+  started: number = performance.now()
+): Promise<Verdict> {
+  const ctxFor = (t: EditTarget): CheckContext => ({
+    phase: "edit",
+    sessionId,
+    cwd,
+    file: t.filePath || null,
+  });
+
+  let rules: Rule[];
+  const loadStarted = performance.now();
+
+  try {
+    rules = await loadRules(cwd, { afkRules: true });
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    const ms = Math.round(performance.now() - loadStarted);
+
+    for (const t of targets) logRulesLoadFailure(ctxFor(t), error, ms);
 
     return {};
   }
 
+  if (rules.length === 0) {
+    for (const t of targets) logSkip(ctxFor(t), "no-rules");
+
+    return {};
+  }
+
+  const assessments = await assessAll(targets, rules, ctxFor, started + BUDGET_MS);
+  const withHits = assessments.filter((a) => a.hits.length > 0);
+
+  for (const a of assessments) {
+    if (a.hits.length === 0) logCheck(a.ctx, { ...a.tally, blocked: [] });
+  }
+
+  if (withHits.length === 0) return {};
+
   const state = loadState(sessionId);
-  const acting: Hit[] = [];
+  const acting: Acting[] = [];
 
-  for (const h of hits) {
-    const blockKey = `${h.rule.id}|${rel}`;
+  for (const a of withHits) {
+    const actingHits: CheckHit[] = [];
 
-    if (h.band === "act" && (state.blocks[blockKey] ?? 0) < MAX_BLOCKS) {
-      state.blocks[blockKey] = (state.blocks[blockKey] ?? 0) + 1;
-      acting.push(h);
+    for (const h of a.hits) {
+      const blockKey = `${h.rule.id}|${a.target.rel}`;
+
+      if (h.band === "act" && (state.blocks[blockKey] ?? 0) < MAX_BLOCKS) {
+        state.blocks[blockKey] = (state.blocks[blockKey] ?? 0) + 1;
+        actingHits.push(h);
+      }
     }
+
+    if (actingHits.length > 0) acting.push({ target: a.target, hits: actingHits });
   }
 
   saveState(sessionId, state);
-  logCheck(ctx, { ...tally, blocked: acting.map((h) => h.logKey) });
 
-  if (acting.length > 0) {
-    const lines = [
-      "This edit would break a rule from this repository's instructions, so it was not applied.",
-    ];
+  for (const a of withHits) {
+    const mine = acting.find((x) => x.target === a.target);
 
-    for (const h of acting) {
-      let text = h.rule.text.replace(/\s+/g, " ");
-
-      if (text.length > 220) text = text.slice(0, 217) + "...";
-
-      const where = h.rule.line
-        ? `${h.rule.file} line ${h.rule.line}`
-        : h.rule.file;
-
-      lines.push(
-        `- [${h.rule.polarity}/${h.rule.subject}] Rule "${h.rule.id}" from ${where}: "${text}" (${h.prob.toFixed(2)})`
-      );
-    }
-
-    lines.push(`Rewrite the edit to ${rel} so it follows the rule, then continue with the task.`);
-
-    return { block: lines.join("\n") };
+    logCheck(a.ctx, { ...a.tally, blocked: mine ? mine.hits.map((h) => h.logKey) : [] });
   }
 
-  const lines = [`[jev rules] Uncertain rule match in ${rel}:`];
+  if (acting.length > 0) return { block: blockMessage(acting, patch) };
 
-  for (const h of hits) {
-    let text = h.rule.text.replace(/\s+/g, " ");
+  const flag = flagMessage(withHits);
 
-    if (text.length > 200) text = text.slice(0, 197) + "...";
-    lines.push(
-      `  - ${h.rule.id} (${h.prob.toFixed(2)}): "${text}"`
-    );
-  }
-
-  lines.push("Check these before marking the task Done.");
-
-  return { flag: lines.join("\n") };
+  return flag ? { flag } : {};
 }
 
 async function main(): Promise<void> {
+  const started = performance.now();
   const event = await readStdinJson<PreToolUseEvent>();
   const sessionId = event.session_id;
 
   if (!sessionId) return;
 
-  const inp = event.tool_input ?? {};
   const cwd = event.cwd ?? process.cwd();
-  const filePath = inp.file_path ?? "";
-  const rel = path.relative(cwd, filePath) || path.basename(filePath);
+  const { patch, targets } = editTargets(event.tool_name, event.tool_input ?? {}, cwd);
 
-  const hunk = editHunks(inp).trim();
+  if (targets.length === 0) return;
 
-  if (!hunk) return;
-
-  const ctx: CheckContext = { phase: "edit", sessionId, cwd, file: filePath || null };
-  const result = await judge(hunk, rel, cwd, sessionId, ctx);
+  const result = await judge(targets, patch, cwd, sessionId, started);
 
   if (result.block) {
     const out: PreToolUseOutput = { decision: "block", reason: result.block };
@@ -329,7 +421,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  appendEdit(sessionId, rel, hunk);
+  appendEdits(sessionId, targets);
 
   if (result.flag) {
     const out: PreToolUseOutput = {

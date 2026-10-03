@@ -7,6 +7,7 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 - An AFK rule check that fails while classifying instruction files logs `rules-error`. A failure while reading those files, before Jev is asked, stays `rules-skip` with reason `rules-unreadable`.
 - Two AFK rules that share an id keep separate probabilities, violation ids, and block ids in the log row.
 - `stats.py` counts a later `rules-skip` of a warned file as not rechecked, and takes the score from the next check that asked Jev. AFK rows stay out of Rule outcomes and its flagged-only list. They still join Rule calibration.
+- The AFK rule hook judges `patch_apply`. Edits made through it used to land unjudged and never reached the Stop sweep. agent-afk hands a plugin hook `tool_name: "patch_apply"` with the raw `{ changes, dry_run }` input, and tests a `/…/` matcher against that name alone, so the matcher now lists it. Each file in the patch is judged in its own Jev call, in parallel, against the rules scoped to that file, and each check writes its own log row. The calls share one 12 s budget inside the hook's 15 s timeout. The patch is atomic, so one file at >= 0.80 blocks the whole call and none of its files are recorded for the Stop sweep. A clean or flagged patch records every file. A `dry_run` call writes nothing, so it is not judged or recorded.
 
 ## [0.29.2] - 2026-10-02
 

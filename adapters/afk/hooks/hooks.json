@@ -34,7 +34,7 @@
         ]
       },
       {
-        "matcher": "/^(edit_file|write_file)$/",
+        "matcher": "/^(edit_file|write_file|patch_apply)$/",
         "hooks": [
           {
             "type": "command",
