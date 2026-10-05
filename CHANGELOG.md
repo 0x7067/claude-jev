@@ -4,6 +4,7 @@ All notable changes to claude-jev. Format follows [Keep a Changelog](https://kee
 
 ## [Unreleased]
 
+- The Stop sweep shares one 4.5s budget across rule classification and the Jev judgment call, so a cold-cache `loadRules` is covered by the same deadline and the whole sweep finishes or fails open with a logged `rules-error` inside AFK's 5s handler window. Previously `loadRules` passed no `timeoutMs`, falling through to the 8s client default, which could silently exhaust the budget before Jev was ever called.
 - An AFK rule check that fails while classifying instruction files logs `rules-error`. A failure while reading those files, before Jev is asked, stays `rules-skip` with reason `rules-unreadable`.
 - Two AFK rules that share an id keep separate probabilities, violation ids, and block ids in the log row.
 - `stats.py` counts a later `rules-skip` of a warned file as not rechecked, and takes the score from the next check that asked Jev. AFK rows stay out of Rule outcomes and its flagged-only list. They still join Rule calibration.
