@@ -61,7 +61,22 @@ export OPENROUTER_API_KEY=sk-or-...
 
 `TYPESAFE_API_KEY` is checked first. The SessionStart hook (rule digest) requires no API key.
 
-AFK starts hook commands with a reduced environment: `PATH`, `HOME`, `SHELL`, `LANG`, `TERM`, `TMPDIR`, `USER`, `LOGNAME`, non-secret `AFK_*` variables, and `CLAUDE_PLUGIN_ROOT`. A key exported in your shell does not reach the hooks. Store it in AFK's env file instead, which the hooks read when AFK runs them. `afk config env set` refuses these names (`unknown config key`, agent-afk 5.259.0), so add the line with an editor:
+AFK starts hook commands with a reduced environment: `PATH`, `HOME`, `SHELL`, `LANG`, `TERM`, `TMPDIR`, `USER`, `LOGNAME`, non-secret `AFK_*` variables, and `CLAUDE_PLUGIN_ROOT`. A key exported in your shell does not reach the hooks.
+
+**Supported route (agent-afk 5.276.21):** add the key to `pluginHookEnv` in `~/.afk/config/afk.config.json`, keyed by the plugin's manifest name (`claude-jev-afk`):
+
+```json
+{
+  "enablePluginHooks": true,
+  "pluginHookEnv": {
+    "claude-jev-afk": ["TYPESAFE_API_KEY", "OPENROUTER_API_KEY"]
+  }
+}
+```
+
+AFK resolves each listed variable from `process.env` first, then `afk.env` (so a shell-profile export always wins). AFK's own credentials are refused even if listed. `pluginHookEnv` is read only from the user-global config; a project-local `afk.config.json` cannot grant itself access to your secrets.
+
+**Fallback:** the hooks also read their key directly from `afk.env`. `afk config env set` refuses these names (`unknown config key`, agent-afk 5.259.0), so add the line with an editor:
 
 ```sh
 # ~/.afk/config/afk.env
@@ -99,11 +114,13 @@ Rule classification verdicts are cached at `~/.afk/jev-rule-cache.json` by SHA-2
 
 `rules.ts` runs on `PreToolUse`, before `edit_file` or `write_file` touches the file. When it judges the edit against a rule at >= 0.80 probability of violation, it prints `{"decision": "block", "reason": ...}`. AFK does not run the tool and returns the reason to the agent as an error result, so the edit never lands and the agent must rewrite it before continuing. The agent cannot skip or dismiss this. In a live agent-afk 5.259.0 session the judgment took about half a second.
 
+When the hook blocks, any `hookSpecificOutput.additionalContext` it prints is appended to the error tool result the model sees (agent-afk 5.121.0, [griffinwork40/agent-afk#1088](https://github.com/griffinwork40/agent-afk/pull/1088)). Non-blocking `additionalContext` on `PreToolUse` is still dropped — the adapter's uncertain-match notices (0.50-0.80 range) do not reach the model today ([griffinwork40/agent-afk#2778](https://github.com/griffinwork40/agent-afk/issues/2778)).
+
 AFK ignores a block from a `PostToolUse` hook: it dispatches that event without waiting and only records the decision in its trace. That is why the rule hook does not run after the edit, as the Claude Code plugin's does.
 
 Each rule is allowed to block the same file at most twice per session. After that, the rule downgrades to a flag to prevent unlandable repair loops. An edit the hook blocks is not recorded for the Stop sweep, because it never landed.
 
-Edits in the 0.50-0.80 range are not blocked. The hook prints them as `additionalContext`, but AFK drops everything except a block from a `PreToolUse` hook, so today they reach neither the agent nor the user.
+Edits in the 0.50-0.80 range are not blocked. The hook prints them as `additionalContext`, but AFK drops non-blocking `additionalContext` from `PreToolUse` hooks, so today they reach neither the agent nor the user.
 
 `stop-sweep.ts` judges the edits that went through since its last completed judgment, then clears that record; when the Jev call fails, the edits wait for the next turn's sweep. AFK fires `Stop` only in the interactive REPL, gives each Stop handler 5 s, and shows a Stop block to the user as a notice without passing it to the agent. The sweep therefore reports as `additionalContext`, which AFK prepends to the user's next prompt, and asks the agent to repair the file unless the user says otherwise.
 
@@ -119,14 +136,15 @@ The `AFK rule checks` section of `stats.py` counts these per phase, lists the ru
 
 ## Known gaps
 
-- **Hook environment**: AFK passes neither `CLAUDE_CONFIG_DIR` nor `CLAUDE_PLUGIN_OPTION_*` to hooks (agent-afk 5.265.3, [#2373](https://github.com/griffinwork40/agent-afk/issues/2373)). Logs go to `~/.claude`, and the provider follows the key's prefix; it cannot be pinned.
-- **Key from `afk.env`**: AFK forwards no secrets to hooks, so the hooks read their key from `afk.env` themselves ([#2459](https://github.com/griffinwork40/agent-afk/issues/2459)).
-- **Subagent routing is not delivered**: AFK command hooks read only `continue`, `decision`, `reason`, and `hookSpecificOutput.additionalContext` (agent-afk 5.265.3, [#2371](https://github.com/griffinwork40/agent-afk/issues/2371)), and AFK keeps nothing but a block from a `PreToolUse` hook (agent-afk 5.259.0). The subagent router never blocks, so its tier recommendation and missing-brief note reach neither the agent nor the user, and the hook cannot switch the model. AFK does honor `decision: "block"` with a `reason`, so denying a bad brief is possible, but the adapter does not do it yet.
-- **Uncertain rule matches are not delivered**: see [How blocking works](#how-blocking-works).
-- **Prompt and turn-end hooks run only in the REPL**: AFK fires `UserPromptSubmit` and `Stop` only in the interactive REPL, so the prompt router and the Stop sweep never run in `afk chat`, Telegram, or daemon sessions.
+- **Hook environment**: AFK passes neither `CLAUDE_CONFIG_DIR` nor `CLAUDE_PLUGIN_OPTION_*` to hooks (agent-afk 5.286.1, [#2373](https://github.com/griffinwork40/agent-afk/issues/2373), open; [#2732](https://github.com/griffinwork40/agent-afk/pull/2732) proposes exporting both). Logs go to `~/.claude`, and the provider follows the key's prefix; it cannot be pinned. Use `pluginHookEnv` for the API key (see Setup).
+- **Key from `afk.env`**: `pluginHookEnv` (agent-afk 5.276.21) is the supported route to forward `TYPESAFE_API_KEY` and `OPENROUTER_API_KEY` to hook subprocesses. The adapter's direct `afk.env` read is a fallback the hooks still perform.
+- **Subagent routing is not delivered**: The subagent router never blocks, so its tier recommendation and missing-brief note reach neither the agent nor the user. `PreToolUse` hooks fire inside subagent child sessions (agent-afk 5.121.0, `fork-child-config.ts`), so the rule hook already judges edits made by subagents. A single plugin hook cannot be disabled without editing `hooks.json` ([griffinwork40/agent-afk#2816](https://github.com/griffinwork40/agent-afk/issues/2816)).
+- **Uncertain rule matches are not delivered**: Non-blocking `additionalContext` from `PreToolUse` is dropped ([griffinwork40/agent-afk#2778](https://github.com/griffinwork40/agent-afk/issues/2778)). Blocking `additionalContext` is now appended to the error result the model sees (agent-afk 5.121.0). See [How blocking works](#how-blocking-works).
+- **Prompt and turn-end hooks run only in the REPL**: AFK fires `UserPromptSubmit` and `Stop` only in the interactive REPL ([griffinwork40/agent-afk#2817](https://github.com/griffinwork40/agent-afk/issues/2817)), so the prompt router and the Stop sweep never run in `afk chat`, Telegram, or daemon sessions.
 - **Named agents are not routed**: a spawn with an `agent_type` takes that agent's model defaults, so the hook skips the tier question and only checks the brief.
-- **No transcript access**: Hooks receive only the current event, not the conversation. The prompt router uses the prompt alone (the Python adapter also uses the previous turn).
-- **No compaction hook**: AFK CLI hooks do not expose the transcript access needed for Jev-scored compaction.
+- **No transcript access**: AFK sends `transcript_path` in hook stdin payloads from agent-afk 5.276.14 ([griffinwork40/agent-afk#2647](https://github.com/griffinwork40/agent-afk/pull/2647)). It is `null` on daemon, `afk chat`, and web surfaces, and in the REPL before the first turn completes. The adapter does not use it yet (the prompt router uses the prompt alone; the Python adapter also uses the previous turn).
+- **PreCompact hook exists but cannot select what to keep**: A `PreCompact` hook event fires before any compaction (manual `/compact` or auto-compact). It can block compaction entirely (agent-afk 5.10.0 for manual, 5.10.0 for auto). It cannot choose which conversation blocks to keep; that requires transcript-level access the hook does not receive. The adapter does not register a `PreCompact` handler today.
+- **SessionStart injectContext reaches the parent session only**: AFK gates SessionStart `injectContext` delivery on `parentSessionId === undefined` (`provider-lifecycle.ts`), so the rule digest injected by `session-start.ts` does not reach subagent forks. `PreToolUse` hooks (rules) do fire inside forks.
 
 ## File structure
 
@@ -157,5 +175,5 @@ adapters/afk/
 ## Runtime requirements
 
 - Node.js 22.18 or later, which runs the TypeScript hooks without a build
-- `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` in AFK's `afk.env` (except SessionStart, which needs no key)
+- `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY` — via `pluginHookEnv` (recommended, agent-afk 5.276.21) or `afk.env` (fallback, see Setup)
 - For the rule hook and the Stop sweep, an agent-afk release that sends the session id on each hook event ([griffinwork40/agent-afk#2392](https://github.com/griffinwork40/agent-afk/pull/2392))
