@@ -4,6 +4,7 @@ import { readStdinJson } from "./shared/stdin.ts";
 import { writeOutput } from "./shared/stdout.ts";
 import { jevAsk, asChoice, asNoul, asScore } from "./shared/jev-client.ts";
 import { intentBundle } from "./shared/questions.ts";
+import { enabled } from "./shared/config.ts";
 
 const MIN_CONFIDENCE = 0.75;
 
@@ -23,6 +24,9 @@ interface UserPromptEvent {
 
 async function main(): Promise<void> {
   const event = await readStdinJson<UserPromptEvent>();
+
+  if (!enabled("promptRouter", false)) return;
+
   const prompt = (event.prompt ?? "").trim();
 
   if (prompt.length < 3 || prompt[0] === "/" || prompt[0] === "#") return;

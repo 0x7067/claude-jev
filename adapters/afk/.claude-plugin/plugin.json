@@ -1,5 +1,19 @@
 {
   "name": "claude-jev-afk",
   "description": "Jev judgment hooks for AFK — automatic rule enforcement, prompt routing, and turn-level compliance. Hooks are fences the agent cannot skip; MCP tools are lenses the agent chooses to use.",
-  "version": "0.6.2"
+  "version": "0.6.2",
+  "userConfig": {
+    "promptRouter": {
+      "type": "boolean",
+      "title": "Prompt routing hints",
+      "description": "Classify each prompt and add a routing hint. Off on AFK unless set to true.",
+      "default": false
+    },
+    "subagentRouter": {
+      "type": "boolean",
+      "title": "Subagent model routing",
+      "description": "Pick a subagent's model and check its brief before the spawn. Off on AFK unless set to true; AFK drops its advice until griffinwork40/agent-afk#2778.",
+      "default": false
+    }
+  }
 }

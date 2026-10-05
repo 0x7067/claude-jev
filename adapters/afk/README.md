@@ -9,8 +9,8 @@ Jev judgment hooks for [agent-afk](https://github.com/griffinwork40/agent-afk). 
 | Hook | Event | What it judges |
 |------|-------|----------------|
 | `session-start.ts` | `SessionStart` | Loads rules from instruction files and injects a structured digest into the session's first turn. No API call (pure file I/O). |
-| `prompt-router.ts` | `UserPromptSubmit` | Classifies each prompt as chat / lookup / fix / feature / ops and injects a routing hint when confidence >= 0.75. Interactive REPL only. |
-| `subagent-router.ts` | `PreToolUse` (`agent`) | Recommends a model tier when the spawn names no `agent_type`, and flags a brief that changes files but leaves out paths, acceptance criteria, verification, or commit policy. Advisory only, and AFK does not deliver it yet (see Known gaps). |
+| `prompt-router.ts` | `UserPromptSubmit` | Off unless `promptRouter` is `true` (see [Optional routers](#3-optional-routers)). Classifies each prompt as chat / lookup / fix / feature / ops and injects a routing hint when confidence >= 0.75. Interactive REPL only. |
+| `subagent-router.ts` | `PreToolUse` (`agent`) | Off unless `subagentRouter` is `true` (see [Optional routers](#3-optional-routers)). Recommends a model tier when the spawn names no `agent_type`, and flags a brief that changes files but leaves out paths, acceptance criteria, verification, or commit policy. Advisory only, and AFK does not deliver it yet (see Known gaps). |
 | `rules.ts` | `PreToolUse` (`edit_file`, `write_file`, `patch_apply`) | Loads rules from instruction files, classifies them, and judges each edit before it is written. **Blocks at >= 0.80**, so the edit never lands (agent cannot override). A `patch_apply` call is judged file by file, and one file at >= 0.80 blocks the whole call, so none of its files land; a `dry_run` call is not judged. Flags 0.50-0.80 as advisory context, which AFK does not deliver yet. |
 | `stop-sweep.ts` | `Stop` | Judges the edits made since its last completed judgment against turn-scope rules (scope creep, cross-file patterns), and hands what it finds to the next turn. Interactive REPL only. |
 
@@ -93,8 +93,29 @@ The hooks look for `$AFK_HOME/config/afk.env`, or `~/.afk/config/afk.env` when `
 # SessionStart hook (no API key needed)
 echo '{"session_id":"test","cwd":"'$(pwd)'"}' | node --experimental-strip-types src/session-start.ts
 
-# Prompt router (needs API key)
-echo '{"prompt":"list files in this directory","session_id":"test"}' | node --experimental-strip-types src/prompt-router.ts
+# Prompt router (needs API key, and the option on)
+echo '{"prompt":"list files in this directory","session_id":"test"}' | CLAUDE_PLUGIN_OPTION_PROMPTROUTER=true node --experimental-strip-types src/prompt-router.ts
+```
+
+### 3. Optional routers
+
+The prompt router and the subagent router ship registered but off. Each one exits before calling Jev unless its `userConfig` option is `true`: `promptRouter` for `prompt-router.ts`, `subagentRouter` for `subagent-router.ts`. The rule hook, the Stop sweep, and the SessionStart digest are unaffected.
+
+They are off on AFK because each costs one Jev call per prompt or per spawn. AFK drops the subagent router's advice ([griffinwork40/agent-afk#2778](https://github.com/griffinwork40/agent-afk/issues/2778)), and the prompt router's hint does not go to the log, so neither is measured on AFK. The Claude Code plugin keeps both on by default.
+
+AFK reads the option as `CLAUDE_PLUGIN_OPTION_PROMPTROUTER` or `CLAUDE_PLUGIN_OPTION_SUBAGENTROUTER`. agent-afk 5.286.1 does not export `userConfig` options to hooks ([#2373](https://github.com/griffinwork40/agent-afk/issues/2373); [#2732](https://github.com/griffinwork40/agent-afk/pull/2732) adds `afk plugin config <plugin> <key> <value>`). Until then, forward the variable with `pluginHookEnv` in `~/.afk/config/afk.config.json` and set it in `~/.afk/config/afk.env`:
+
+```json
+{
+  "pluginHookEnv": {
+    "claude-jev-afk": ["CLAUDE_PLUGIN_OPTION_PROMPTROUTER"]
+  }
+}
+```
+
+```sh
+# ~/.afk/config/afk.env
+CLAUDE_PLUGIN_OPTION_PROMPTROUTER=true
 ```
 
 ## Rule sources
