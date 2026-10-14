@@ -522,7 +522,7 @@ async function parseRules(
       scope,
       when,
       fileHash,
-      polarity,
+      polarity: rulePolarity(polarity, text),
       subject,
       context: around,
     });
@@ -659,25 +659,57 @@ export async function loadRules(
   return dedupe(rules);
 }
 
+function globRegExp(glob: string): RegExp {
+  const rx = glob
+    .replace(/\*\*\//g, "DSTAR_SLASH")
+    .replace(/\*\*/g, "DSTAR")
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*/g, "[^/]*")
+    .replace(/\?/g, "[^/]")
+    .replace(/DSTAR_SLASH/g, "(?:.*/)?")
+    .replace(/DSTAR/g, ".*");
+
+  return new RegExp("^" + rx + "$");
+}
+
 export function globMatch(filePath: string, globs: string[]): boolean {
+  const includes: string[] = [];
+  const excludes: string[] = [];
+
   for (const g of globs) {
     const trimmed = g.trim();
 
     if (!trimmed) continue;
 
-    const rx = trimmed
-      .replace(/\*\*\//g, "DSTAR_SLASH")
-      .replace(/\*\*/g, "DSTAR")
-      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-      .replace(/\*/g, "[^/]*")
-      .replace(/\?/g, "[^/]")
-      .replace(/DSTAR_SLASH/g, "(?:.*/)?")
-      .replace(/DSTAR/g, ".*");
+    if (trimmed.startsWith("!")) {
+      const negated = trimmed.slice(1).trim();
 
-    if (new RegExp("^" + rx + "$").test(filePath)) return true;
+      if (negated) excludes.push(negated);
+    } else {
+      includes.push(trimmed);
+    }
   }
 
-  return false;
+  if (includes.length > 0 && !includes.some((g) => globRegExp(g).test(filePath))) return false;
+
+  return !excludes.some((g) => globRegExp(g).test(filePath));
+}
+
+const PARENTHETICAL = /\([^()]*\)/g;
+
+const PROHIBITION = new RegExp(
+  "(?:^|[.;:!?,]\\s+|\\s(?:\u2014|\u2013|--)\\s*|\\b(?:you|we|and|or|but|please|then)\\s+)" +
+    "[*_`\"']*(?:never|no|avoid|don['\u2019]?t|do\\s+not)\\b" +
+    "|\\b(?:must|should|shall|may)\\s+(?:not|never)\\b" +
+    "|\\b(?:mustn['\u2019]?t|shouldn['\u2019]?t)\\b" +
+    "|\\b(?:forbid(?:s|den)?|prohibit(?:s|ed)?|ban(?:s|ned)?|disallow(?:s|ed)?|not\\s+allowed)\\b",
+  "i"
+);
+
+export function rulePolarity(polarity: string, text: string): string {
+  if (polarity !== "forbid") return polarity;
+
+  return PROHIBITION.test(text.replace(PARENTHETICAL, " ")) ? "forbid" : "require";
 }
 
 const COMMENT_RE = new RegExp("(^|\\s)(#|\\/\\/|\\/\\*|\\*\\/|<!--)|\"\"\"|\\'\\'\\'");

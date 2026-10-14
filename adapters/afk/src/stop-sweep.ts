@@ -10,6 +10,7 @@ import type { Answers, NoulQuestion } from "./shared/jev-client.ts";
 import { isString, parseJsonObject } from "./shared/json.ts";
 import { loadRules, globMatch, isSubjectRelevant, type Rule } from "./shared/rule-parser.ts";
 import { slugify } from "./shared/utils.ts";
+import { isOutside } from "./shared/hunks.ts";
 import { loadState, saveState } from "./shared/state.ts";
 import {
   logCheck,
@@ -58,7 +59,7 @@ function loadEdits(sessionId: string): EditRecord[] {
 
       const d = parseJsonObject(line);
 
-      if (d !== null && isString(d["rel"]) && isString(d["hunk"])) {
+      if (d !== null && isString(d["rel"]) && isString(d["hunk"]) && !isOutside(d["rel"])) {
         records.push({ rel: d["rel"], hunk: d["hunk"] });
       }
     }

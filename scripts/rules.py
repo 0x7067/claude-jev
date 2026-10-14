@@ -13,8 +13,9 @@ process rule? and, if it is, can one edit hunk break it, or does judging it
 need every change from the task? — and the verdicts are cached by file hash
 under ~/.claude, so the per-edit request carries only real instructions and
 a changed instruction file is reclassified on its next use. Scope globs
-(`paths:` front matter, `(scope: glob)` tails, a nested file's directory)
-keep out-of-scope rules out of the request entirely.
+(`paths:` front matter, `(scope: glob)` tails, a nested file's directory,
+with `!glob` entries excluding) keep out-of-scope rules out of the request
+entirely, and edits outside the working directory are never judged.
 
 Per-edit rules judge each edit hunk; whole-turn rules (scope creep, an
 abstraction with a single caller, total size) judge the session's changes
@@ -155,7 +156,9 @@ def slug(text: str) -> str:
 
 def glob_match(path: str, globs: list[str]) -> bool:
     """Repo-relative posix path vs `**`/`*`/`?` globs (stdlib only).
-    `**/` matches zero or more directories, like picomatch."""
+    `**/` matches zero or more directories, like picomatch. An entry
+    starting with `!` excludes: the path must match an include, or the
+    list has none, and must match no exclude."""
 
     def rx(g: str) -> str:
         out = []
@@ -172,7 +175,12 @@ def glob_match(path: str, globs: list[str]) -> bool:
                 out.append(re.escape(part).replace(r"\*", "[^/]*").replace(r"\?", "[^/]"))
         return "^" + "".join(out) + "$"
 
-    return any(re.match(rx(g.strip()), path) for g in globs if g.strip())
+    globs = [g.strip() for g in globs if g.strip()]
+    includes = [g for g in globs if not g.startswith("!")]
+    excludes = [g[1:].strip() for g in globs if g.startswith("!") and g[1:].strip()]
+    if includes and not any(re.match(rx(g), path) for g in includes):
+        return False
+    return not any(re.match(rx(g), path) for g in excludes)
 
 
 def frontmatter_paths(lines: list[str]) -> list[str]:
@@ -437,6 +445,26 @@ def classify_items(lines: list[str], items: list[tuple[int, str]]) -> dict[int, 
     return meta
 
 
+PARENTHETICAL = re.compile(r"\([^()]*\)")
+PROHIBITION = re.compile(
+    r"(?:^|[.;:!?,]\s+|\s(?:\u2014|\u2013|--)\s*|\b(?:you|we|and|or|but|please|then)\s+)"
+    r"[*_`\"']*(?:never|no|avoid|don['\u2019]?t|do\s+not)\b"
+    r"|\b(?:must|should|shall|may)\s+(?:not|never)\b"
+    r"|\b(?:mustn['\u2019]?t|shouldn['\u2019]?t)\b"
+    r"|\b(?:forbid(?:s|den)?|prohibit(?:s|ed)?|ban(?:s|ned)?|disallow(?:s|ed)?|not\s+allowed)\b",
+    re.IGNORECASE,
+)
+
+
+def rule_polarity(polarity: str, text: str) -> str:
+    """Jev's polarity, except that forbid needs a prohibition in the text
+    outside parentheses. A description such as "every overlay appends" names
+    nothing to avoid, so it is judged as the requirement it states."""
+    if polarity != "forbid":
+        return polarity
+    return "forbid" if PROHIBITION.search(PARENTHETICAL.sub(" ", text)) else "require"
+
+
 def parse_rules(
     path: str, base_label: str | None = None, file_scope: list[str] | None = None
 ) -> list[dict]:
@@ -481,7 +509,7 @@ def parse_rules(
                 "scope": scope,
                 "when": meta[idx]["when"],
                 "file_hash": file_hash,
-                "polarity": meta[idx]["polarity"],
+                "polarity": rule_polarity(meta[idx]["polarity"], text),
                 "subject": meta[idx]["subject"],
                 "context": around,
             }
@@ -562,7 +590,7 @@ def relative(path: str, cwd: str) -> str:
 def outside(rel: str) -> bool:
     """A path that climbs out of cwd. The project's rules describe the project,
     so a scratch file in /tmp is not theirs to judge."""
-    return rel.startswith(os.pardir + os.sep) or rel == os.pardir
+    return rel.startswith(os.pardir + os.sep) or rel == os.pardir or os.path.isabs(rel)
 
 
 def request_with_answers(task: str, answers: list[str]) -> str:
