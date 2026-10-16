@@ -104,10 +104,12 @@ The hook classifies each file once per hash and caches the result under `~/.clau
 
 - **Kind:** an instruction about written code, or a fact, pointer, or process rule.
 - **Scope:** per edit, or the whole turn.
-- **Polarity:** forbid or require.
+- **Polarity:** forbid or require. A rule is forbid only when its text, outside parentheses, says so: a sentence-initial or clause-initial `never`, `no`, `avoid`, `don't` or `do not`, a `must`/`should`/`shall`/`may` followed by `not` or `never`, or `forbidden`, `prohibited`, `banned`, `disallowed`, `not allowed`. A description Jev calls forbid, such as "Every overlay appends — there is no full-replace escape hatch yet.", is judged with the require question instead.
 - **Subject:** imports, comments, naming, types, tests, errors, literals, files, process, or other.
 
 The hook splits long prose paragraphs into sentences first, so a rule at the end of a paragraph is judged on its own.
+
+A rule's scope comes from `paths:` front matter, a `(scope: a, b)` tail on the rule, and a nested file's directory. An entry starting with `!` excludes: a file is in scope when it matches at least one include, or there are none, and matches no exclude. `(scope: !**/*.test.ts, !**/bench/**)` covers every file except tests and benches.
 
 ### How an edit is judged
 
@@ -122,7 +124,7 @@ The ast-grep binary is 51 MB, pinned by sha256, and fetched once in a detached p
 ### Limits and whole-turn rules
 
 - A rule blocks the same file at most twice per session, because an unlandable repair would loop. A later act-band match on that rule and file is a notice that it was already raised. The agent is not told again. A flag-band match stays an uncertainty notice. Calibration can move one rule's act bar off 0.80. Stop blocks at most twice per session, across every turn rule. A hit held back by that cap says the session already used its two turn blocks. It does not claim that rule was cited.
-- Vendored, generated, and out-of-project paths are never judged.
+- Vendored, generated, and out-of-project paths are never judged. A path is out of the project when it resolves above the working directory, such as `/tmp/x.mts`.
 - Whole-turn rules skip the per-edit check. Examples: minimal changes, no single-caller abstraction, no unrelated refactoring. The `Stop` hook judges them against all of the turn's hunks, where scope creep shows.
 - `Stop` sees only hunks made since the latest user prompt, and skips a turn with none.
 - Bash commands count too. The hook snapshots the git working tree, untracked files included, before each command and diffs it after. When a snapshot fails, for example outside a git repository, Jev is told the diff is partial.

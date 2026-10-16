@@ -21,6 +21,7 @@ import {
   type Rule,
 } from "../adapters/afk/src/shared/rule-parser.ts";
 import { addedHead, EXCLUDED_RE, isOutside } from "../adapters/afk/src/shared/hunks.ts";
+import { realPath } from "../adapters/afk/src/shared/edit-targets.ts";
 import {
   isJsonObject,
   isJsonArray,
@@ -319,18 +320,6 @@ function lastUserPrompt(transcriptPath: string | undefined): [string, string, nu
   }
 
   return ["", "", 0];
-}
-
-function realPath(p: string): string {
-  const abs = path.resolve(p);
-
-  try {
-    return fs.realpathSync(abs);
-  } catch {
-    const parent = path.dirname(abs);
-
-    return parent === abs ? abs : path.join(realPath(parent), path.basename(abs));
-  }
 }
 
 function relativeTo(filePath: string, cwd: string): string {

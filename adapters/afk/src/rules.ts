@@ -33,6 +33,7 @@ import {
   type CheckResult,
 } from "./shared/check-log.ts";
 import { editTargets, type EditTarget, type EditToolInput } from "./shared/edit-targets.ts";
+import { isOutside } from "./shared/hunks.ts";
 
 const ACT = 0.80;
 
@@ -407,7 +408,8 @@ async function main(): Promise<void> {
   if (!sessionId) return;
 
   const cwd = event.cwd ?? process.cwd();
-  const { patch, targets } = editTargets(event.tool_name, event.tool_input ?? {}, cwd);
+  const { patch, targets: all } = editTargets(event.tool_name, event.tool_input ?? {}, cwd);
+  const targets = all.filter((t) => !isOutside(t.rel));
 
   if (targets.length === 0) return;
 

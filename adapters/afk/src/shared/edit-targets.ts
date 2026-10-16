@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { isJsonObject, isString } from "./json.ts";
 
@@ -81,8 +82,22 @@ function changeHunk(change: PatchChange): string {
   return isString(change.content) ? change.content : "";
 }
 
+export function realPath(p: string): string {
+  const abs = path.resolve(p);
+
+  try {
+    return fs.realpathSync(abs);
+  } catch {
+    const parent = path.dirname(abs);
+
+    return parent === abs ? abs : path.join(realPath(parent), path.basename(abs));
+  }
+}
+
 function relativeTo(cwd: string, filePath: string): string {
-  return path.relative(cwd, filePath) || path.basename(filePath);
+  const resolved = path.join(realPath(path.dirname(path.resolve(cwd, filePath))), path.basename(filePath));
+
+  return path.relative(realPath(cwd), resolved) || path.basename(filePath);
 }
 
 function patchTargets(changes: PatchChange[], cwd: string): EditTarget[] {

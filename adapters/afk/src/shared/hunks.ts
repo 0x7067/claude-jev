@@ -1,8 +1,10 @@
+import path from "node:path";
+
 export const EXCLUDED_RE =
   /(^|\/)(node_modules|\.git|dist|build|\.next|coverage|\.claude|vendor|target)(\/|$)|\.lock$|package-lock\.json$|pnpm-lock\.yaml$|yarn\.lock$/;
 
 export function isOutside(rel: string): boolean {
-  return rel.startsWith("../") || rel === "..";
+  return rel.startsWith("../") || rel === ".." || path.isAbsolute(rel);
 }
 
 const ADDED_HEAD_CHARS = 200;
