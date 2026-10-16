@@ -3,8 +3,8 @@
 
 Compares `version` in root `plugin.json`, `.claude-plugin/plugin.json`, and
 the marketplace plugin entry whose name matches `.claude-plugin/plugin.json`.
-When both `adapters/afk/.claude-plugin/plugin.json` and
-`adapters/afk/package.json` exist, compares those too. Reads the files and
+Also compares `adapters/afk/.claude-plugin/plugin.json` and
+`adapters/afk/package.json`. A missing file is a failure. Reads the files and
 prints mismatches. Never writes or bumps a version.
 
 Exit 0 when every checked group agrees; exit 1 and print each problem.
@@ -38,15 +38,6 @@ def group_problems(items: list[tuple[str, str | None]]) -> list[str]:
         return []
     detail = ", ".join(f"{label} is {version}" for label, version in items)
     return [f"check_versions: version mismatch: {detail}"]
-
-
-def _self_check() -> None:
-    assert group_problems([("a", "1.0.0"), ("b", "1.0.0")]) == []
-    mismatch = group_problems([("plugin.json", "0.1.0"), ("other", "0.2.0")])
-    assert len(mismatch) == 1 and "version mismatch" in mismatch[0], mismatch
-    assert "plugin.json is 0.1.0" in mismatch[0] and "other is 0.2.0" in mismatch[0]
-    absent = group_problems([("plugin.json", None)])
-    assert len(absent) == 1 and absent[0] == "check_versions: no version in plugin.json", absent
 
 
 def load_json(path: Path) -> tuple[object | None, str | None]:
@@ -110,8 +101,6 @@ def claude_problems() -> list[str]:
 
 
 def afk_problems() -> list[str]:
-    if not AFK_PLUGIN.is_file() or not AFK_PACKAGE.is_file():
-        return []
     problems: list[str] = []
     versions: list[tuple[str, str | None]] = []
     for path in (AFK_PLUGIN, AFK_PACKAGE):
@@ -124,7 +113,6 @@ def afk_problems() -> list[str]:
 
 
 def main() -> int:
-    _self_check()
     problems = claude_problems() + afk_problems()
     if problems:
         for line in problems:

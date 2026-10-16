@@ -120,6 +120,9 @@ python3 -m compileall -q scripts eval
 python3 scripts/check_no_comments.py
 python3 scripts/check_no_stubs.py
 python3 scripts/check_versions.py
+for f in scripts/test_*.py; do python3 "$f"; done
+npm run test:afk
+npm run test:pi
 echo '{"prompt":"hi","transcript_path":""}' | CLAUDE_CONFIG_DIR="$(mktemp -d)" python3 scripts/prompt_router.py; echo "exit=$?"
 ```
 
@@ -248,5 +251,5 @@ running a full sweep.
   `.claude-plugin/marketplace.json` together, and refuses an empty section.
   The AFK adapter's version in `adapters/afk/.claude-plugin/plugin.json` and
   `adapters/afk/package.json` bumps by the same rule. CI runs
-  `scripts/check_versions.py`, which fails when those manifests disagree and
-  never writes or bumps a version.
+  `scripts/check_versions.py`, which fails when those manifests disagree or
+  one is missing, and never writes or bumps a version.
