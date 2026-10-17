@@ -29,6 +29,13 @@ jobs:
       - run: python3 -m compileall -q scripts eval
       - run: python3 scripts/check_no_comments.py
       - run: python3 scripts/check_no_stubs.py
+      - run: python3 scripts/check_versions.py
+      - run: |
+          for f in scripts/test_*.py; do
+            python3 "$f"
+          done
+      - run: npm run test:afk
+      - run: npm run test:pi
       - run: echo '{"prompt":"hi","transcript_path":""}' | CLAUDE_CONFIG_DIR="${{ runner.temp }}" python3 scripts/prompt_router.py
       - run: echo '' | node --experimental-strip-types src/compactor.ts rows
       - run: echo 'not json' | node --experimental-strip-types src/prompt-router.ts

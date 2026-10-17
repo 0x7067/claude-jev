@@ -110,12 +110,19 @@ building it, and cite it when resisting.
 
 ## Verify
 
-There is no test suite. The local / script contract for this repo is:
+Run each `scripts/test_*.py` with python3 (`scripts/test_rules_scope.py`,
+`scripts/test_stats_afk.py`, and any other), then `npm run test:afk` and
+`npm run test:pi`. CI (`.github/workflows/check.yml`) runs those tests.
+The local / script contract for this repo is:
 
 ```bash
 python3 -m compileall -q scripts eval
 python3 scripts/check_no_comments.py
 python3 scripts/check_no_stubs.py
+python3 scripts/check_versions.py
+for f in scripts/test_*.py; do python3 "$f" || exit 1; done
+npm run test:afk
+npm run test:pi
 echo '{"prompt":"hi","transcript_path":""}' | CLAUDE_CONFIG_DIR="$(mktemp -d)" python3 scripts/prompt_router.py; echo "exit=$?"
 ```
 
@@ -238,10 +245,12 @@ running a full sweep.
   commit them or write code that assumes they exist.
 - Numbers in `README.md` and `eval/README.md` come from eval runs. Change one
   only with a run behind it, and say which run.
-- Bump `version` in `.claude-plugin/plugin.json` and root `plugin.json` together
-  for a behavior change, and add the change under `## [Unreleased]` in
-  `CHANGELOG.md`. Those two versions stay the same; `/release` writes both.
-  The AFK adapter carries its own version in `adapters/afk/.claude-plugin/plugin.json`,
-  mirrored in its `package.json`, and bumps by the same rule. Releases go
-  through `/release` (`.claude/skills/release`), which refuses an empty
-  section.
+- A behavior change gets a bullet under `## [Unreleased]` in `CHANGELOG.md`.
+  `/release` (`.claude/skills/release`) bumps `version` in root `plugin.json`,
+  `.claude-plugin/plugin.json`, and the plugin entry in
+  `.claude-plugin/marketplace.json` together, and refuses an empty section.
+  The AFK adapter's version in `adapters/afk/.claude-plugin/plugin.json` and
+  `adapters/afk/package.json` is bumped by hand. CI runs
+  `scripts/check_versions.py`, which catches a half-done bump: it fails when
+  those manifests disagree or one is missing, and it never writes or bumps a
+  version.
